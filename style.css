@@ -113,6 +113,16 @@ code{background:var(--soft);padding:1px 6px;border-radius:5px}
 #lb{position:fixed;inset:0;background:rgba(10,20,40,.78);display:flex;align-items:center;justify-content:center;z-index:50}
 #lb img{max-width:92%;max-height:90%;border-radius:10px}
 
+#grp{margin-top:6px}
+details{border:1px solid var(--line);border-radius:12px;margin-top:12px;overflow:hidden}
+summary{cursor:pointer;padding:13px 16px;font-weight:600;display:flex;align-items:center;gap:10px;background:var(--soft);list-style:none;user-select:none}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"\25B8";transition:transform .15s;color:var(--pri2)}
+details[open]>summary::before{transform:rotate(90deg)}
+details.yr>summary{font-size:16px}
+details.mo{margin:10px 12px 12px}
+details.mo>summary{background:var(--card);font-size:14px}
+details .tw{margin:0 8px 8px}
 #cam{z-index:60}
 .camb{max-width:560px}
 .camb video{width:100%;border-radius:10px;background:#000;display:block}

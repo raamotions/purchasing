@@ -7,6 +7,8 @@ const p2 = n => String(n).padStart(2, '0');
 const ymd = t => { const d = new Date(t); return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()) };
 const hm = t => p2(new Date(t).getHours()) + ':' + p2(new Date(t).getMinutes());
 const fmt = t => new Date(t).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+const dayWIB = t => new Date(t).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+const BLN = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 const stat = (a, m) => a === m ? '<b class="okc">✓</b>' : '<b class="badc">✕</b>';
 const msg = (id, t, ok) => { const m = $(id); m.textContent = t; m.className = 'msg' + (ok ? ' ok' : '') };
 
@@ -20,7 +22,7 @@ const FIREBASE_CONFIG = {
   projectId: "purchase-eko",
   storageBucket: "purchase-eko.firebasestorage.app",
   messagingSenderId: "306713086751",
-  appId: "1:306713086751:web:b0b61d8510086765727e2a"
+  appId: "1:306713086751:web:3aad1af4d0dbd89f727e2a"
 };
 
 let db = null, products = [], reqs = [], records = [], photos = {};
@@ -54,9 +56,15 @@ function commit(ops = []) {
       const ref = db.collection(c).doc(k === 'del' ? v : v.id);
       k === 'del' ? b.delete(ref) : b.set(ref, v);
     });
-    b.commit().then(() => setSync('ok')).catch(() => setSync('err'));
+    b.commit().then(() => setSync('ok')).catch(e => failSync(e));
   }
   return true;
+}
+let failShown = false;
+function failSync(e) {
+  setSync('err');
+  if (failShown) return; failShown = true;
+  alert('Data GAGAL tersimpan/terbaca di Firebase (' + (e && (e.code || e.message)) + ').\nPastikan Firestore Database sudah dibuat dan Rules sudah di-Publish (allow read, write: if true).');
 }
 function refresh() {
   renderReqs(); renderProducts();
@@ -66,7 +74,7 @@ function startSync() {
   if (!FIREBASE_CONFIG || !window.firebase) { loadLocal(); setSync('loc'); refresh(); return }
   try {
     firebase.initializeApp(FIREBASE_CONFIG); db = firebase.firestore(); setSync('wait');
-    const on = (c, fn) => db.collection(c).onSnapshot(s => { fn(s.docs.map(d => d.data())); setSync('ok'); refresh() }, () => setSync('err'));
+    const on = (c, fn) => db.collection(c).onSnapshot(s => { fn(s.docs.map(d => d.data())); setSync('ok'); refresh() }, e => failSync(e));
     on('products', a => products = a.sort((x, y) => x.name.localeCompare(y.name)));
     on('requests', a => reqs = a.sort((x, y) => y.ts - x.ts));
     on('records', a => records = a.sort((x, y) => y.ts - x.ts));
@@ -75,7 +83,7 @@ function startSync() {
 }
 
 /* ---------- menu & hamburger ---------- */
-const TT = { pg: ['Pengajuan', 'Ajukan barang yang dibutuhkan'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], pr: ['Produk', 'Kelola database produk dan varian warna'] };
+const TT = { pg: ['Pengajuan', 'Daftar pengajuan dikosongkan otomatis setiap pukul 00.00 WIB'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], pr: ['Produk', 'Kelola database produk dan varian warna'] };
 function go(t) {
   $$('nav button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
   $$('.sec').forEach(s => s.classList.toggle('on', s.id === t));
@@ -149,13 +157,15 @@ $('#pgSubmit').onclick = () => {
   pgSearch.reset(); $('#pgMin').value = ''; $('#pgSrc').value = '';
   msg('#pgMsg', 'Pengajuan tersimpan.', true); renderReqs();
 };
+const todayReqs = () => reqs.filter(r => dayWIB(r.ts) === dayWIB(Date.now()));
 function renderReqs() {
-  $('#pgTb').innerHTML = reqs.length ? reqs.map(r => `<tr>
+  const L = todayReqs();
+  $('#pgTb').innerHTML = L.length ? L.map(r => `<tr>
     <td>${fmt(r.ts)}</td><td>${esc(r.prod)}</td><td>${sw(r.vc, r.vn)}</td>
     <td>${r.ada} / ${r.min} pcs</td><td><span class="tag">${esc(r.src)}</span></td>
     <td>${r.ada >= r.min ? 'Selesai' : r.ada ? 'Sebagian' : 'Menunggu'}</td>
     <td><button class="btn ghost sm" data-del="${r.id}">Hapus</button></td></tr>`).join('')
-    : '<tr><td colspan="7" class="empty">Belum ada pengajuan.</td></tr>';
+    : '<tr><td colspan="7" class="empty">Belum ada pengajuan hari ini.</td></tr>';
 }
 $('#pgTb').onclick = e => {
   const id = e.target.dataset.del;
@@ -165,7 +175,7 @@ $('#pgTb').onclick = e => {
 
 /* ---------- INPUT ---------- */
 let blocks = [], photo = '';
-const openProducts = () => [...new Map(reqs.filter(r => r.ada < r.min).map(r => [r.pid, { id: r.pid, name: r.prod }])).values()];
+const openProducts = () => [...new Map(todayReqs().filter(r => r.ada < r.min).map(r => [r.pid, { id: r.pid, name: r.prod }])).values()];
 
 function addBlock() {
   const el = document.createElement('div'); el.className = 'blk';
@@ -181,7 +191,7 @@ function addBlock() {
   b.render = () => {
     const R = el.querySelector('.rows');
     if (!b.prod) { R.innerHTML = ''; return }
-    const rs = reqs.filter(r => String(r.pid) === String(b.prod.id) && r.ada < r.min);
+    const rs = todayReqs().filter(r => String(r.pid) === String(b.prod.id) && r.ada < r.min);
     R.innerHTML = rs.length ? rs.map(r => `<div class="ln" data-id="${r.id}">
       ${r.vc ? sw(r.vc, r.vn) : ''}
       <div class="inf">${r.vn ? '' : '<b>Satuan (tanpa varian)</b>'}
@@ -285,22 +295,32 @@ function filtered() {
     (!j || (r.sj || '').toLowerCase().includes(j)) && (!q || r.prod.toLowerCase().includes(q)) &&
     (!s || r.src === s) && (!v || r.vc === v) && (!st || (st === 'ok') === (r.ada === r.min)));
 }
+const openState = {};
 function renderTable() {
   const cols = [...new Map(records.filter(r => r.vc).map(r => [r.vc, r.vn])).entries()], cur = $('#fqVar').value;
   $('#fqVar').innerHTML = '<option value="">Semua</option>' + cols.map(([c, n]) => `<option value="${c}">${esc(n)}</option>`).join('');
   $('#fqVar').value = cur;
-  const rows = filtered();
-  $('#tb').innerHTML = rows.length ? rows.map((r, n) => `<tr>
+  const rows = filtered(), filt = FIL.some(s => $(s).value), now = ymd(Date.now());
+  const rowHtml = (r, n) => `<tr>
     <td>${n + 1}</td><td>${fmt(r.ts)}</td><td>${esc(r.sj || '-')}</td><td>${esc(r.prod)}</td><td>${sw(r.vc, r.vn)}</td>
     <td>${r.ada} / ${r.min} pcs</td><td>${stat(r.ada, r.min)}</td><td><span class="tag">${esc(r.src)}</span></td>
     <td>${photos[r.pid] ? `<img class="thumb" src="${photos[r.pid]}" alt="Surat jalan">` : '-'}</td>
-    <td class="nw"><button class="btn ghost sm" data-edit="${r.id}">Edit</button> <button class="btn ghost sm" data-del="${r.id}">Hapus</button></td></tr>`).join('')
-    : '<tr><td colspan="10" class="empty">Belum ada data purchase.</td></tr>';
+    <td class="nw"><button class="btn ghost sm" data-edit="${r.id}">Edit</button> <button class="btn ghost sm" data-del="${r.id}">Hapus</button></td></tr>`;
+  const tbl = list => `<div class="tw"><table><thead><tr><th>No</th><th>Tanggal</th><th>No. SJ</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Status</th><th>Asal</th><th>Foto</th><th></th></tr></thead><tbody>${list.map(rowHtml).join('')}</tbody></table></div>`;
+  const isOpen = (k, cur) => k in openState ? openState[k] : (filt || cur);
+  const g = {};
+  rows.forEach(r => { const d = ymd(r.ts), y = d.slice(0, 4), m = d.slice(5, 7); ((g[y] = g[y] || {})[m] = g[y][m] || []).push(r) });
+  $('#grp').innerHTML = rows.length ? Object.keys(g).sort().reverse().map(y => {
+    const ms = Object.keys(g[y]).sort().reverse(), cnt = ms.reduce((s, m) => s + g[y][m].length, 0), ky = 'y' + y;
+    return `<details class="yr" data-k="${ky}" ${isOpen(ky, y === now.slice(0, 4)) ? 'open' : ''}><summary>${y} <span class="tag">${cnt} data</span></summary>` +
+      ms.map(m => { const km = 'm' + y + m; return `<details class="mo" data-k="${km}" ${isOpen(km, y + '-' + m === now.slice(0, 7)) ? 'open' : ''}><summary>${BLN[+m - 1]} ${y} <span class="tag">${g[y][m].length} data</span></summary>${tbl(g[y][m])}</details>` }).join('') + '</details>';
+  }).join('') : '<div class="empty">Belum ada data purchase.</div>';
 }
+$('#grp').addEventListener('click', e => { const s = e.target.closest('summary'); if (s) { const d = s.parentElement; openState[d.dataset.k] = !d.open } });
 FIL.forEach(s => $(s).oninput = renderTable);
 $('#fToggle').onclick = () => $('#fl').classList.toggle('open');
 $('#reset').onclick = () => { FIL.forEach(s => $(s).value = ''); renderTable() };
-$('#tb').onclick = e => {
+$('#grp').onclick = e => {
   const t = e.target;
   if (t.dataset.edit) openEdit(t.dataset.edit);
   if (t.dataset.del && confirm('Hapus data ini?')) {
@@ -459,4 +479,7 @@ $('#impFile').onchange = e => {
 };
 
 /* ---------- mulai ---------- */
+let curDay = dayWIB(Date.now());
+const dayCheck = () => { const d = dayWIB(Date.now()); if (d !== curDay) { curDay = d; renderReqs(); refreshBlocks() } };
+setInterval(dayCheck, 30000); document.addEventListener('visibilitychange', dayCheck);
 pgVarUI(); addBlock(); startSync();
