@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Purchasing</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header><h1>Purchasing Barang</h1><p>Input pembelian, pantau kekurangan barang, dan arsip surat jalan</p></header>
+<nav>
+<button class="on" data-t="in">Input</button>
+<button data-t="pu">Purchase</button>
+<button data-t="pr">Produk</button>
+</nav>
+<main>
+<div class="card">
+
+<section class="sec on" id="in">
+<label>Nama Produk</label>
+<select id="fProd"></select>
+<label>Varian (warna)</label>
+<div class="pop">
+<button type="button" class="dd" id="fVar" disabled><span class="sw" style="background:transparent;border-style:dashed"></span><span id="fVarTxt">Pilih warna</span></button>
+<div class="list" id="varList"></div>
+</div>
+<label>Quantity (pcs): barang ada / barang diminta</label>
+<div class="row">
+<div><input type="number" id="qAda" min="0" placeholder="Ada"></div>
+<span class="slash">/</span>
+<div><input type="number" id="qMin" min="1" placeholder="Diminta"></div>
+<div class="status" id="st">-</div>
+</div>
+<label>Asal Barang</label>
+<select id="fSrc"><option value="">Pilih asal barang</option><option>Kode A</option><option>Kode B</option><option>Aling</option></select>
+<label>Foto Surat Jalan (jika ada)</label>
+<input type="file" id="fFoto" accept="image/*">
+<img id="prev" alt="">
+<div class="msg" id="msg"></div>
+<button class="btn" id="submit">Submit</button>
+</section>
+
+<section class="sec" id="pu">
+<div class="fl">
+<div><label>Dari tanggal</label><input type="date" id="dFrom"></div>
+<div><label>Sampai tanggal</label><input type="date" id="dTo"></div>
+<div><label>Produk</label><input id="fqProd" placeholder="Cari produk"></div>
+<div><label>Asal</label><select id="fqSrc"><option value="">Semua</option><option>Kode A</option><option>Kode B</option><option>Aling</option></select></div>
+<div><label>Status</label><select id="fqSt"><option value="">Semua</option><option value="ok">Lengkap</option><option value="bad">Kurang</option></select></div>
+<div><label>Varian</label><select id="fqVar"></select></div>
+<div><button class="btn ghost" id="reset">Reset</button></div>
+</div>
+<div class="tw"><table>
+<thead><tr><th>Tanggal</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Status</th><th>Asal</th><th>Surat Jalan</th><th></th></tr></thead>
+<tbody id="tb"></tbody></table></div>
+</section>
+
+<section class="sec" id="pr">
+<label>Nama Produk Baru</label>
+<input id="pName" placeholder="Contoh: Kaos Polos">
+<label>Varian warna (opsional)</label>
+<div id="vBox"></div>
+<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+<button class="btn ghost sm" id="addV" type="button">+ Tambah warna</button>
+</div>
+<div class="msg" id="pMsg"></div>
+<button class="btn" id="saveP">Simpan Produk</button>
+<div id="pList"></div>
+</section>
+
+</div>
+</main>
+<div id="lb"><img alt=""></div>
+
+<script src="script.js"></script>
+</body>
+</html>
