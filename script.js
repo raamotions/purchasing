@@ -225,13 +225,36 @@ function compress(f, cb) {
   };
   r.readAsDataURL(f);
 }
-$('#fFoto').onchange = e => {
-  photo = ''; $('#prev').style.display = 'none';
-  const f = e.target.files[0];
-  if (f) compress(f, d => { photo = d; $('#prev').src = d; $('#prev').style.display = 'block' });
-};
+/* komponen foto: kamera + upload */
+const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+let camStream = null;
+function stopCam() { if (camStream) camStream.getTracks().forEach(t => t.stop()); camStream = null; $('#cam').hidden = true }
+$('#camClose').onclick = stopCam;
+function webcam(done) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return alert('Kamera tidak tersedia di browser ini. Gunakan tombol Upload.');
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }).then(s => {
+    camStream = s; const v = $('#camV'); v.srcObject = s; $('#cam').hidden = false;
+    $('#camSnap').onclick = () => {
+      if (!v.videoWidth) return;
+      const k = Math.min(1, 900 / Math.max(v.videoWidth, v.videoHeight)), c = document.createElement('canvas');
+      c.width = v.videoWidth * k; c.height = v.videoHeight * k; c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+      const d = c.toDataURL('image/jpeg', .65); stopCam(); done(d);
+    };
+  }).catch(() => alert('Kamera tidak bisa diakses (izin ditolak atau kamera tidak ada). Gunakan tombol Upload.'));
+}
+function photoField(root, cb) {
+  const pv = root.querySelector('.pv'), clr = root.querySelector('[data-clr]'), cam = root.querySelector('.fCam'), up = root.querySelector('.fUp');
+  const set = d => { pv.src = d || ''; pv.style.display = d ? 'block' : 'none'; clr.hidden = !d };
+  const got = e => { const f = e.target.files[0]; e.target.value = ''; if (f) compress(f, d => { set(d); cb(d) }) };
+  cam.onchange = up.onchange = got;
+  root.querySelector('[data-up]').onclick = () => up.click();
+  root.querySelector('[data-cam]').onclick = () => isMobile ? cam.click() : webcam(d => { set(d); cb(d) });
+  clr.onclick = () => { set(''); cb('') };
+  return { set };
+}
+const inPF = photoField($('#in'), d => { photo = d });
 function resetInput() {
-  $('#sj').value = ''; $('#fFoto').value = ''; photo = ''; $('#prev').style.display = 'none';
+  $('#sj').value = ''; photo = ''; inPF.set('');
   $('#blocks').innerHTML = ''; blocks = []; addBlock(); msg('#inMsg', '');
 }
 $('#inSubmit').onclick = () => {
@@ -275,6 +298,7 @@ function renderTable() {
     : '<tr><td colspan="10" class="empty">Belum ada data purchase.</td></tr>';
 }
 FIL.forEach(s => $(s).oninput = renderTable);
+$('#fToggle').onclick = () => $('#fl').classList.toggle('open');
 $('#reset').onclick = () => { FIL.forEach(s => $(s).value = ''); renderTable() };
 $('#tb').onclick = e => {
   const t = e.target;
@@ -307,17 +331,12 @@ function openEdit(id) {
   $('#eProd').innerHTML = names.map(n => `<option>${esc(n)}</option>`).join(''); $('#eProd').value = r.prod;
   fillEVar(r.prod, r.vn, r.vc);
   $('#eDate').value = ymd(r.ts); $('#eSj').value = r.sj || ''; $('#eAda').value = r.ada; $('#eMin').value = r.min; $('#eSrc').value = r.src;
-  $('#eFile').value = ''; const ph = photos[r.pid];
-  $('#ePrev').src = ph || ''; $('#ePrev').style.display = ph ? 'block' : 'none';
+  ePF.set(photos[r.pid]);
   msg('#eMsg', ''); $('#mdl').hidden = false;
 }
 $('#eProd').onchange = () => fillEVar($('#eProd').value, '', '');
 $('#eVar').onchange = eSwatch;
-$('#eFile').onchange = e => {
-  const f = e.target.files[0];
-  if (f) compress(f, d => { eFoto = d; $('#ePrev').src = d; $('#ePrev').style.display = 'block' });
-};
-$('#eDelFoto').onclick = () => { eFoto = ''; $('#eFile').value = ''; $('#ePrev').style.display = 'none' };
+const ePF = photoField($('#mdl'), d => { eFoto = d });
 const closeEdit = () => { $('#mdl').hidden = true; eRec = null };
 $('#eCancel').onclick = closeEdit;
 $('#eSave').onclick = () => {
