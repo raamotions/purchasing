@@ -3,111 +3,129 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Purchasing</title>
-<link rel="stylesheet" href="style.css">
+<title>Purchasing Barang</title>
+<link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
-<header>
-  <div class="top">
-    <div><h1>Purchasing Barang</h1><p>Pengajuan, penerimaan barang, dan arsip surat jalan</p></div>
+
+<header class="bar">
+  <div class="in">
+    <div class="brand">
+      <div class="logo">🛒</div>
+      <div><h1>Purchasing</h1><p>Pengajuan &amp; penerimaan barang</p></div>
+    </div>
+    <nav id="nav">
+      <button class="on" data-t="pg">Pengajuan</button>
+      <button data-t="in">Input</button>
+      <button data-t="pu">Purchase</button>
+      <button data-t="pr">Produk</button>
+    </nav>
     <button id="burger" aria-label="Menu" hidden>☰</button>
   </div>
-  <nav id="nav">
-    <button class="on" data-t="pg">Pengajuan</button>
-    <button data-t="in">Input</button>
-    <button data-t="pu">Purchase</button>
-    <button data-t="pr">Produk</button>
-  </nav>
 </header>
 
-<main><div class="card">
+<main>
+  <div class="ph">
+    <div><h2 id="pt">Pengajuan</h2><p id="ps">Ajukan barang yang dibutuhkan</p></div>
+    <div class="sync loc" id="sync"><i></i><span>Mode lokal</span></div>
+  </div>
 
-<!-- PENGAJUAN -->
-<section class="sec on" id="pg">
-  <div class="grid2">
-    <div class="f"><label>Cari Produk</label><div id="pgSearch"></div></div>
-    <div class="f"><label>Varian (warna)</label>
-      <div class="pop">
-        <button type="button" class="dd" id="pgVar" disabled><span class="sw"></span><span id="pgVarTxt">Pilih warna</span></button>
-        <div class="list" id="pgVarList"></div>
+  <!-- PENGAJUAN -->
+  <section class="sec on" id="pg">
+    <div class="card">
+      <h3>Form Pengajuan</h3>
+      <div class="grid4">
+        <div class="f"><label>Cari Produk</label><div id="pgSearch"></div></div>
+        <div class="f"><label>Varian (warna)</label>
+          <div class="pop">
+            <button type="button" class="dd" id="pgVar" disabled><span class="sw"></span><span id="pgVarTxt">Pilih warna</span></button>
+            <div class="list" id="pgVarList"></div>
+          </div>
+        </div>
+        <div class="f"><label>Quantity (pcs): ada / diminta</label>
+          <div class="row">
+            <div><input id="pgAda" disabled placeholder="Ada" title="Diisi di menu Input"></div>
+            <span class="slash">/</span>
+            <div><input type="number" id="pgMin" min="1" inputmode="numeric" placeholder="Diminta"></div>
+          </div>
+        </div>
+        <div class="f"><label>Asal Barang</label><select id="pgSrc" data-src="Pilih asal barang"></select></div>
+      </div>
+      <div class="foot"><div class="msg" id="pgMsg"></div><button class="btn" id="pgSubmit">Submit</button></div>
+    </div>
+    <div class="card">
+      <h3>Daftar Pengajuan</h3>
+      <div class="tw"><table>
+        <thead><tr><th>Tanggal</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Asal</th><th>Status</th><th></th></tr></thead>
+        <tbody id="pgTb"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- INPUT -->
+  <section class="sec" id="in">
+    <div class="card">
+      <div style="max-width:420px">
+        <label style="margin-top:0">Nomor Surat Jalan</label>
+        <input id="sj" placeholder="Contoh: SJ/2026/10-001">
+      </div>
+      <div id="blocks"></div>
+      <button class="btn ghost" id="addBlk" type="button" style="margin-top:16px">+ Tambahkan produk lainnya</button>
+      <label>Foto Surat Jalan (jika ada)</label>
+      <input type="file" id="fFoto" accept="image/*" style="max-width:420px">
+      <img id="prev" alt="">
+      <div class="foot"><div class="msg" id="inMsg"></div><button class="btn" id="inSubmit">Submit</button></div>
+    </div>
+  </section>
+
+  <!-- PURCHASE -->
+  <section class="sec" id="pu">
+    <div class="card">
+      <div class="fl">
+        <div><label>Dari tanggal</label><input type="date" id="dFrom"></div>
+        <div><label>Sampai tanggal</label><input type="date" id="dTo"></div>
+        <div><label>No. Surat Jalan</label><input id="fqSj" placeholder="Cari no. SJ"></div>
+        <div><label>Produk</label><input id="fqProd" placeholder="Cari produk"></div>
+        <div><label>Varian</label><select id="fqVar"></select></div>
+        <div><label>Asal</label><select id="fqSrc" data-src="Semua"></select></div>
+        <div><label>Status</label><select id="fqSt"><option value="">Semua</option><option value="ok">Lengkap</option><option value="bad">Kurang</option></select></div>
+        <div><button class="btn ghost" id="reset">Reset filter</button></div>
+      </div>
+      <div class="ex">
+        <button class="btn ghost sm" id="xXls">Export Excel</button>
+        <button class="btn ghost sm" id="xPdf">Export PDF</button>
+      </div>
+      <div class="tw"><table>
+        <thead><tr><th>No</th><th>Tanggal</th><th>No. SJ</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Status</th><th>Asal</th><th>Foto</th><th></th></tr></thead>
+        <tbody id="tb"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- PRODUK -->
+  <section class="sec" id="pr">
+    <div class="cols2">
+      <div class="card">
+        <h3>Tambah Produk Manual</h3>
+        <label>Nama Produk</label>
+        <input id="pName" placeholder="Contoh: Kaos Polos">
+        <label>Varian warna (opsional)</label>
+        <div id="vBox"></div>
+        <button class="btn ghost sm" id="addV" type="button" style="margin-top:10px">+ Tambah warna</button>
+        <div class="foot"><div class="msg" id="pMsg"></div><button class="btn" id="saveP">Simpan Produk</button></div>
+      </div>
+      <div class="card">
+        <h3>Input Massal (Excel / CSV)</h3>
+        <p class="hint">Kolom: <code>Produk</code>, <code>Varian</code>, <code>Warna</code>. Satu baris per varian. Warna boleh kode hex (#3b82f6) atau nama (Merah, Biru, Hijau, dll). Produk tanpa varian cukup isi kolom Produk.</p>
+        <button class="btn ghost sm" id="tpl" type="button">Unduh Template CSV</button>
+        <label>Pilih file</label>
+        <input type="file" id="impFile" accept=".xlsx,.xls,.csv">
+        <div class="msg" id="impMsg" style="margin-top:12px"></div>
       </div>
     </div>
-    <div class="f"><label>Quantity (pcs): ada / diminta</label>
-      <div class="row">
-        <div><input id="pgAda" disabled placeholder="Ada (isi di menu Input)"></div>
-        <span class="slash">/</span>
-        <div><input type="number" id="pgMin" min="1" inputmode="numeric" placeholder="Diminta"></div>
-      </div>
-    </div>
-    <div class="f"><label>Asal Barang</label><select id="pgSrc" data-src="Pilih asal barang"></select></div>
-  </div>
-  <div class="msg" id="pgMsg"></div>
-  <button class="btn" id="pgSubmit">Submit</button>
-
-  <label style="margin-top:30px">Daftar Pengajuan</label>
-  <div class="tw"><table>
-    <thead><tr><th>Tanggal</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Asal</th><th>Status</th><th></th></tr></thead>
-    <tbody id="pgTb"></tbody>
-  </table></div>
-</section>
-
-<!-- INPUT -->
-<section class="sec" id="in">
-  <label>Nomor Surat Jalan</label>
-  <input id="sj" placeholder="Contoh: SJ/2026/10-001">
-  <div id="blocks"></div>
-  <button class="btn ghost" id="addBlk" type="button" style="margin-top:14px">+ Tambahkan produk lainnya</button>
-  <label>Foto Surat Jalan (jika ada)</label>
-  <input type="file" id="fFoto" accept="image/*">
-  <img id="prev" alt="">
-  <div class="msg" id="inMsg"></div>
-  <button class="btn" id="inSubmit">Submit</button>
-</section>
-
-<!-- PURCHASE -->
-<section class="sec" id="pu">
-  <div class="fl">
-    <div><label>Dari tanggal</label><input type="date" id="dFrom"></div>
-    <div><label>Sampai tanggal</label><input type="date" id="dTo"></div>
-    <div><label>No. Surat Jalan</label><input id="fqSj" placeholder="Cari no. SJ"></div>
-    <div><label>Produk</label><input id="fqProd" placeholder="Cari produk"></div>
-    <div><label>Varian</label><select id="fqVar"></select></div>
-    <div><label>Asal</label><select id="fqSrc" data-src="Semua"></select></div>
-    <div><label>Status</label><select id="fqSt"><option value="">Semua</option><option value="ok">Lengkap</option><option value="bad">Kurang</option></select></div>
-    <div><button class="btn ghost" id="reset">Reset</button></div>
-  </div>
-  <div class="ex">
-    <button class="btn ghost sm" id="xXls">Export Excel</button>
-    <button class="btn ghost sm" id="xPdf">Export PDF</button>
-  </div>
-  <div class="tw"><table>
-    <thead><tr><th>Tanggal</th><th>No. SJ</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Status</th><th>Asal</th><th>Foto</th><th></th></tr></thead>
-    <tbody id="tb"></tbody>
-  </table></div>
-</section>
-
-<!-- PRODUK -->
-<section class="sec" id="pr">
-  <label>Nama Produk Baru</label>
-  <input id="pName" placeholder="Contoh: Kaos Polos">
-  <label>Varian warna (opsional)</label>
-  <div id="vBox"></div>
-  <button class="btn ghost sm" id="addV" type="button" style="margin-top:10px">+ Tambah warna</button>
-  <div class="msg" id="pMsg"></div>
-  <button class="btn" id="saveP">Simpan Produk</button>
-
-  <div class="imp">
-    <b>Input Massal (Excel / CSV)</b>
-    <p>Kolom: <code>Produk</code>, <code>Varian</code>, <code>Warna</code>. Satu baris per varian. Warna boleh kode hex (#3b82f6) atau nama (Merah, Biru, Hijau, dll). Produk tanpa varian cukup isi kolom Produk.</p>
-    <button class="btn ghost sm" id="tpl" type="button">Unduh Template CSV</button>
-    <input type="file" id="impFile" accept=".xlsx,.xls,.csv" style="margin-top:10px">
-    <div class="msg" id="impMsg"></div>
-  </div>
-
-  <div id="pList"></div>
-</section>
-
-</div></main>
+    <div class="card"><div id="pList"></div></div>
+  </section>
+</main>
 
 <!-- MODAL EDIT -->
 <div class="modal" id="mdl" hidden><div class="box">
@@ -135,6 +153,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="script.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="script.js?v=3"></script>
 </body>
 </html>
