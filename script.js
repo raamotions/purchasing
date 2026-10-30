@@ -64,9 +64,25 @@ function commit(ops = []) {
 let failShown = false;
 function failSync(e) {
   setSync('err');
-  if (failShown) return; failShown = true;
+  if (failShown) return; failShown = true; setTimeout(() => failShown = false, 20000);
   alert('Data GAGAL tersimpan/terbaca di Firebase (' + (e && (e.code || e.message)) + ').\nPeriksa koneksi internet, pastikan Firestore Database sudah dibuat dan Rules sudah di-Publish (allow read, write: if true).');
 }
+const hint = e => {
+  const c = (e && e.code) || '';
+  if (c.includes('permission')) return 'Penyebab: Rules Firestore menolak. Buka Firestore Database > Rules, isi allow read, write: if true; lalu klik Publish.';
+  return 'Penyebab paling umum: (1) Firestore Database belum dibuat, atau dibuat dengan Database ID selain "(default)", atau dengan edisi "Enterprise" (pilih edisi Standard); (2) koneksi ke Firebase diblokir ad-blocker/VPN/jaringan kantor; (3) Rules belum di-Publish.';
+};
+async function diagnose() {
+  if (!db) return alert('MODE LOKAL: config Firebase tidak terbaca atau library Firebase gagal dimuat (perlu internet). Data hanya tersimpan di browser ini.');
+  setSync('wait');
+  try {
+    const ref = db.collection('_diag').doc('ping');
+    await Promise.race([ref.set({ t: Date.now() }), new Promise((_, no) => setTimeout(() => no({ code: 'timeout', message: 'server tidak merespon dalam 10 detik' }), 10000))]);
+    await ref.get({ source: 'server' });
+    setSync('ok'); alert('BERHASIL: data benar-benar tersimpan di server Firebase dan bisa dibaca kembali.');
+  } catch (e) { setSync('err'); alert('GAGAL (' + (e.code || '-') + '): ' + (e.message || e) + '\n\n' + hint(e)) }
+}
+$('#sync').onclick = diagnose; $('#sync').title = 'Klik untuk tes koneksi Firebase';
 function refresh() {
   renderReqs(); renderProducts();
   if ($('#pu').classList.contains('on')) renderTable();

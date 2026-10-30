@@ -19,7 +19,7 @@ nav button.on{background:var(--card);color:var(--pri2)}
 .ph{max-width:1120px;margin:16px auto 0;padding:0 20px;display:flex;justify-content:space-between;align-items:flex-end;gap:12px}
 .ph h2{margin:0;font-size:22px}
 .ph p{margin:3px 0 0;font-size:13px;opacity:.88}
-.sync{display:flex;align-items:center;gap:7px;font-size:12px;background:rgba(255,255,255,.2);padding:6px 12px;border-radius:20px;white-space:nowrap}
+.sync{cursor:pointer;display:flex;align-items:center;gap:7px;font-size:12px;background:rgba(255,255,255,.2);padding:6px 12px;border-radius:20px;white-space:nowrap}
 .sync i{width:8px;height:8px;border-radius:50%;background:#d3dbe9}
 .sync.ok i{background:#5ee29a}.sync.err i{background:#ff8f8f}.sync.wait i{background:#ffd27a}
 
