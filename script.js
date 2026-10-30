@@ -179,13 +179,13 @@ $('#pgSubmit').onclick = () => {
 };
 const todayReqs = () => reqs.filter(r => dayWIB(r.ts) === dayWIB(Date.now()));
 function renderReqs() {
-  const L = todayReqs();
-  $('#pgTb').innerHTML = L.length ? L.map(r => `<tr>
-    <td>${fmt(r.ts)}</td><td>${esc(r.prod)}</td><td>${sw(r.vc, r.vn)}</td>
+  const L = todayReqs().sort((a, b) => a.ts - b.ts);
+  $('#pgTb').innerHTML = L.length ? L.map((r, n) => `<tr>
+    <td>${n + 1}</td><td>${fmt(r.ts)}</td><td>${esc(r.prod)}</td><td>${sw(r.vc, r.vn)}</td>
     <td>${r.ada} / ${r.min} pcs</td><td><span class="tag">${esc(r.src)}</span></td>
     <td>${r.ada >= r.min ? 'Selesai' : r.ada ? 'Sebagian' : 'Menunggu'}</td>
     <td><button class="btn ghost sm" data-del="${r.id}">Hapus</button></td></tr>`).join('')
-    : '<tr><td colspan="7" class="empty">Belum ada pengajuan hari ini.</td></tr>';
+    : '<tr><td colspan="8" class="empty">Belum ada pengajuan hari ini.</td></tr>';
 }
 $('#pgTb').onclick = e => {
   const id = e.target.dataset.del;
@@ -316,17 +316,20 @@ function filtered() {
     (!s || r.src === s) && (!v || r.vc === v) && (!st || (st === 'ok') === (r.ada === r.min)));
 }
 const openState = {};
+// nomor urut berdasarkan urutan masuk (terlama = 1), tidak berubah oleh filter
+const seqMap = () => { const m = {}; records.slice().sort((a, b) => a.ts - b.ts || (a.id < b.id ? -1 : 1)).forEach((r, i) => m[r.id] = i + 1); return m };
 function renderTable() {
+  const seq = seqMap();
   const cols = [...new Map(records.filter(r => r.vc).map(r => [r.vc, r.vn])).entries()], cur = $('#fqVar').value;
   $('#fqVar').innerHTML = '<option value="">Semua</option>' + cols.map(([c, n]) => `<option value="${c}">${esc(n)}</option>`).join('');
   $('#fqVar').value = cur;
   const rows = filtered(), filt = FIL.some(s => $(s).value), now = ymd(Date.now());
-  const rowHtml = (r, n) => `<tr>
-    <td>${n + 1}</td><td>${fmt(r.ts)}</td><td>${esc(r.sj || '-')}</td><td>${esc(r.prod)}</td><td>${sw(r.vc, r.vn)}</td>
+  const rowHtml = r => `<tr>
+    <td>${seq[r.id]}</td><td>${fmt(r.ts)}</td><td>${esc(r.sj || '-')}</td><td>${esc(r.prod)}</td><td>${sw(r.vc, r.vn)}</td>
     <td>${r.ada} / ${r.min} pcs</td><td>${stat(r.ada, r.min)}</td><td><span class="tag">${esc(r.src)}</span></td>
     <td>${photos[r.pid] ? `<img class="thumb" src="${photos[r.pid]}" alt="Surat jalan">` : '-'}</td>
     <td class="nw"><button class="btn ghost sm" data-edit="${r.id}">Edit</button> <button class="btn ghost sm" data-del="${r.id}">Hapus</button></td></tr>`;
-  const tbl = list => `<div class="tw"><table><thead><tr><th>No</th><th>Tanggal</th><th>No. SJ</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Status</th><th>Asal</th><th>Foto</th><th></th></tr></thead><tbody>${list.map(rowHtml).join('')}</tbody></table></div>`;
+  const tbl = list => `<div class="tw"><table><thead><tr><th>No</th><th>Tanggal</th><th>No. SJ</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Status</th><th>Asal</th><th>Foto</th><th></th></tr></thead><tbody>${list.slice().sort((a, b) => seq[a.id] - seq[b.id]).map(rowHtml).join('')}</tbody></table></div>`;
   const isOpen = (k, cur) => k in openState ? openState[k] : (filt || cur);
   const g = {};
   rows.forEach(r => { const d = ymd(r.ts), y = d.slice(0, 4), m = d.slice(5, 7); ((g[y] = g[y] || {})[m] = g[y][m] || []).push(r) });
@@ -400,20 +403,21 @@ $('#mdl').onclick = e => { if (e.target.id === 'mdl') closeEdit() };
 const stDesc = r => r.ada === r.min ? 'Lengkap' : 'Kurang';
 $('#xXls').onclick = () => {
   if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
-  const rows = filtered().map((r, i) => ({ No: i + 1, Tanggal: ymd(r.ts), 'No Surat Jalan': r.sj || '', Produk: r.prod, Varian: r.vn, 'Kode Warna': r.vc, Ada: r.ada, Diminta: r.min, Status: stDesc(r), Asal: r.src }));
+  const seq = seqMap();
+  const rows = filtered().sort((a, b) => seq[a.id] - seq[b.id]).map(r => ({ No: seq[r.id], Tanggal: ymd(r.ts), 'No Surat Jalan': r.sj || '', Produk: r.prod, Varian: r.vn, 'Kode Warna': r.vc, Ada: r.ada, Diminta: r.min, Status: stDesc(r), Asal: r.src }));
   if (!rows.length) return alert('Tidak ada data untuk diexport.');
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Purchase');
   XLSX.writeFile(wb, 'purchase-' + ymd(Date.now()) + '.xlsx');
 };
 $('#xPdf').onclick = () => {
   if (!window.jspdf) return alert('Library PDF gagal dimuat. Pastikan terhubung ke internet.');
-  const rows = filtered(); if (!rows.length) return alert('Tidak ada data untuk diexport.');
+  const seq = seqMap(), rows = filtered().sort((a, b) => seq[a.id] - seq[b.id]); if (!rows.length) return alert('Tidak ada data untuk diexport.');
   const doc = new jspdf.jsPDF({ orientation: 'landscape' });
   doc.setFontSize(14); doc.text('Laporan Purchase', 14, 14);
   doc.autoTable({
     startY: 20, headStyles: { fillColor: [74, 123, 208] },
     head: [['No', 'Tanggal', 'No. Surat Jalan', 'Produk', 'Varian', 'Ada / Diminta', 'Status', 'Asal']],
-    body: rows.map((r, i) => [i + 1, ymd(r.ts), r.sj || '-', r.prod, '', r.ada + ' / ' + r.min + ' pcs', stDesc(r), r.src]),
+    body: rows.map(r => [seq[r.id], ymd(r.ts), r.sj || '-', r.prod, '', r.ada + ' / ' + r.min + ' pcs', stDesc(r), r.src]),
     didDrawCell: d => {
       if (d.section === 'body' && d.column.index === 4) {
         const r = rows[d.row.index];
