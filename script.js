@@ -237,9 +237,9 @@ $('#tb').onclick = e => {
   const t = e.target;
   if (t.dataset.edit) openEdit(t.dataset.edit);
   if (t.dataset.del && confirm('Hapus data ini?')) { records = records.filter(r => r.id !== t.dataset.del); commit(); renderTable() }
-  if (t.classList.contains('thumb')) { $('#lb img').src = t.src; $('#lb').style.display = 'flex' }
+  if (t.classList.contains('thumb')) { $('#lb img').src = t.src; $('#lb').hidden = false }
 };
-$('#lb').onclick = () => $('#lb').style.display = 'none';
+$('#lb').onclick = () => $('#lb').hidden = true;
 
 /* ---------- edit (popup) ---------- */
 let eRec = null, eFoto, eList = [];
@@ -260,7 +260,7 @@ function openEdit(id) {
   $('#eDate').value = ymd(r.ts); $('#eSj').value = r.sj || ''; $('#eAda').value = r.ada; $('#eMin').value = r.min; $('#eSrc').value = r.src;
   $('#eFile').value = ''; const ph = photos[r.pid];
   $('#ePrev').src = ph || ''; $('#ePrev').style.display = ph ? 'block' : 'none';
-  msg('#eMsg', ''); $('#mdl').classList.add('open');
+  msg('#eMsg', ''); $('#mdl').hidden = false;
 }
 $('#eProd').onchange = () => fillEVar($('#eProd').value, '', '');
 $('#eVar').onchange = eSwatch;
@@ -269,7 +269,7 @@ $('#eFile').onchange = e => {
   if (f) compress(f, d => { eFoto = d; $('#ePrev').src = d; $('#ePrev').style.display = 'block' });
 };
 $('#eDelFoto').onclick = () => { eFoto = ''; $('#eFile').value = ''; $('#ePrev').style.display = 'none' };
-const closeEdit = () => { $('#mdl').classList.remove('open'); eRec = null };
+const closeEdit = () => { $('#mdl').hidden = true; eRec = null };
 $('#eCancel').onclick = closeEdit;
 $('#eSave').onclick = () => {
   const a = parseInt($('#eAda').value, 10), m = parseInt($('#eMin').value, 10), d = $('#eDate').value;
