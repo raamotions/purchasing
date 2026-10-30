@@ -32,7 +32,7 @@ const store = {
 };
 function setSync(s) {
   const e = $('#sync'); e.className = 'sync ' + s;
-  e.querySelector('span').textContent = { ok: 'Tersinkron', err: 'Gagal sinkron', loc: 'Mode lokal', wait: 'Menyambung...' }[s];
+  e.querySelector('span').textContent = { ok: 'Tersinkron', err: 'Gagal sinkron', loc: 'Mode lokal', wait: 'Menunggu server...' }[s];
 }
 function loadLocal() {
   products = store.get('pp_products', null) || [
@@ -56,7 +56,8 @@ function commit(ops = []) {
       const ref = db.collection(c).doc(k === 'del' ? v : v.id);
       k === 'del' ? b.delete(ref) : b.set(ref, v);
     });
-    b.commit().then(() => setSync('ok')).catch(e => failSync(e));
+    const t = setTimeout(() => failSync({ message: 'tidak ada respon dari server, data belum terkirim' }), 12000);
+    b.commit().then(() => { clearTimeout(t); setSync('ok') }).catch(e => { clearTimeout(t); failSync(e) });
   }
   return true;
 }
@@ -64,7 +65,7 @@ let failShown = false;
 function failSync(e) {
   setSync('err');
   if (failShown) return; failShown = true;
-  alert('Data GAGAL tersimpan/terbaca di Firebase (' + (e && (e.code || e.message)) + ').\nPastikan Firestore Database sudah dibuat dan Rules sudah di-Publish (allow read, write: if true).');
+  alert('Data GAGAL tersimpan/terbaca di Firebase (' + (e && (e.code || e.message)) + ').\nPeriksa koneksi internet, pastikan Firestore Database sudah dibuat dan Rules sudah di-Publish (allow read, write: if true).');
 }
 function refresh() {
   renderReqs(); renderProducts();
@@ -73,8 +74,8 @@ function refresh() {
 function startSync() {
   if (!FIREBASE_CONFIG || !window.firebase) { loadLocal(); setSync('loc'); refresh(); return }
   try {
-    firebase.initializeApp(FIREBASE_CONFIG); db = firebase.firestore(); setSync('wait');
-    const on = (c, fn) => db.collection(c).onSnapshot(s => { fn(s.docs.map(d => d.data())); setSync('ok'); refresh() }, e => failSync(e));
+    firebase.initializeApp(FIREBASE_CONFIG); db = firebase.firestore(); db.settings({ experimentalAutoDetectLongPolling: true, merge: true }); setSync('wait');
+    const on = (c, fn) => db.collection(c).onSnapshot(s => { fn(s.docs.map(d => d.data())); setSync(s.metadata.fromCache || s.metadata.hasPendingWrites ? 'wait' : 'ok'); refresh() }, e => failSync(e));
     on('products', a => products = a.sort((x, y) => x.name.localeCompare(y.name)));
     on('requests', a => reqs = a.sort((x, y) => y.ts - x.ts));
     on('records', a => records = a.sort((x, y) => y.ts - x.ts));
