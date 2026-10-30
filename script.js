@@ -79,7 +79,10 @@ async function diagnose() {
     const ref = db.collection('_diag').doc('ping');
     await Promise.race([ref.set({ t: Date.now() }), new Promise((_, no) => setTimeout(() => no({ code: 'timeout', message: 'server tidak merespon dalam 10 detik' }), 10000))]);
     await ref.get({ source: 'server' });
-    setSync('ok'); alert('BERHASIL: data benar-benar tersimpan di server Firebase dan bisa dibaca kembali.');
+    const n = {};
+    for (const c of ['products', 'requests', 'records']) n[c] = (await db.collection(c).get({ source: 'server' })).size;
+    setSync('ok');
+    alert('BERHASIL: koneksi ke server Firebase normal.\n\nIsi di SERVER saat ini:\n- Produk: ' + n.products + '\n- Pengajuan: ' + n.requests + '\n- Purchase: ' + n.records + '\n\nDi layar aplikasi:\n- Produk: ' + products.length + '\n- Pengajuan: ' + reqs.length + '\n- Purchase: ' + records.length);
   } catch (e) { setSync('err'); alert('GAGAL (' + (e.code || '-') + '): ' + (e.message || e) + '\n\n' + hint(e)) }
 }
 $('#sync').onclick = diagnose; $('#sync').title = 'Klik untuk tes koneksi Firebase';
@@ -91,8 +94,8 @@ function startSync() {
   if (!FIREBASE_CONFIG || !window.firebase) { loadLocal(); setSync('loc'); refresh(); return }
   try {
     firebase.initializeApp(FIREBASE_CONFIG); db = firebase.firestore(); db.settings({ experimentalAutoDetectLongPolling: true, merge: true }); setSync('wait');
-    const on = (c, fn) => db.collection(c).onSnapshot(s => { fn(s.docs.map(d => d.data())); setSync(s.metadata.fromCache || s.metadata.hasPendingWrites ? 'wait' : 'ok'); refresh() }, e => failSync(e));
-    on('products', a => products = a.sort((x, y) => x.name.localeCompare(y.name)));
+    const on = (c, fn) => db.collection(c).onSnapshot(s => { try { fn(s.docs.map(d => d.data())) } catch (e) { console.error(c, e) } setSync(s.metadata.fromCache || s.metadata.hasPendingWrites ? 'wait' : 'ok'); refresh() }, e => failSync(e));
+    on('products', a => products = a.sort((x, y) => String(x.name || '').localeCompare(String(y.name || ''))));
     on('requests', a => reqs = a.sort((x, y) => y.ts - x.ts));
     on('records', a => records = a.sort((x, y) => y.ts - x.ts));
     on('photos', a => { photos = {}; a.forEach(p => photos[p.id] = p.d) });
