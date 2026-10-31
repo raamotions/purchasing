@@ -450,7 +450,7 @@ function addBlock() {
       ${r.vc ? sw(r.vc, r.vn) : ''}
       <div class="inf">${r.vn ? '' : '<b>Satuan (tanpa varian)</b>'}
         <span>Diajukan <b>${r.min}</b> pcs · sudah ada ${r.ada} · <span class="tag">${esc(r.src)}</span> · Admin: <b>${esc(r.adm || '-')}</b></span></div>
-      <input type="number" min="0" max="${r.min - r.ada}" inputmode="numeric" placeholder="Ada">
+      <input type="number" min="0" max="${r.min - r.ada}" inputmode="numeric" placeholder="Ada (0 boleh)">
       <div class="st">-</div></div>`).join('')
       : '<div class="empty">Tidak ada pengajuan terbuka untuk produk ini.</div>';
   };
@@ -524,11 +524,12 @@ function resetInput() {
 $('#inSubmit').onclick = () => {
   const lines = [];
   blocks.forEach(b => b.el.querySelectorAll('.ln').forEach(ln => {
-    const r = reqs.find(x => x.id === ln.dataset.id);
-    const v = Math.min(parseInt(ln.querySelector('input').value, 10) || 0, r ? r.min - r.ada : 0);
-    if (r && dayWIB(r.ts) === dayWIB(Date.now()) && v > 0) lines.push([r, v]);
+    const r = reqs.find(x => x.id === ln.dataset.id), raw = ln.querySelector('input').value.trim();
+    if (raw === '') return; // kosong = dilewati; angka 0 tetap dicatat (barang tidak ada)
+    const v = Math.max(0, Math.min(parseInt(raw, 10) || 0, r ? r.min - r.ada : 0));
+    if (r && dayWIB(r.ts) === dayWIB(Date.now())) lines.push([r, v]);
   }));
-  if (!lines.length) return msg('#inMsg', 'Isi jumlah barang ada minimal pada satu produk/varian.');
+  if (!lines.length) return msg('#inMsg', 'Isi jumlah barang ada (boleh 0) minimal pada satu produk/varian.');
   const ts = Date.now(), sj = $('#sj').value.trim(), pid = photo ? uid() : '', ops = [];
   if (pid) { photos[pid] = photo; ops.push(['photos', 'set', { id: pid, d: photo }]) }
   lines.forEach(([r, v]) => {
