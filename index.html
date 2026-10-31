@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Purchasing Barang</title>
-<link rel="stylesheet" href="style.css?v=20">
+<link rel="stylesheet" href="style.css?v=21">
 </head>
 <body>
 
@@ -63,8 +63,8 @@
       <h3>Daftar Pengajuan</h3>
       <p class="hint">Bawaan: menampilkan pengajuan hari ini dan otomatis pindah ke hari baru setiap pukul 00.00 WIB. Ubah filter tanggal &amp; jam untuk melihat/export hari lain. Data penerimaan tetap tersimpan di menu Purchase.</p>
       <div class="exf">
-        <div><label>Dari tanggal &amp; jam</label><input type="datetime-local" id="xFrom"></div>
-        <div><label>Sampai tanggal &amp; jam</label><input type="datetime-local" id="xTo"></div>
+        <div><label>Dari tanggal &amp; jam</label><div class="dt"><input type="date" id="xFromD"><input class="tm24" id="xFromT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
+        <div><label>Sampai tanggal &amp; jam</label><div class="dt"><input type="date" id="xToD"><input class="tm24" id="xToT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
         <div><label>Nama Admin</label><select id="xAdm" data-adm="Semua"></select></div>
         <div><label>Asal</label><select id="xSrc" data-src="Semua"></select></div>
         <div><label>Produk</label><input id="xProd" placeholder="Cari produk" autocomplete="off"></div>
@@ -107,8 +107,8 @@
         <div class="pq"><label>Produk</label><input id="fqProd" placeholder="Cari produk"></div>
         <button class="btn ghost" id="fToggle" type="button">Filter ▾</button>
         <div class="xs">
-          <div class="wd"><label>Dari tanggal &amp; jam</label><input type="datetime-local" id="dFrom"></div>
-          <div class="wd"><label>Sampai tanggal &amp; jam</label><input type="datetime-local" id="dTo"></div>
+          <div class="wd"><label>Dari tanggal &amp; jam</label><div class="dt"><input type="date" id="dFromD"><input class="tm24" id="dFromT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
+          <div class="wd"><label>Sampai tanggal &amp; jam</label><div class="dt"><input type="date" id="dToD"><input class="tm24" id="dToT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
           <div><label>No. Surat Jalan</label><input id="fqSj" placeholder="Cari no. SJ"></div>
           <div><label>Varian</label><select id="fqVar"></select></div>
           <div><label>Asal</label><select id="fqSrc" data-src="Semua"></select></div>
@@ -160,7 +160,12 @@
   <h3>Edit Pengajuan</h3>
   <label>Produk</label><select id="rProd"></select>
   <label>Varian</label>
-  <div class="vsel"><span class="sw" id="rSw"></span><select id="rVar"></select></div>
+  <div class="vsel" id="rVsel"><span class="sw" id="rSw"></span><select id="rVar"></select></div>
+  <div id="rNew" hidden>
+    <div class="nv"><input id="rVarName" placeholder="KETIK WARNA, MIS. MERAH" autocomplete="off"><input type="color" id="rVarCol" value="#4a7bd0" title="Warna"></div>
+    <div class="hint2">Warna baru otomatis masuk ke database produk. Warna terisi otomatis dari nama.</div>
+  </div>
+  <button type="button" class="lnk" id="rToggle">+ Warna baru</button>
   <div class="row">
     <div><label>Ada (pcs)</label><input id="rAda" disabled></div>
     <div><label>Diminta (pcs)</label><input type="number" id="rMin" min="1" inputmode="numeric"></div>
@@ -176,7 +181,7 @@
   <h3>Edit Purchase</h3>
   <div class="row">
     <div><label>Tanggal</label><input type="date" id="eDate"></div>
-    <div><label>Jam</label><input type="time" id="eTime"></div>
+    <div><label>Jam</label><input class="tm24" id="eTime" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div>
   </div>
   <label>No. Surat Jalan</label><input id="eSj">
   <label>Produk</label><select id="eProd"></select>
@@ -214,6 +219,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="script.js?v=20"></script>
+<script src="script.js?v=21"></script>
 </body>
 </html>

@@ -11,6 +11,20 @@ const fmt = t => new Date(t).toLocaleDateString('id-ID', { day: '2-digit', month
 const tm = t => '<div class="tm">' + hm(t) + '</div>'; // jam di bawah tanggal
 const tsFmt = t => ymd(t).split('-').reverse().join('-') + ' ' + hm(t); // 31-10-2026 14:05 (untuk export)
 const dtv = (s, end) => s ? new Date(s).getTime() + (end ? 59999 : 0) : null; // nilai input datetime-local -> timestamp
+const T24 = /^([01]\d|2[0-3]):[0-5]\d$/; // jam 24 jam HH:MM
+const dtVal = (id, end) => { // gabungan kolom tanggal (id+'D') dan jam 24 jam (id+'T') -> 'YYYY-MM-DDTHH:MM'
+  const d = $(id + 'D').value; if (!d) return '';
+  const t = $(id + 'T').value.trim();
+  return d + 'T' + (T24.test(t) ? t : end ? '23:59' : '00:00');
+};
+function time24(el) { // kolom jam selalu format 24 jam (00:00 - 23:59), tidak tergantung pengaturan browser
+  el.addEventListener('input', () => { const d = el.value.replace(/\D/g, '').slice(0, 4); el.value = d.length > 2 ? d.slice(0, 2) + ':' + d.slice(2) : d });
+  el.addEventListener('blur', () => {
+    const d = el.value.replace(/\D/g, ''); if (!d) { el.value = ''; return }
+    const h = Math.min(+(d.length <= 2 ? d : d.slice(0, 2)), 23), m = Math.min(+(d.length <= 2 ? '0' : d.slice(2, 4).padEnd(2, '0')), 59);
+    el.value = p2(h) + ':' + p2(m); el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
 const fDT = s => s ? s.split('T')[0].split('-').reverse().join('-') + ' ' + (s.split('T')[1] || '') : '';
 const normName = s => String(s == null ? '' : s).trim().replace(/\s+/g, ' ').toUpperCase();
 function caps(el) { // kolom selalu HURUF KAPITAL
@@ -279,7 +293,7 @@ $('#pgTb').onclick = e => {
 };
 
 /* ---------- edit pengajuan (popup) ---------- */
-let rRec = null, rList = [];
+let rRec = null, rList = [], rAddNew = false;
 const rSwatch = () => { const v = rList[$('#rVar').value]; $('#rSw').style.background = v ? v.c : 'transparent' };
 function fillRVar(name, vn, vc) {
   const p = products.find(x => x.name === name);
@@ -295,8 +309,17 @@ function openREdit(id) {
   $('#rProd').innerHTML = names.map(n => `<option>${esc(n)}</option>`).join(''); $('#rProd').value = r.prod;
   fillRVar(r.prod, r.vn, r.vc);
   $('#rAda').value = r.ada; $('#rMin').value = r.min; $('#rSrc').value = r.src; $('#rAdm').value = r.adm || '';
+  rAddNew = false; $('#rVarName').value = ''; $('#rVarCol').value = '#4a7bd0'; rNewUI();
   msg('#rMsg', ''); $('#rmdl').hidden = false;
 }
+function rNewUI() { // isian warna baru <-> pilih dari daftar warna
+  $('#rNew').hidden = !rAddNew; $('#rVsel').hidden = rAddNew; $('#rToggle').textContent = rAddNew ? 'Pilih dari daftar warna' : '+ Warna baru';
+}
+$('#rToggle').onclick = () => { rAddNew = !rAddNew; rNewUI() };
+$('#rVarName').oninput = e => {
+  const s = e.target.selectionStart; e.target.value = e.target.value.toUpperCase(); e.target.setSelectionRange(s, s);
+  const c = toHex(e.target.value); if (c) $('#rVarCol').value = c;
+};
 const closeREdit = () => { $('#rmdl').hidden = true; rRec = null };
 $('#rProd').onchange = () => fillRVar($('#rProd').value, '', '');
 $('#rVar').onchange = rSwatch;
@@ -304,30 +327,38 @@ $('#rCancel').onclick = closeREdit;
 $('#rmdl').onclick = e => { if (e.target.id === 'rmdl') closeREdit() };
 $('#rSave').onclick = () => {
   const r = reqs.find(x => x.id === rRec.id) || rRec, m = parseInt($('#rMin').value, 10), name = $('#rProd').value;
-  const p = products.find(x => x.name === name), v = rList[$('#rVar').value];
+  const p = products.find(x => x.name === name); let v = rList[$('#rVar').value];
   if (!(m >= 1)) return msg('#rMsg', 'Isi jumlah diminta dengan angka.');
   if (m < r.ada) return msg('#rMsg', 'Jumlah diminta tidak boleh kurang dari barang yang sudah ada (' + r.ada + ').');
-  if (p && p.variants.length && !v) return msg('#rMsg', 'Pilih varian warna.');
+  if (!rAddNew && p && p.variants.length && !v) return msg('#rMsg', 'Pilih varian warna.');
   if (!$('#rSrc').value) return msg('#rMsg', 'Pilih asal barang.');
   if (!$('#rAdm').value) return msg('#rMsg', 'Pilih nama admin.');
+  const ops = [];
+  if (rAddNew) { // warna baru: masuk ke varian produk (database produk) kalau belum ada
+    const vt = normName($('#rVarName').value);
+    if (!vt) return msg('#rMsg', 'Ketik nama warna atau pilih dari daftar warna.');
+    if (!p) return msg('#rMsg', 'Produk tidak ada di database produk, warna baru tidak bisa ditambahkan.');
+    v = p.variants.find(x => normName(x.n) === vt);
+    if (!v) { v = { n: vt, c: $('#rVarCol').value }; p.variants.push(v); ops.push(['products', 'set', p]) }
+  }
   Object.assign(r, { pid: p ? p.id : r.pid, prod: name, vn: v ? v.n : '', vc: v ? v.c : '', min: m, src: $('#rSrc').value, adm: $('#rAdm').value });
-  const ops = [['requests', 'set', r]];
+  ops.push(['requests', 'set', r]);
   records.filter(x => x.rid === r.id).forEach(x => { Object.assign(x, { prod: r.prod, vn: r.vn, vc: r.vc, min: r.min, src: r.src, adm: r.adm }); ops.push(['records', 'set', x]) });
   if (!commit(ops)) return msg('#rMsg', 'Penyimpanan penuh.');
-  closeREdit(); renderReqs();
+  closeREdit(); renderReqs(); renderProducts();
 };
 
 /* ---------- export pengajuan ---------- */
 const SL = '\u00A0'.repeat(8) + '/ '; // kolom Ada dikosongkan, garis miring tetap ada
 const reqStat = r => r.ada >= r.min ? 'Selesai' : r.ada ? 'Sebagian' : 'Menunggu';
 function pgFiltered() { // dipakai oleh daftar di layar DAN export
-  const f = dtv($('#xFrom').value), t = dtv($('#xTo').value, true), s = $('#xSrc').value, a = $('#xAdm').value,
+  const f = dtv(dtVal('#xFrom')), t = dtv(dtVal('#xTo', true), true), s = $('#xSrc').value, a = $('#xAdm').value,
     q = $('#xProd').value.trim().toLowerCase(), st = $('#xSt').value;
   return reqs.filter(r => (f === null || r.ts >= f) && (t === null || r.ts <= t) && (!s || r.src === s) && (!a || r.adm === a) &&
     (!q || String(r.prod).toLowerCase().includes(q)) && (!st || reqStat(r) === st)).sort((a, b) => a.ts - b.ts);
 }
 function pgHead() {
-  const f = $('#xFrom').value, t = $('#xTo').value;
+  const f = dtVal('#xFrom'), t = dtVal('#xTo', true);
   const tgl = !f && !t ? 'Semua tanggal' : f && t ? fDT(f) + ' s/d ' + fDT(t) : f ? 'Mulai ' + fDT(f) : 'Sampai ' + fDT(t);
   return { title: 'Permintaan Pengajuan Barang', tgl: 'Tanggal & Jam Pengajuan: ' + tgl, asal: 'Asal Barang: ' + ($('#xSrc').value || 'Semua'), adm: 'Nama Admin: ' + ($('#xAdm').value || 'Semua') };
 }
@@ -335,11 +366,11 @@ $('#pgXls').onclick = () => {
   if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
   const H = pgHead(), rows = pgFiltered();
   if (!rows.length) return alert('Tidak ada pengajuan pada filter itu.');
-  const aoa = [[H.title], [H.tgl], [H.asal], [H.adm], [], ['No', 'Tanggal', 'Produk', 'Varian', 'Kode Warna', 'Ada / Diminta', 'Asal', 'Admin', 'Status']]
-    .concat(rows.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn, r.vc, SL + r.min + ' pcs', r.src, r.adm || '', '\u2610']));
+  const aoa = [[H.title], [H.tgl], [H.asal], [H.adm], [], ['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Admin', 'Status']]
+    .concat(rows.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', SL + r.min + ' pcs', r.src, r.adm || '', '\u2610']));
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!merges'] = [0, 1, 2, 3].map(r => ({ s: { r, c: 0 }, e: { r, c: 8 } }));
-  ws['!cols'] = [5, 17, 28, 14, 12, 18, 10, 10, 8].map(w => ({ wch: w }));
+  ws['!merges'] = [0, 1, 2, 3].map(r => ({ s: { r, c: 0 }, e: { r, c: 7 } }));
+  ws['!cols'] = [5, 17, 28, 16, 18, 10, 10, 8].map(w => ({ wch: w }));
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Pengajuan');
   XLSX.writeFile(wb, 'pengajuan-' + dayWIB(Date.now()) + '.xlsx');
 };
@@ -352,13 +383,9 @@ $('#pgPdf').onclick = () => {
   doc.autoTable({
     startY: 33, headStyles: { fillColor: [74, 123, 208] },
     head: [['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Admin', 'Status']],
-    body: rows.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, '', SL + r.min + ' pcs', r.src, r.adm || '-', '']),
+    body: rows.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', SL + r.min + ' pcs', r.src, r.adm || '-', '']),
     didDrawCell: d => {
       if (d.section !== 'body') return;
-      if (d.column.index === 3) {
-        const r = rows[d.row.index];
-        if (r.vc) { doc.setFillColor(r.vc); doc.circle(d.cell.x + 6, d.cell.y + d.cell.height / 2, 2.2, 'F') }
-      }
       if (d.column.index === 7) { // kotak centang kosong
         const s = 4.5; doc.setDrawColor(60); doc.setLineWidth(.3);
         doc.rect(d.cell.x + (d.cell.width - s) / 2, d.cell.y + (d.cell.height - s) / 2, s, s);
@@ -367,8 +394,8 @@ $('#pgPdf').onclick = () => {
   });
   doc.save('pengajuan-' + dayWIB(Date.now()) + '.pdf');
 };
-const PGF = ['#xFrom', '#xTo', '#xSrc', '#xAdm', '#xProd', '#xSt'];
-function setPgToday() { const d = dayWIB(Date.now()); $('#xFrom').value = d + 'T00:00'; $('#xTo').value = d + 'T23:59' }
+const PGF = ['#xFromD', '#xFromT', '#xToD', '#xToT', '#xSrc', '#xAdm', '#xProd', '#xSt'];
+function setPgToday() { const d = dayWIB(Date.now()); $('#xFromD').value = $('#xToD').value = d; $('#xFromT').value = '00:00'; $('#xToT').value = '23:59' }
 setPgToday();
 PGF.forEach(x => { $(x).addEventListener('input', renderReqs); $(x).addEventListener('change', renderReqs) });
 $('#xReset').onclick = () => {
@@ -490,9 +517,9 @@ $('#inSubmit').onclick = () => {
 };
 
 /* ---------- PURCHASE ---------- */
-const FIL = ['#dFrom', '#dTo', '#fqSj', '#fqProd', '#fqSrc', '#fqSt', '#fqVar', '#fqAdm'];
+const FIL = ['#dFromD', '#dFromT', '#dToD', '#dToT', '#fqSj', '#fqProd', '#fqSrc', '#fqSt', '#fqVar', '#fqAdm'];
 function filtered() {
-  const f = dtv($('#dFrom').value), t = dtv($('#dTo').value, true), j = $('#fqSj').value.toLowerCase(), q = $('#fqProd').value.toLowerCase(),
+  const f = dtv(dtVal('#dFrom')), t = dtv(dtVal('#dTo', true), true), j = $('#fqSj').value.toLowerCase(), q = $('#fqProd').value.toLowerCase(),
     s = $('#fqSrc').value, st = $('#fqSt').value, v = $('#fqVar').value, a = $('#fqAdm').value;
   return records.filter(r => (f === null || r.ts >= f) && (t === null || r.ts <= t) &&
     (!j || (r.sj || '').toLowerCase().includes(j)) && (!q || r.prod.toLowerCase().includes(q)) &&
@@ -568,6 +595,7 @@ $('#eCancel').onclick = closeEdit;
 $('#eSave').onclick = () => {
   const a = parseInt($('#eAda').value, 10), m = parseInt($('#eMin').value, 10), d = $('#eDate').value;
   if (!d) return msg('#eMsg', 'Isi tanggal.');
+  if ($('#eTime').value && !T24.test($('#eTime').value)) return msg('#eMsg', 'Isi jam dengan format 24 jam, mis. 14:30.');
   if (isNaN(a) || a < 0 || !(m >= 1)) return msg('#eMsg', 'Isi quantity dengan angka yang benar.');
   if (a > m) return msg('#eMsg', 'Barang ada tidak boleh melebihi barang diminta.');
   const r = records.find(x => x.id === eRec.id) || eRec, v = eList[$('#eVar').value], old = r.pid, ops = [];
@@ -595,7 +623,7 @@ const stDesc = r => r.ada === r.min ? 'Lengkap' : 'Kurang';
 $('#xXls').onclick = () => {
   if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
   const seq = seqMap();
-  const rows = filtered().sort((a, b) => seq[a.id] - seq[b.id]).map(r => ({ No: seq[r.id], Tanggal: ymd(r.ts), Jam: hm(r.ts), 'No Surat Jalan': r.sj || '', Produk: r.prod, Varian: r.vn, 'Kode Warna': r.vc, Ada: r.ada, Diminta: r.min, Status: stDesc(r), Asal: r.src, Admin: r.adm || '' }));
+  const rows = filtered().sort((a, b) => seq[a.id] - seq[b.id]).map(r => ({ No: seq[r.id], Tanggal: ymd(r.ts), Jam: hm(r.ts), 'No Surat Jalan': r.sj || '', Produk: r.prod, Varian: r.vn || '-', Ada: r.ada, Diminta: r.min, Status: stDesc(r), Asal: r.src, Admin: r.adm || '' }));
   if (!rows.length) return alert('Tidak ada data untuk diexport.');
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Purchase');
   XLSX.writeFile(wb, 'purchase-' + ymd(Date.now()) + '.xlsx');
@@ -608,13 +636,7 @@ $('#xPdf').onclick = () => {
   doc.autoTable({
     startY: 20, headStyles: { fillColor: [74, 123, 208] },
     head: [['No', 'Tanggal', 'No. Surat Jalan', 'Produk', 'Varian', 'Ada / Diminta', 'Status', 'Asal', 'Admin']],
-    body: rows.map(r => [seq[r.id], tsFmt(r.ts), r.sj || '-', r.prod, '', r.ada + ' / ' + r.min + ' pcs', stDesc(r), r.src, r.adm || '-']),
-    didDrawCell: d => {
-      if (d.section === 'body' && d.column.index === 4) {
-        const r = rows[d.row.index];
-        if (r.vc) { doc.setFillColor(r.vc); doc.circle(d.cell.x + 6, d.cell.y + d.cell.height / 2, 2.2, 'F') }
-      }
-    }
+    body: rows.map(r => [seq[r.id], tsFmt(r.ts), r.sj || '-', r.prod, r.vn || '-', r.ada + ' / ' + r.min + ' pcs', stDesc(r), r.src, r.adm || '-']),
   });
   doc.save('purchase-' + ymd(Date.now()) + '.pdf');
 };
@@ -722,12 +744,13 @@ $('#impFile').onchange = e => {
 
 /* ---------- mulai ---------- */
 [$('#pSearch'), $('#fqProd'), $('#fqSj'), $('#xProd')].forEach(addClear);
+$$('.tm24').forEach(time24);
 let curDay = dayWIB(Date.now());
 const dayCheck = () => {
   const d = dayWIB(Date.now());
   if (d !== curDay) { // ganti hari: filter tanggal yang masih di "hari kemarin" ikut pindah ke hari baru
-    if ($('#xFrom').value.slice(0, 10) === curDay) $('#xFrom').value = d + 'T00:00';
-    if ($('#xTo').value.slice(0, 10) === curDay) $('#xTo').value = d + 'T23:59';
+    if ($('#xFromD').value === curDay) $('#xFromD').value = d;
+    if ($('#xToD').value === curDay) $('#xToD').value = d;
     curDay = d; renderReqs(); refreshBlocks();
   }
 };
