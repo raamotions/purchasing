@@ -810,19 +810,29 @@ function sha256(str) { // hash password (SHA-256, JavaScript murni, sama di semu
   return H.map(v => (v >>> 0).toString(16).padStart(8, '0')).join('');
 }
 const pwHash = (u, p) => sha256('pp1:' + u + ':' + p);
+const withTimeout = (p, ms = 12000) => Promise.race([p, new Promise((_, no) => setTimeout(() => no({ code: 'timeout', message: 'server tidak merespon' }), ms))]);
 async function adminGet(u) {
-  if (db) { const s = await db.collection('admins').doc(u).get({ source: 'server' }); return s.exists ? s.data() : null }
+  if (db) { const s = await withTimeout(db.collection('admins').doc(u).get({ source: 'server' })); return s.exists ? s.data() : null }
   return store.get('pp_admins', {})[u] || null;
 }
 async function adminCreate(rec) {
-  if (db) {
-    await db.runTransaction(async t => { const ref = db.collection('admins').doc(rec.username); if ((await t.get(ref)).exists) throw new Error('exists'); t.set(ref, rec) });
+  if (db) { // tanpa transaction (transaction sering gagal di jaringan yang membatasi koneksi Firestore)
+    const ref = db.collection('admins').doc(rec.username);
+    if ((await withTimeout(ref.get({ source: 'server' }))).exists) throw new Error('exists');
+    await withTimeout(ref.set(rec));
   } else {
     const a = store.get('pp_admins', {}); if (a[rec.username]) throw new Error('exists');
     a[rec.username] = rec; store.set('pp_admins', a); admins.push(rec);
   }
 }
 const authMsg = (t, ok) => msg('#aMsg', t, ok);
+function authErr(e, base) { // tampilkan penyebab sebenarnya, bukan selalu "periksa internet"
+  const c = (e && e.code) || '';
+  if (c.includes('permission')) return base + ' Ditolak Rules Firestore: di Firebase Console > Firestore > Rules, izinkan koleksi "admins" (allow read, write: if true;) lalu Publish.';
+  if (c === 'timeout' || c.includes('unavailable')) return base + ' Server Firebase tidak merespon (cek internet, VPN/ad-blocker, atau Firestore Database belum dibuat).';
+  if (c.includes('not-found')) return base + ' Firestore Database belum dibuat di project Firebase.';
+  return base + ' Detail: ' + (c || (e && e.message) || 'tidak diketahui');
+}
 function authTab(t) {
   $$('.atabs button').forEach(b => b.classList.toggle('on', b.dataset.a === t));
   $('#fLogin').hidden = t !== 'in'; $('#fSignup').hidden = t !== 'up'; authMsg('');
@@ -848,7 +858,7 @@ $('#fLogin').onsubmit = async e => {
     const a = await adminGet(u);
     if (!a || a.pass !== pwHash(u, p)) return authMsg('Username atau password salah.');
     $('#lPass').value = ''; setMe({ username: a.username, name: a.name });
-  } catch (err) { authMsg('Tidak bisa terhubung ke server. Periksa internet lalu coba lagi.') }
+  } catch (err) { console.error('login', err); authMsg(authErr(err, 'Tidak bisa terhubung ke server.')) }
 };
 $('#fSignup').onsubmit = async e => {
   e.preventDefault();
@@ -859,7 +869,10 @@ $('#fSignup').onsubmit = async e => {
   try {
     await adminCreate({ username: u, name, pass: pwHash(u, p), ts: Date.now() });
     $('#sPass').value = ''; setMe({ username: u, name });
-  } catch (err) { authMsg(err && err.message === 'exists' ? 'Username sudah dipakai, pilih yang lain.' : 'Gagal mendaftar. Periksa koneksi internet.') }
+  } catch (err) {
+    console.error('signup', err);
+    authMsg(err && err.message === 'exists' ? 'Username sudah dipakai, pilih yang lain.' : authErr(err, 'Gagal mendaftar.'));
+  }
 };
 { const s = store.get('pp_session', null);
   if (s && s.username) me = { username: s.username, name: s.name };
