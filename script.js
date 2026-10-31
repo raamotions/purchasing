@@ -240,7 +240,7 @@ function pgRows() {
 }
 $('#pgXls').onclick = () => {
   if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
-  const rows = pgRows().map((r, i) => ({ No: i + 1, Tanggal: dayWIB(r.ts), Produk: r.prod, Varian: r.vn, 'Kode Warna': r.vc, Ada: r.ada, Diminta: r.min, Status: reqStat(r), Asal: r.src }));
+  const rows = pgRows().map((r, i) => ({ No: i + 1, Tanggal: dayWIB(r.ts), Produk: r.prod, Varian: r.vn, 'Kode Warna': r.vc, Ada: '', Diminta: r.min, Status: reqStat(r), Asal: r.src }));
   if (!rows.length) return alert('Tidak ada pengajuan pada rentang tanggal itu.');
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Pengajuan');
   XLSX.writeFile(wb, 'pengajuan-' + dayWIB(Date.now()) + '.xlsx');
@@ -252,8 +252,8 @@ $('#pgPdf').onclick = () => {
   doc.setFontSize(14); doc.text('Laporan Pengajuan Barang', 14, 14);
   doc.autoTable({
     startY: 20, headStyles: { fillColor: [74, 123, 208] },
-    head: [['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Status']],
-    body: rows.map((r, i) => [i + 1, dayWIB(r.ts), r.prod, '', r.ada + ' / ' + r.min + ' pcs', r.src, reqStat(r)]),
+    head: [['No', 'Tanggal', 'Produk', 'Varian', 'Ada', 'Diminta', 'Asal', 'Status']],
+    body: rows.map((r, i) => [i + 1, dayWIB(r.ts), r.prod, '', '', r.min + ' pcs', r.src, reqStat(r)]),
     didDrawCell: d => {
       if (d.section === 'body' && d.column.index === 3) {
         const r = rows[d.row.index];
@@ -460,14 +460,22 @@ $('#eSave').onclick = () => {
   if (isNaN(a) || a < 0 || !(m >= 1)) return msg('#eMsg', 'Isi quantity dengan angka yang benar.');
   if (a > m) return msg('#eMsg', 'Barang ada tidak boleh melebihi barang diminta.');
   const r = records.find(x => x.id === eRec.id) || eRec, v = eList[$('#eVar').value], old = r.pid, ops = [];
+  const sibs = records.filter(x => x.rid && x.rid === r.rid && x.id !== r.id), mx = Math.max(a, ...sibs.map(x => x.ada));
+  if (r.rid && m < mx) return msg('#eMsg', 'Diminta tidak boleh kurang dari barang ada pada penerimaan terkait (' + mx + ').');
   Object.assign(r, { ts: new Date(d + 'T' + hm(r.ts)).getTime(), sj: $('#eSj').value.trim(), prod: $('#eProd').value, vn: v ? v.n : '', vc: v ? v.c : '', ada: a, min: m, src: $('#eSrc').value });
+  const rq = r.rid && reqs.find(x => x.id === r.rid);
+  if (rq) { // sinkron ke form Pengajuan
+    const f = { prod: r.prod, vn: r.vn, vc: r.vc, min: r.min, src: r.src }, pp = products.find(x => x.name === r.prod);
+    Object.assign(rq, f, { ada: mx }); if (pp) rq.pid = pp.id; ops.push(['requests', 'set', rq]);
+    sibs.forEach(x => { Object.assign(x, f); ops.push(['records', 'set', x]) });
+  }
   if (eFoto !== undefined) {
     if (eFoto) { r.pid = uid(); photos[r.pid] = eFoto; ops.push(['photos', 'set', { id: r.pid, d: eFoto }]) } else r.pid = '';
   }
   ops.push(['records', 'set', r]);
   if (old && old !== r.pid && !records.some(x => x.pid === old)) { ops.push(['photos', 'del', old]); delete photos[old] }
   if (!commit(ops)) return msg('#eMsg', 'Penyimpanan penuh. Coba foto yang lebih kecil.');
-  closeEdit(); renderTable();
+  closeEdit(); renderTable(); renderReqs();
 };
 $('#mdl').onclick = e => { if (e.target.id === 'mdl') closeEdit() };
 
