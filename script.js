@@ -171,11 +171,20 @@ $('#pgSubmit').onclick = () => {
   const m = parseInt($('#pgMin').value, 10);
   if (!(m >= 1)) return msg('#pgMsg', 'Isi jumlah barang diminta (angka).');
   if (!$('#pgSrc').value) return msg('#pgMsg', 'Pilih asal barang.');
-  const q = { id: uid(), ts: Date.now(), pid: pgProd.id, prod: pgProd.name, vn: pgVar ? pgVar.n : '', vc: pgVar ? pgVar.c : '', min: m, ada: 0, src: $('#pgSrc').value };
-  reqs.unshift(q);
-  if (!commit([['requests', 'set', q]])) return msg('#pgMsg', 'Penyimpanan penuh.');
+  const vn = pgVar ? pgVar.n : '', vc = pgVar ? pgVar.c : '', src = $('#pgSrc').value;
+  // produk + warna + asal yang sama (hari ini) digabung, jumlah diminta dijumlahkan
+  const ex = todayReqs().find(r => String(r.pid) === String(pgProd.id) && r.vn === vn && r.vc === vc && r.src === src);
+  let ops;
+  if (ex) {
+    ex.min += m; ops = [['requests', 'set', ex]];
+    records.filter(x => x.rid === ex.id).forEach(x => { x.min = ex.min; ops.push(['records', 'set', x]) });
+  } else {
+    const q = { id: uid(), ts: Date.now(), pid: pgProd.id, prod: pgProd.name, vn, vc, min: m, ada: 0, src };
+    reqs.unshift(q); ops = [['requests', 'set', q]];
+  }
+  if (!commit(ops)) return msg('#pgMsg', 'Penyimpanan penuh.');
   pgSearch.reset(); $('#pgMin').value = ''; $('#pgSrc').value = '';
-  msg('#pgMsg', 'Pengajuan tersimpan.', true); renderReqs();
+  msg('#pgMsg', ex ? 'Digabung dengan pengajuan yang sama. Total diminta: ' + ex.min + ' pcs.' : 'Pengajuan tersimpan.', true); renderReqs();
 };
 const todayReqs = () => reqs.filter(r => dayWIB(r.ts) === dayWIB(Date.now()));
 function renderReqs() {
