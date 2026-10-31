@@ -582,10 +582,13 @@ $('#saveP').onclick = () => {
   $('#pName').value = ''; $('#vBox').innerHTML = ''; msg('#pMsg', 'Produk tersimpan.', true); renderProducts();
 };
 function renderProducts() {
-  $('#pList').innerHTML = '<label>Daftar Produk (' + products.length + ')</label>' + (products.length ? products.map(p => `<div class="pl">
+  const q = $('#pSearch').value.trim().toLowerCase();
+  const L = products.filter(p => !q || p.name.toLowerCase().includes(q) || p.variants.some(v => v.n.toLowerCase().includes(q)));
+  $('#pList').innerHTML = '<label>Daftar Produk (' + (q ? L.length + ' dari ' : '') + products.length + ')</label>' + (L.length ? L.map(p => `<div class="pl">
     <div><b>${esc(p.name)}</b><div style="margin-top:6px">${p.variants.length ? p.variants.map(v => sw(v.c, v.n)).join(' ') : '<span style="color:var(--mute);font-size:13px">Tanpa varian</span>'}</div></div>
-    <button class="btn ghost sm" data-p="${p.id}">Hapus</button></div>`).join('') : '<div class="empty">Belum ada produk.</div>');
+    <button class="btn ghost sm" data-p="${p.id}">Hapus</button></div>`).join('') : '<div class="empty">' + (products.length ? 'Produk tidak ditemukan.' : 'Belum ada produk.') + '</div>');
 }
+$('#pSearch').oninput = renderProducts;
 $('#pList').onclick = e => {
   const id = e.target.dataset.p;
   if (!id || !confirm('Hapus produk ini? Data pengajuan dan purchase lama tetap tersimpan.')) return;
