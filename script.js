@@ -119,11 +119,23 @@ $$('select[data-src]').forEach(s => {
   s.innerHTML = `<option value="">${s.dataset.src}</option>` + SRC.map(x => `<option>${x}</option>`).join('');
 });
 
+/* ---------- tombol x (hapus teks) pada kolom pencarian ---------- */
+function addClear(inp) {
+  const w = document.createElement('span'); w.className = 'clrw';
+  inp.parentNode.insertBefore(w, inp); w.appendChild(inp);
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'clrx'; b.textContent = '×'; b.hidden = !inp.value;
+  b.setAttribute('aria-label', 'Hapus teks'); w.appendChild(b);
+  const upd = inp._upd = () => { b.hidden = !inp.value };
+  inp.addEventListener('input', upd);
+  b.onclick = () => { inp.value = ''; inp.dispatchEvent(new Event('input', { bubbles: true })); inp.focus() };
+  return upd;
+}
+
 /* ---------- komponen: pencarian produk ---------- */
 function psearch(box, opts, onPick, onText) { // onText: aktifkan mode ketik produk baru (HURUF KAPITAL)
   box.classList.add('pop');
   box.innerHTML = '<input placeholder="Cari produk..." autocomplete="off"><div class="list sug"></div>';
-  const i = box.querySelector('input'), l = box.querySelector('.sug');
+  const i = box.querySelector('input'), l = box.querySelector('.sug'), upd = addClear(i);
   const show = () => {
     const q = i.value.trim().toLowerCase();
     const m = opts().filter(p => p.name.toLowerCase().includes(q));
@@ -137,13 +149,22 @@ function psearch(box, opts, onPick, onText) { // onText: aktifkan mode ketik pro
     pick = null; onPick(null); if (onText) onText(i.value.trim()); show();
   };
   i.onfocus = show;
+  i.enterKeyHint = 'next';
+  l.addEventListener('mousedown', e => e.preventDefault()); // memilih saran tidak menghilangkan fokus
+  i.addEventListener('blur', () => setTimeout(() => l.classList.remove('open'), 150)); // daftar tertutup saat pindah kolom
+  i.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault(); l.classList.remove('open');
+    const nx = box.dataset.next && $(box.dataset.next);
+    nx && !nx.closest('[hidden]') ? nx.focus() : i.blur();
+  });
   l.onclick = e => {
     const id = e.target.dataset.id; if (!id) return;
     pick = opts().find(x => String(x.id) === id);
-    i.value = pick.name; l.classList.remove('open'); onPick(pick);
+    i.value = pick.name; upd(); l.classList.remove('open'); onPick(pick);
   };
   document.addEventListener('click', e => { if (!box.contains(e.target)) l.classList.remove('open') });
-  return { get: () => pick, text: () => i.value.trim(), reset() { i.value = ''; pick = null; onPick(null) } };
+  return { get: () => pick, text: () => i.value.trim(), reset() { i.value = ''; upd(); pick = null; onPick(null) } };
 }
 
 /* ---------- PENGAJUAN ---------- */
@@ -153,10 +174,12 @@ const pgSearch = psearch($('#pgSearch'), () => products, p => { pgProd = p; pgVa
   const p = products.find(x => x.name.toUpperCase() === t.toUpperCase());
   pgProd = p || null; pgVar = null; pgNewUI(); pgVarUI();
 });
+$('#pgSearch').dataset.next = '#pgVarName';
 function pgNewUI() { // produk tidak ada di database: tampilkan isian warna manual
   pgNew = !pgProd && pgSearch.text() !== '';
   $('#pgNew').hidden = !pgNew; $('#pgVarWrap').hidden = pgNew;
 }
+$('#pgVarName').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('#pgMin').focus() } });
 $('#pgVarName').oninput = e => {
   const s = e.target.selectionStart; e.target.value = e.target.value.toUpperCase(); e.target.setSelectionRange(s, s);
   const c = toHex(e.target.value); if (c) $('#pgVarCol').value = c; // MERAH -> warna merah otomatis
@@ -468,7 +491,7 @@ function renderTable() {
 $('#grp').addEventListener('click', e => { const s = e.target.closest('summary'); if (s) { const d = s.parentElement; openState[d.dataset.k] = !d.open } });
 FIL.forEach(s => $(s).oninput = renderTable);
 $('#fToggle').onclick = () => $('#fl').classList.toggle('open');
-$('#reset').onclick = () => { FIL.forEach(s => $(s).value = ''); renderTable() };
+$('#reset').onclick = () => { FIL.forEach(s => $(s).value = ''); [$('#fqProd'), $('#fqSj')].forEach(i => i._upd && i._upd()); renderTable() };
 $('#grp').onclick = e => {
   const t = e.target;
   if (t.dataset.edit) openEdit(t.dataset.edit);
@@ -640,6 +663,7 @@ $('#impFile').onchange = e => {
 };
 
 /* ---------- mulai ---------- */
+[$('#pSearch'), $('#fqProd'), $('#fqSj')].forEach(addClear);
 let curDay = dayWIB(Date.now());
 const dayCheck = () => { const d = dayWIB(Date.now()); if (d !== curDay) { curDay = d; renderReqs(); refreshBlocks() } };
 setInterval(dayCheck, 30000); document.addEventListener('visibilitychange', dayCheck);
