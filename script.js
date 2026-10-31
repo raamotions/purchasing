@@ -179,7 +179,7 @@ $('#pgSubmit').onclick = () => {
 };
 const todayReqs = () => reqs.filter(r => dayWIB(r.ts) === dayWIB(Date.now()));
 function renderReqs() {
-  const L = todayReqs().sort((a, b) => a.ts - b.ts);
+  const L = todayReqs().filter(r => !$('#xSrc').value || r.src === $('#xSrc').value).sort((a, b) => a.ts - b.ts);
   $('#pgTb').innerHTML = L.length ? L.map((r, n) => `<tr>
     <td>${n + 1}</td><td>${fmt(r.ts)}</td><td>${esc(r.prod)}</td><td>${sw(r.vc, r.vn)}</td>
     <td>${r.ada} / ${r.min} pcs</td><td><span class="tag">${esc(r.src)}</span></td>
@@ -237,34 +237,53 @@ const SL = '\u00A0'.repeat(8) + '/ '; // kolom Ada dikosongkan, garis miring tet
 const reqStat = r => r.ada >= r.min ? 'Selesai' : r.ada ? 'Sebagian' : 'Menunggu';
 function pgRows() {
   const f = $('#xFrom').value, t = $('#xTo').value;
-  return reqs.filter(r => (!f || dayWIB(r.ts) >= f) && (!t || dayWIB(r.ts) <= t)).sort((a, b) => a.ts - b.ts);
+  const s = $('#xSrc').value;
+  return reqs.filter(r => (!f || dayWIB(r.ts) >= f) && (!t || dayWIB(r.ts) <= t) && (!s || r.src === s)).sort((a, b) => a.ts - b.ts);
+}
+const fD = s => s ? s.split('-').reverse().join('-') : '';
+function pgHead() {
+  const f = $('#xFrom').value, t = $('#xTo').value, s = $('#xSrc').value;
+  const tgl = !f && !t ? 'Semua tanggal' : f && t ? (f === t ? fD(f) : fD(f) + ' s/d ' + fD(t)) : f ? 'Mulai ' + fD(f) : 'Sampai ' + fD(t);
+  return { title: 'Permintaan Pengajuan Barang', tgl: 'Tanggal Pengajuan: ' + tgl, asal: 'Asal Barang: ' + (s || 'Semua') };
 }
 $('#pgXls').onclick = () => {
   if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
-  const rows = pgRows().map((r, i) => ({ No: i + 1, Tanggal: dayWIB(r.ts), Produk: r.prod, Varian: r.vn, 'Kode Warna': r.vc, 'Ada / Diminta': SL + r.min + ' pcs', Status: reqStat(r), Asal: r.src }));
-  if (!rows.length) return alert('Tidak ada pengajuan pada rentang tanggal itu.');
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Pengajuan');
+  const H = pgHead(), rows = pgRows();
+  if (!rows.length) return alert('Tidak ada pengajuan pada filter itu.');
+  const aoa = [[H.title], [H.tgl], [H.asal], [], ['No', 'Tanggal', 'Produk', 'Varian', 'Kode Warna', 'Ada / Diminta', 'Asal', 'Status']]
+    .concat(rows.map((r, i) => [i + 1, fD(dayWIB(r.ts)), r.prod, r.vn, r.vc, SL + r.min + ' pcs', r.src, '\u2610']));
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges'] = [0, 1, 2].map(r => ({ s: { r, c: 0 }, e: { r, c: 7 } }));
+  ws['!cols'] = [5, 12, 28, 14, 12, 18, 10, 8].map(w => ({ wch: w }));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Pengajuan');
   XLSX.writeFile(wb, 'pengajuan-' + dayWIB(Date.now()) + '.xlsx');
 };
 $('#pgPdf').onclick = () => {
   if (!window.jspdf) return alert('Library PDF gagal dimuat. Pastikan terhubung ke internet.');
-  const rows = pgRows(); if (!rows.length) return alert('Tidak ada pengajuan pada rentang tanggal itu.');
+  const H = pgHead(), rows = pgRows(); if (!rows.length) return alert('Tidak ada pengajuan pada filter itu.');
   const doc = new jspdf.jsPDF({ orientation: 'landscape' });
-  doc.setFontSize(14); doc.text('Laporan Pengajuan Barang', 14, 14);
+  doc.setFontSize(16); doc.text(H.title, 14, 15);
+  doc.setFontSize(10); doc.text(H.tgl, 14, 22); doc.text(H.asal, 14, 28);
   doc.autoTable({
-    startY: 20, headStyles: { fillColor: [74, 123, 208] },
+    startY: 33, headStyles: { fillColor: [74, 123, 208] },
     head: [['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Status']],
-    body: rows.map((r, i) => [i + 1, dayWIB(r.ts), r.prod, '', SL + r.min + ' pcs', r.src, reqStat(r)]),
+    body: rows.map((r, i) => [i + 1, fD(dayWIB(r.ts)), r.prod, '', SL + r.min + ' pcs', r.src, '']),
     didDrawCell: d => {
-      if (d.section === 'body' && d.column.index === 3) {
+      if (d.section !== 'body') return;
+      if (d.column.index === 3) {
         const r = rows[d.row.index];
         if (r.vc) { doc.setFillColor(r.vc); doc.circle(d.cell.x + 6, d.cell.y + d.cell.height / 2, 2.2, 'F') }
+      }
+      if (d.column.index === 6) { // kotak centang kosong
+        const s = 4.5; doc.setDrawColor(60); doc.setLineWidth(.3);
+        doc.rect(d.cell.x + (d.cell.width - s) / 2, d.cell.y + (d.cell.height - s) / 2, s, s);
       }
     }
   });
   doc.save('pengajuan-' + dayWIB(Date.now()) + '.pdf');
 };
 $('#xFrom').value = $('#xTo').value = dayWIB(Date.now());
+$('#xSrc').onchange = renderReqs;
 
 /* ---------- INPUT ---------- */
 let blocks = [], photo = '';
