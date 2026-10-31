@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Purchasing Barang</title>
-<link rel="stylesheet" href="style.css?v=17">
+<link rel="stylesheet" href="style.css?v=19">
 </head>
 <body>
 
@@ -43,8 +43,9 @@
           </div>
           <div id="pgNew" hidden>
             <div class="nv"><input id="pgVarName" placeholder="KETIK WARNA, MIS. MERAH" autocomplete="off"><input type="color" id="pgVarCol" value="#4a7bd0" title="Warna"></div>
-            <div class="hint2">Produk baru otomatis masuk ke database produk. Warna terisi otomatis dari nama.</div>
+            <div class="hint2">Produk atau warna baru otomatis masuk ke database produk. Warna terisi otomatis dari nama.</div>
           </div>
+          <button type="button" class="lnk" id="pgToggle" hidden>+ Warna baru</button>
         </div>
         <div class="f"><label>Quantity (pcs): ada / diminta</label>
           <div class="row">
@@ -142,6 +143,7 @@
     </div>
     <div class="card">
       <h3>Daftar Produk</h3>
+      <button class="btn ghost sm" id="pFix" type="button" style="margin-top:8px">Rapikan &amp; gabungkan produk lama</button>
       <input id="pSearch" placeholder="Cari produk atau warna di daftar..." autocomplete="off" style="margin-top:10px">
       <div id="pList"></div>
     </div>
@@ -202,6 +204,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="script.js?v=18"></script>
+<script src="script.js?v=19"></script>
 </body>
 </html>

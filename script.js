@@ -7,6 +7,11 @@ const p2 = n => String(n).padStart(2, '0');
 const ymd = t => { const d = new Date(t); return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()) };
 const hm = t => p2(new Date(t).getHours()) + ':' + p2(new Date(t).getMinutes());
 const fmt = t => new Date(t).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+const normName = s => String(s == null ? '' : s).trim().replace(/\s+/g, ' ').toUpperCase();
+function caps(el) { // kolom selalu HURUF KAPITAL
+  el.style.textTransform = 'uppercase';
+  el.addEventListener('input', () => { const s = el.selectionStart; el.value = el.value.toUpperCase(); try { el.setSelectionRange(s, s) } catch (e) { } });
+}
 const dayWIB = t => new Date(t).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
 const BLN = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 const stat = (a, m) => a === m ? '<b class="okc">✓</b>' : '<b class="badc">✕</b>';
@@ -169,16 +174,19 @@ function psearch(box, opts, onPick, onText) { // onText: aktifkan mode ketik pro
 
 /* ---------- PENGAJUAN ---------- */
 let pgProd = null, pgVar = null;
-let pgNew = false;
-const pgSearch = psearch($('#pgSearch'), () => products, p => { pgProd = p; pgVar = null; pgNewUI(); pgVarUI() }, t => {
-  const p = products.find(x => x.name.toUpperCase() === t.toUpperCase());
-  pgProd = p || null; pgVar = null; pgNewUI(); pgVarUI();
+let pgNew = false, pgAdd = false;
+const pgSearch = psearch($('#pgSearch'), () => products, p => { pgProd = p; pgVar = null; pgAdd = false; pgNewUI(); pgVarUI() }, t => {
+  const p = products.find(x => normName(x.name) === normName(t));
+  pgProd = p || null; pgVar = null; pgAdd = false; pgNewUI(); pgVarUI();
 });
 $('#pgSearch').dataset.next = '#pgVarName';
-function pgNewUI() { // produk tidak ada di database: tampilkan isian warna manual
-  pgNew = !pgProd && pgSearch.text() !== '';
+function pgNewUI() { // isian warna manual: untuk produk baru, atau varian baru pada produk yang sudah ada
+  if (!pgProd) pgAdd = false;
+  pgNew = (!pgProd && pgSearch.text() !== '') || (!!pgProd && pgAdd);
   $('#pgNew').hidden = !pgNew; $('#pgVarWrap').hidden = pgNew;
+  $('#pgToggle').hidden = !pgProd; $('#pgToggle').textContent = pgAdd ? 'Pilih dari daftar warna' : '+ Warna baru';
 }
+$('#pgToggle').onclick = () => { pgAdd = !pgAdd; pgVar = null; pgNewUI(); pgVarUI() };
 $('#pgVarName').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('#pgMin').focus() } });
 $('#pgVarName').oninput = e => {
   const s = e.target.selectionStart; e.target.value = e.target.value.toUpperCase(); e.target.setSelectionRange(s, s);
@@ -205,20 +213,28 @@ $('#pgVarList').onclick = e => {
 document.addEventListener('click', e => { if (!e.target.closest('#pgVar,#pgVarList')) $('#pgVarList').classList.remove('open') });
 
 $('#pgSubmit').onclick = () => {
-  const typed = pgSearch.text().toUpperCase();
+  const typed = normName(pgSearch.text());
   let prod = pgProd, vr = pgVar;
   if (!prod && !typed) return msg('#pgMsg', 'Pilih produk dari hasil pencarian atau ketik nama produk baru.');
-  if (prod && prod.variants.length && !vr) return msg('#pgMsg', 'Pilih varian warna.');
+  if (prod && prod.variants.length && !pgAdd && !vr) return msg('#pgMsg', 'Pilih varian warna.');
   const m = parseInt($('#pgMin').value, 10), src = $('#pgSrc').value;
   if (!(m >= 1)) return msg('#pgMsg', 'Isi jumlah barang diminta (angka).');
   if (!src) return msg('#pgMsg', 'Pilih asal barang.');
-  const ops = []; let np = null;
+  const ops = []; let np = null, nvAdded = null;
   if (!prod) { // produk baru: langsung masuk ke database produk
-    const vt = $('#pgVarName').value.trim().toUpperCase();
-    vr = vt ? { n: vt, c: $('#pgVarCol').value } : null;
-    np = prod = { id: uid(), name: typed, variants: vr ? [vr] : [] };
-    products.push(np); ops.push(['products', 'set', np]);
+    np = prod = { id: uid(), name: typed, variants: [] }; products.push(np);
   }
+  if (pgNew) { // warna diketik: pakai varian yang sama jika sudah ada, kalau belum tambahkan ke produk yang sama
+    const vt = normName($('#pgVarName').value);
+    if (vt) {
+      vr = prod.variants.find(v => normName(v.n) === vt);
+      if (!vr) { vr = { n: vt, c: $('#pgVarCol').value }; prod.variants.push(vr); nvAdded = vt }
+    } else if (prod.variants.length) {
+      if (np) products.pop();
+      return msg('#pgMsg', 'Ketik nama warna atau pilih dari daftar warna.');
+    }
+  }
+  if (np || nvAdded) ops.push(['products', 'set', prod]);
   const vn = vr ? vr.n : '', vc = vr ? vr.c : '';
   // produk + warna + asal yang sama (hari ini) digabung, jumlah diminta dijumlahkan
   const ex = np ? null : todayReqs().find(r => String(r.pid) === String(prod.id) && r.vn === vn && r.vc === vc && r.src === src);
@@ -231,7 +247,9 @@ $('#pgSubmit').onclick = () => {
   }
   if (!commit(ops)) return msg('#pgMsg', 'Penyimpanan penuh.');
   pgSearch.reset(); $('#pgMin').value = ''; $('#pgSrc').value = ''; $('#pgVarName').value = ''; $('#pgVarCol').value = '#4a7bd0';
-  msg('#pgMsg', ex ? 'Digabung dengan pengajuan yang sama. Total diminta: ' + ex.min + ' pcs.' : np ? 'Produk baru "' + np.name + '" masuk ke database produk, pengajuan tersimpan.' : 'Pengajuan tersimpan.', true);
+  msg('#pgMsg', ex ? 'Digabung dengan pengajuan yang sama. Total diminta: ' + ex.min + ' pcs.'
+    : np ? 'Produk baru "' + np.name + '" masuk ke database produk, pengajuan tersimpan.'
+    : nvAdded ? 'Varian "' + nvAdded + '" ditambahkan ke produk ' + prod.name + ', pengajuan tersimpan.' : 'Pengajuan tersimpan.', true);
   renderReqs(); renderProducts();
 };
 const todayReqs = () => reqs.filter(r => dayWIB(r.ts) === dayWIB(Date.now()));
@@ -589,20 +607,25 @@ $('#xPdf').onclick = () => {
 function addVRow(n = '', c = '#4a7bd0') {
   const d = document.createElement('div'); d.className = 'vrow';
   d.innerHTML = `<input type="color" value="${c}"><input placeholder="Nama warna (mis. Biru)" value="${esc(n)}"><button class="btn ghost sm" type="button">Hapus</button>`;
-  d.querySelector('button').onclick = () => d.remove(); $('#vBox').appendChild(d);
+  d.querySelector('button').onclick = () => d.remove(); caps(d.querySelector('input:not([type=color])')); $('#vBox').appendChild(d);
 }
 $('#addV').onclick = () => addVRow();
 $('#saveP').onclick = () => {
-  const name = $('#pName').value.trim();
+  const name = normName($('#pName').value);
   if (!name) return msg('#pMsg', 'Isi nama produk.');
-  if (products.some(p => p.name.toLowerCase() === name.toLowerCase())) return msg('#pMsg', 'Produk dengan nama itu sudah ada.');
   const variants = [...$$('.vrow')].map(r => {
     const c = r.querySelector('input[type=color]').value;
-    return { c, n: r.querySelector('input:not([type=color])').value.trim() || c };
+    return { c, n: normName(r.querySelector('input:not([type=color])').value) || c.toUpperCase() };
   });
-  const pr = { id: uid(), name, variants }; products.push(pr);
-  if (!commit([['products', 'set', pr]])) return msg('#pMsg', 'Penyimpanan penuh.');
-  $('#pName').value = ''; $('#vBox').innerHTML = ''; msg('#pMsg', 'Produk tersimpan.', true); renderProducts();
+  const ex = products.find(p => normName(p.name) === name);
+  const p = ex || { id: uid(), name, variants: [] };
+  let added = 0;
+  variants.forEach(v => { if (!p.variants.some(x => normName(x.n) === normName(v.n))) { p.variants.push(v); added++ } });
+  if (ex && !added) return msg('#pMsg', 'Produk sudah ada dan tidak ada varian baru untuk ditambahkan.');
+  if (!ex) products.push(p);
+  if (!commit([['products', 'set', p]])) return msg('#pMsg', 'Penyimpanan penuh.');
+  $('#pName').value = ''; $('#vBox').innerHTML = '';
+  msg('#pMsg', ex ? 'Digabung ke produk yang sama: ' + added + ' varian ditambahkan.' : 'Produk tersimpan.', true); renderProducts();
 };
 function renderProducts() {
   const q = $('#pSearch').value.trim().toLowerCase();
@@ -612,6 +635,25 @@ function renderProducts() {
     <button class="btn ghost sm" data-p="${p.id}">Hapus</button></div>`).join('') : '<div class="empty">' + (products.length ? 'Produk tidak ditemukan.' : 'Belum ada produk.') + '</div>');
 }
 $('#pSearch').oninput = renderProducts;
+caps($('#pSearch')); caps($('#pName'));
+$('#pFix').onclick = () => {
+  if (!confirm('Seragamkan semua nama produk & varian menjadi HURUF KAPITAL dan gabungkan produk yang namanya sama persis? Pengajuan dan Purchase lama ikut diseragamkan.')) return;
+  const keep = {}, idMap = {}, out = [], ops = [];
+  products.forEach(p => {
+    const key = normName(p.name);
+    const k = keep[key] || (keep[key] = { id: p.id, name: key, variants: [] });
+    if (k.id === p.id && !out.includes(k)) out.push(k);
+    idMap[p.id] = k.id;
+    (p.variants || []).forEach(v => { const vn = normName(v.n); if (!k.variants.some(x => x.n === vn)) k.variants.push({ n: vn, c: v.c }) });
+  });
+  const lost = products.length - out.length;
+  products.forEach(p => { if (idMap[p.id] !== p.id) ops.push(['products', 'del', p.id]) });
+  out.forEach(k => ops.push(['products', 'set', k]));
+  reqs.forEach(r => { r.pid = idMap[r.pid] || r.pid; r.prod = normName(r.prod); r.vn = normName(r.vn); ops.push(['requests', 'set', r]) });
+  records.forEach(r => { r.prod = normName(r.prod); r.vn = normName(r.vn); ops.push(['records', 'set', r]) });
+  products = out; commit(ops); renderProducts(); renderReqs();
+  alert('Selesai. ' + lost + ' produk dobel digabung, semua nama menjadi huruf kapital.');
+};
 $('#pList').onclick = e => {
   const id = e.target.dataset.p;
   if (!id || !confirm('Hapus produk ini? Data pengajuan dan purchase lama tetap tersimpan.')) return;
@@ -642,16 +684,16 @@ $('#impFile').onchange = e => {
       let np = 0, nv = 0, bad = 0; const touched = new Set();
       rows.forEach(row => {
         const k = {}; Object.keys(row).forEach(x => k[x.trim().toLowerCase()] = row[x]);
-        const name = String(k.produk || k['nama produk'] || k.nama || '').trim();
+        const name = normName(k.produk || k['nama produk'] || k.nama || '');
         if (!name) { bad++; return }
-        let p = products.find(x => x.name.toLowerCase() === name.toLowerCase());
+        let p = products.find(x => normName(x.name) === name);
         if (!p) { p = { id: uid(), name, variants: [] }; products.push(p); np++ }
         touched.add(p);
         const vn = String(k.varian || '').trim(), col = String(k.warna || '').trim();
         if (!vn && !col) return;
-        const c = toHex(col || vn), nm = vn || col;
+        const c = toHex(col || vn), nm = normName(vn || col);
         if (!c) { bad++; return }
-        if (!p.variants.some(v => v.n.toLowerCase() === nm.toLowerCase())) { p.variants.push({ n: nm, c }); nv++ }
+        if (!p.variants.some(v => normName(v.n) === nm)) { p.variants.push({ n: nm, c }); nv++ }
       });
       if (!commit([...touched].map(p => ['products', 'set', p]))) return msg('#impMsg', 'Penyimpanan penuh.');
       renderProducts();
