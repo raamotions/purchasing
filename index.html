@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Purchasing Barang</title>
-<link rel="stylesheet" href="style.css?v=19">
+<link rel="stylesheet" href="style.css?v=20">
 </head>
 <body>
 
@@ -34,7 +34,7 @@
   <section class="sec on" id="pg">
     <div class="card">
       <h3>Form Pengajuan</h3>
-      <div class="grid4">
+      <div class="grid5">
         <div class="f"><label>Cari Produk</label><div id="pgSearch"></div></div>
         <div class="f"><label>Varian (warna)</label>
           <div class="pop" id="pgVarWrap">
@@ -55,20 +55,24 @@
           </div>
         </div>
         <div class="f"><label>Asal Barang</label><select id="pgSrc" data-src="Pilih asal barang"></select></div>
+        <div class="f"><label>Nama Admin</label><select id="pgAdm" data-adm="Pilih nama admin"></select></div>
       </div>
       <div class="foot"><div class="msg" id="pgMsg"></div><button class="btn" id="pgSubmit">Submit</button></div>
     </div>
     <div class="card">
-      <h3>Daftar Pengajuan Hari Ini</h3>
-      <p class="hint">Otomatis kosong setiap pukul 00.00 WIB. Data penerimaan tetap tersimpan di menu Purchase.</p>
+      <h3>Daftar Pengajuan</h3>
+      <p class="hint">Bawaan: menampilkan pengajuan hari ini dan otomatis pindah ke hari baru setiap pukul 00.00 WIB. Ubah filter tanggal &amp; jam untuk melihat/export hari lain. Data penerimaan tetap tersimpan di menu Purchase.</p>
       <div class="exf">
-        <div><label>Export dari tanggal</label><input type="date" id="xFrom"></div>
-        <div><label>Sampai tanggal</label><input type="date" id="xTo"></div>
+        <div><label>Dari tanggal &amp; jam</label><input type="datetime-local" id="xFrom"></div>
+        <div><label>Sampai tanggal &amp; jam</label><input type="datetime-local" id="xTo"></div>
+        <div><label>Nama Admin</label><select id="xAdm" data-adm="Semua"></select></div>
         <div><label>Asal</label><select id="xSrc" data-src="Semua"></select></div>
-        <div class="xb"><button class="btn ghost sm" id="pgXls" type="button">Export Excel</button><button class="btn ghost sm" id="pgPdf" type="button">Export PDF</button></div>
+        <div><label>Produk</label><input id="xProd" placeholder="Cari produk" autocomplete="off"></div>
+        <div><label>Status</label><select id="xSt"><option value="">Semua</option><option value="Menunggu">Menunggu</option><option value="Sebagian">Sebagian</option><option value="Selesai">Selesai</option></select></div>
+        <div class="xb"><button class="btn ghost sm" id="xReset" type="button">Reset filter</button><button class="btn ghost sm" id="pgXls" type="button">Export Excel</button><button class="btn ghost sm" id="pgPdf" type="button">Export PDF</button></div>
       </div>
       <div class="tw"><table>
-        <thead><tr><th>No</th><th>Tanggal</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Asal</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>No</th><th>Tanggal</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Asal</th><th>Admin</th><th>Status</th><th></th></tr></thead>
         <tbody id="pgTb"></tbody>
       </table></div>
     </div>
@@ -103,11 +107,12 @@
         <div class="pq"><label>Produk</label><input id="fqProd" placeholder="Cari produk"></div>
         <button class="btn ghost" id="fToggle" type="button">Filter ▾</button>
         <div class="xs">
-          <div><label>Dari tanggal</label><input type="date" id="dFrom"></div>
-          <div><label>Sampai tanggal</label><input type="date" id="dTo"></div>
+          <div class="wd"><label>Dari tanggal &amp; jam</label><input type="datetime-local" id="dFrom"></div>
+          <div class="wd"><label>Sampai tanggal &amp; jam</label><input type="datetime-local" id="dTo"></div>
           <div><label>No. Surat Jalan</label><input id="fqSj" placeholder="Cari no. SJ"></div>
           <div><label>Varian</label><select id="fqVar"></select></div>
           <div><label>Asal</label><select id="fqSrc" data-src="Semua"></select></div>
+          <div><label>Nama Admin</label><select id="fqAdm" data-adm="Semua"></select></div>
           <div><label>Status</label><select id="fqSt"><option value="">Semua</option><option value="ok">Lengkap</option><option value="bad">Kurang</option></select></div>
           <div class="rs"><button class="btn ghost" id="reset">Reset filter</button></div>
         </div>
@@ -161,6 +166,7 @@
     <div><label>Diminta (pcs)</label><input type="number" id="rMin" min="1" inputmode="numeric"></div>
   </div>
   <label>Asal</label><select id="rSrc" data-src="Pilih asal barang"></select>
+  <label>Nama Admin</label><select id="rAdm" data-adm="Pilih nama admin"></select>
   <div class="msg" id="rMsg"></div>
   <div class="acts"><button class="btn ghost" id="rCancel" type="button">Batal</button><button class="btn" id="rSave" type="button">Simpan</button></div>
 </div></div>
@@ -168,7 +174,10 @@
 <!-- MODAL EDIT PURCHASE -->
 <div class="modal" id="mdl" hidden><div class="box">
   <h3>Edit Purchase</h3>
-  <label>Tanggal</label><input type="date" id="eDate">
+  <div class="row">
+    <div><label>Tanggal</label><input type="date" id="eDate"></div>
+    <div><label>Jam</label><input type="time" id="eTime"></div>
+  </div>
   <label>No. Surat Jalan</label><input id="eSj">
   <label>Produk</label><select id="eProd"></select>
   <label>Varian</label>
@@ -178,6 +187,7 @@
     <div><label>Diminta (pcs)</label><input type="number" id="eMin" min="1"></div>
   </div>
   <label>Asal</label><select id="eSrc" data-src="Pilih asal barang"></select>
+  <label>Nama Admin</label><select id="eAdm" data-adm="Pilih nama admin"></select>
   <label>Foto Surat Jalan</label>
   <div class="pbtns">
         <button class="btn ghost sm" type="button" data-cam>📷 Ambil Foto</button>
@@ -204,6 +214,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="script.js?v=19"></script>
+<script src="script.js?v=20"></script>
 </body>
 </html>
