@@ -233,6 +233,7 @@ $('#rSave').onclick = () => {
 };
 
 /* ---------- export pengajuan ---------- */
+const SL = '\u00A0'.repeat(8) + '/ '; // kolom Ada dikosongkan, garis miring tetap ada
 const reqStat = r => r.ada >= r.min ? 'Selesai' : r.ada ? 'Sebagian' : 'Menunggu';
 function pgRows() {
   const f = $('#xFrom').value, t = $('#xTo').value;
@@ -240,7 +241,7 @@ function pgRows() {
 }
 $('#pgXls').onclick = () => {
   if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
-  const rows = pgRows().map((r, i) => ({ No: i + 1, Tanggal: dayWIB(r.ts), Produk: r.prod, Varian: r.vn, 'Kode Warna': r.vc, Ada: '', Diminta: r.min, Status: reqStat(r), Asal: r.src }));
+  const rows = pgRows().map((r, i) => ({ No: i + 1, Tanggal: dayWIB(r.ts), Produk: r.prod, Varian: r.vn, 'Kode Warna': r.vc, 'Ada / Diminta': SL + r.min + ' pcs', Status: reqStat(r), Asal: r.src }));
   if (!rows.length) return alert('Tidak ada pengajuan pada rentang tanggal itu.');
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Pengajuan');
   XLSX.writeFile(wb, 'pengajuan-' + dayWIB(Date.now()) + '.xlsx');
@@ -252,8 +253,8 @@ $('#pgPdf').onclick = () => {
   doc.setFontSize(14); doc.text('Laporan Pengajuan Barang', 14, 14);
   doc.autoTable({
     startY: 20, headStyles: { fillColor: [74, 123, 208] },
-    head: [['No', 'Tanggal', 'Produk', 'Varian', 'Ada', 'Diminta', 'Asal', 'Status']],
-    body: rows.map((r, i) => [i + 1, dayWIB(r.ts), r.prod, '', '', r.min + ' pcs', r.src, reqStat(r)]),
+    head: [['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Status']],
+    body: rows.map((r, i) => [i + 1, dayWIB(r.ts), r.prod, '', SL + r.min + ' pcs', r.src, reqStat(r)]),
     didDrawCell: d => {
       if (d.section === 'body' && d.column.index === 3) {
         const r = rows[d.row.index];
