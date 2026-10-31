@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Purchasing Barang</title>
-<link rel="stylesheet" href="style.css?v=9">
+<link rel="stylesheet" href="style.css?v=15">
 </head>
 <body>
 
@@ -37,9 +37,13 @@
       <div class="grid4">
         <div class="f"><label>Cari Produk</label><div id="pgSearch"></div></div>
         <div class="f"><label>Varian (warna)</label>
-          <div class="pop">
+          <div class="pop" id="pgVarWrap">
             <button type="button" class="dd" id="pgVar" disabled><span class="sw"></span><span id="pgVarTxt">Pilih warna</span></button>
             <div class="list" id="pgVarList"></div>
+          </div>
+          <div id="pgNew" hidden>
+            <div class="nv"><input id="pgVarName" placeholder="KETIK WARNA, MIS. MERAH" autocomplete="off"><input type="color" id="pgVarCol" value="#4a7bd0" title="Warna"></div>
+            <div class="hint2">Produk baru otomatis masuk ke database produk. Warna terisi otomatis dari nama.</div>
           </div>
         </div>
         <div class="f"><label>Quantity (pcs): ada / diminta</label>
@@ -194,6 +198,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="script.js?v=14"></script>
+<script src="script.js?v=15"></script>
 </body>
 </html>

@@ -120,18 +120,22 @@ $$('select[data-src]').forEach(s => {
 });
 
 /* ---------- komponen: pencarian produk ---------- */
-function psearch(box, opts, onPick) {
+function psearch(box, opts, onPick, onText) { // onText: aktifkan mode ketik produk baru (HURUF KAPITAL)
   box.classList.add('pop');
   box.innerHTML = '<input placeholder="Cari produk..." autocomplete="off"><div class="list sug"></div>';
   const i = box.querySelector('input'), l = box.querySelector('.sug');
   const show = () => {
     const q = i.value.trim().toLowerCase();
     const m = opts().filter(p => p.name.toLowerCase().includes(q));
-    l.innerHTML = m.length ? m.map(p => `<div data-id="${p.id}">${esc(p.name)}</div>`).join('') : '<em>Produk tidak ditemukan</em>';
+    l.innerHTML = m.length ? m.map(p => `<div data-id="${p.id}">${esc(p.name)}</div>`).join('') : '<em>' + (onText ? 'Tidak ditemukan. Produk baru akan ditambahkan saat Submit.' : 'Produk tidak ditemukan') + '</em>';
     l.classList.add('open');
   };
   let pick = null;
-  i.oninput = () => { pick = null; onPick(null); show() };
+  if (onText) { i.style.textTransform = 'uppercase'; i.placeholder = 'Cari / ketik nama produk...' }
+  i.oninput = () => {
+    if (onText) { const s = i.selectionStart; i.value = i.value.toUpperCase(); i.setSelectionRange(s, s) }
+    pick = null; onPick(null); if (onText) onText(i.value.trim()); show();
+  };
   i.onfocus = show;
   l.onclick = e => {
     const id = e.target.dataset.id; if (!id) return;
@@ -139,12 +143,24 @@ function psearch(box, opts, onPick) {
     i.value = pick.name; l.classList.remove('open'); onPick(pick);
   };
   document.addEventListener('click', e => { if (!box.contains(e.target)) l.classList.remove('open') });
-  return { get: () => pick, reset() { i.value = ''; pick = null; onPick(null) } };
+  return { get: () => pick, text: () => i.value.trim(), reset() { i.value = ''; pick = null; onPick(null) } };
 }
 
 /* ---------- PENGAJUAN ---------- */
 let pgProd = null, pgVar = null;
-const pgSearch = psearch($('#pgSearch'), () => products, p => { pgProd = p; pgVar = null; pgVarUI() });
+let pgNew = false;
+const pgSearch = psearch($('#pgSearch'), () => products, p => { pgProd = p; pgVar = null; pgNewUI(); pgVarUI() }, t => {
+  const p = products.find(x => x.name.toUpperCase() === t.toUpperCase());
+  pgProd = p || null; pgVar = null; pgNewUI(); pgVarUI();
+});
+function pgNewUI() { // produk tidak ada di database: tampilkan isian warna manual
+  pgNew = !pgProd && pgSearch.text() !== '';
+  $('#pgNew').hidden = !pgNew; $('#pgVarWrap').hidden = pgNew;
+}
+$('#pgVarName').oninput = e => {
+  const s = e.target.selectionStart; e.target.value = e.target.value.toUpperCase(); e.target.setSelectionRange(s, s);
+  const c = toHex(e.target.value); if (c) $('#pgVarCol').value = c; // MERAH -> warna merah otomatis
+};
 function pgVarUI() {
   const b = $('#pgVar'), L = $('#pgVarList'), s = b.querySelector('.sw');
   L.classList.remove('open');
@@ -166,25 +182,34 @@ $('#pgVarList').onclick = e => {
 document.addEventListener('click', e => { if (!e.target.closest('#pgVar,#pgVarList')) $('#pgVarList').classList.remove('open') });
 
 $('#pgSubmit').onclick = () => {
-  if (!pgProd) return msg('#pgMsg', 'Pilih produk dari hasil pencarian.');
-  if (pgProd.variants.length && !pgVar) return msg('#pgMsg', 'Pilih varian warna.');
-  const m = parseInt($('#pgMin').value, 10);
+  const typed = pgSearch.text().toUpperCase();
+  let prod = pgProd, vr = pgVar;
+  if (!prod && !typed) return msg('#pgMsg', 'Pilih produk dari hasil pencarian atau ketik nama produk baru.');
+  if (prod && prod.variants.length && !vr) return msg('#pgMsg', 'Pilih varian warna.');
+  const m = parseInt($('#pgMin').value, 10), src = $('#pgSrc').value;
   if (!(m >= 1)) return msg('#pgMsg', 'Isi jumlah barang diminta (angka).');
-  if (!$('#pgSrc').value) return msg('#pgMsg', 'Pilih asal barang.');
-  const vn = pgVar ? pgVar.n : '', vc = pgVar ? pgVar.c : '', src = $('#pgSrc').value;
+  if (!src) return msg('#pgMsg', 'Pilih asal barang.');
+  const ops = []; let np = null;
+  if (!prod) { // produk baru: langsung masuk ke database produk
+    const vt = $('#pgVarName').value.trim().toUpperCase();
+    vr = vt ? { n: vt, c: $('#pgVarCol').value } : null;
+    np = prod = { id: uid(), name: typed, variants: vr ? [vr] : [] };
+    products.push(np); ops.push(['products', 'set', np]);
+  }
+  const vn = vr ? vr.n : '', vc = vr ? vr.c : '';
   // produk + warna + asal yang sama (hari ini) digabung, jumlah diminta dijumlahkan
-  const ex = todayReqs().find(r => String(r.pid) === String(pgProd.id) && r.vn === vn && r.vc === vc && r.src === src);
-  let ops;
+  const ex = np ? null : todayReqs().find(r => String(r.pid) === String(prod.id) && r.vn === vn && r.vc === vc && r.src === src);
   if (ex) {
-    ex.min += m; ops = [['requests', 'set', ex]];
+    ex.min += m; ops.push(['requests', 'set', ex]);
     records.filter(x => x.rid === ex.id).forEach(x => { x.min = ex.min; ops.push(['records', 'set', x]) });
   } else {
-    const q = { id: uid(), ts: Date.now(), pid: pgProd.id, prod: pgProd.name, vn, vc, min: m, ada: 0, src };
-    reqs.unshift(q); ops = [['requests', 'set', q]];
+    const q = { id: uid(), ts: Date.now(), pid: prod.id, prod: prod.name, vn, vc, min: m, ada: 0, src };
+    reqs.unshift(q); ops.push(['requests', 'set', q]);
   }
   if (!commit(ops)) return msg('#pgMsg', 'Penyimpanan penuh.');
-  pgSearch.reset(); $('#pgMin').value = ''; $('#pgSrc').value = '';
-  msg('#pgMsg', ex ? 'Digabung dengan pengajuan yang sama. Total diminta: ' + ex.min + ' pcs.' : 'Pengajuan tersimpan.', true); renderReqs();
+  pgSearch.reset(); $('#pgMin').value = ''; $('#pgSrc').value = ''; $('#pgVarName').value = ''; $('#pgVarCol').value = '#4a7bd0';
+  msg('#pgMsg', ex ? 'Digabung dengan pengajuan yang sama. Total diminta: ' + ex.min + ' pcs.' : np ? 'Produk baru "' + np.name + '" masuk ke database produk, pengajuan tersimpan.' : 'Pengajuan tersimpan.', true);
+  renderReqs(); renderProducts();
 };
 const todayReqs = () => reqs.filter(r => dayWIB(r.ts) === dayWIB(Date.now()));
 function renderReqs() {
@@ -568,7 +593,7 @@ $('#pList').onclick = e => {
 };
 
 /* input massal */
-const CN = { merah: 'red', biru: 'blue', hijau: 'green', kuning: 'yellow', hitam: 'black', putih: 'white', abu: 'gray', 'abu-abu': 'gray', oranye: 'orange', jingga: 'orange', ungu: 'purple', coklat: 'brown', cokelat: 'brown' };
+const CN = { merah: 'red', biru: 'blue', hijau: 'green', kuning: 'yellow', hitam: 'black', putih: 'white', abu: 'gray', 'abu-abu': 'gray', oranye: 'orange', jingga: 'orange', ungu: 'purple', coklat: 'brown', cokelat: 'brown', 'hijau tua': 'darkgreen', 'biru tua': 'navy', 'biru muda': 'lightblue', 'merah muda': 'pink', 'abu abu': 'gray', emas: 'gold', perak: 'silver', krem: '#f5f0dc', tosca: 'turquoise', army: '#4b5320', mocca: '#8b6b4a' };
 function toHex(s) {
   s = String(s || '').trim().toLowerCase(); if (!s) return null; s = CN[s] || s;
   const x = document.createElement('canvas').getContext('2d');

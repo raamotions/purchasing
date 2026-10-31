@@ -116,6 +116,10 @@ code{background:var(--soft);padding:1px 6px;border-radius:5px}
 .exf{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;align-items:end;margin:4px 0 8px}
 .exf label{margin:0 0 4px}
 .exf .xb{display:flex;gap:8px;flex-wrap:wrap}
+.nv{display:flex;gap:8px}
+.nv input[type=color]{width:52px;padding:2px;height:44px;flex:none}
+#pgVarName{text-transform:uppercase}
+.hint2{font-size:12px;color:var(--mute);margin-top:6px;line-height:1.4}
 #grp{margin-top:6px}
 details{border:1px solid var(--line);border-radius:12px;margin-top:12px;overflow:hidden}
 summary{cursor:pointer;padding:13px 16px;font-weight:600;display:flex;align-items:center;gap:10px;background:var(--soft);list-style:none;user-select:none}
