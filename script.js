@@ -184,14 +184,86 @@ function renderReqs() {
     <td>${n + 1}</td><td>${fmt(r.ts)}</td><td>${esc(r.prod)}</td><td>${sw(r.vc, r.vn)}</td>
     <td>${r.ada} / ${r.min} pcs</td><td><span class="tag">${esc(r.src)}</span></td>
     <td>${r.ada >= r.min ? 'Selesai' : r.ada ? 'Sebagian' : 'Menunggu'}</td>
-    <td><button class="btn ghost sm" data-del="${r.id}">Hapus</button></td></tr>`).join('')
+    <td class="nw"><button class="btn ghost sm" data-redit="${r.id}">Edit</button> <button class="btn ghost sm" data-del="${r.id}">Hapus</button></td></tr>`).join('')
     : '<tr><td colspan="8" class="empty">Belum ada pengajuan hari ini.</td></tr>';
 }
 $('#pgTb').onclick = e => {
+  if (e.target.dataset.redit) return openREdit(e.target.dataset.redit);
   const id = e.target.dataset.del;
   if (!id || !confirm('Hapus pengajuan ini?')) return;
   reqs = reqs.filter(r => r.id !== id); commit([['requests', 'del', id]]); renderReqs();
 };
+
+/* ---------- edit pengajuan (popup) ---------- */
+let rRec = null, rList = [];
+const rSwatch = () => { const v = rList[$('#rVar').value]; $('#rSw').style.background = v ? v.c : 'transparent' };
+function fillRVar(name, vn, vc) {
+  const p = products.find(x => x.name === name);
+  rList = p ? p.variants.slice() : [];
+  let idx = rList.findIndex(v => v.n === vn && v.c === vc);
+  if (vn && idx < 0) { rList.unshift({ n: vn, c: vc }); idx = 0 }
+  $('#rVar').innerHTML = '<option value="">— tanpa varian —</option>' + rList.map((v, i) => `<option value="${i}">${esc(v.n)}</option>`).join('');
+  $('#rVar').value = idx >= 0 ? idx : ''; rSwatch();
+}
+function openREdit(id) {
+  const r = rRec = reqs.find(x => x.id === id); if (!r) return;
+  const names = products.map(p => p.name); if (!names.includes(r.prod)) names.unshift(r.prod);
+  $('#rProd').innerHTML = names.map(n => `<option>${esc(n)}</option>`).join(''); $('#rProd').value = r.prod;
+  fillRVar(r.prod, r.vn, r.vc);
+  $('#rAda').value = r.ada; $('#rMin').value = r.min; $('#rSrc').value = r.src;
+  msg('#rMsg', ''); $('#rmdl').hidden = false;
+}
+const closeREdit = () => { $('#rmdl').hidden = true; rRec = null };
+$('#rProd').onchange = () => fillRVar($('#rProd').value, '', '');
+$('#rVar').onchange = rSwatch;
+$('#rCancel').onclick = closeREdit;
+$('#rmdl').onclick = e => { if (e.target.id === 'rmdl') closeREdit() };
+$('#rSave').onclick = () => {
+  const r = reqs.find(x => x.id === rRec.id) || rRec, m = parseInt($('#rMin').value, 10), name = $('#rProd').value;
+  const p = products.find(x => x.name === name), v = rList[$('#rVar').value];
+  if (!(m >= 1)) return msg('#rMsg', 'Isi jumlah diminta dengan angka.');
+  if (m < r.ada) return msg('#rMsg', 'Jumlah diminta tidak boleh kurang dari barang yang sudah ada (' + r.ada + ').');
+  if (p && p.variants.length && !v) return msg('#rMsg', 'Pilih varian warna.');
+  if (!$('#rSrc').value) return msg('#rMsg', 'Pilih asal barang.');
+  Object.assign(r, { pid: p ? p.id : r.pid, prod: name, vn: v ? v.n : '', vc: v ? v.c : '', min: m, src: $('#rSrc').value });
+  const ops = [['requests', 'set', r]];
+  records.filter(x => x.rid === r.id).forEach(x => { Object.assign(x, { prod: r.prod, vn: r.vn, vc: r.vc, min: r.min, src: r.src }); ops.push(['records', 'set', x]) });
+  if (!commit(ops)) return msg('#rMsg', 'Penyimpanan penuh.');
+  closeREdit(); renderReqs();
+};
+
+/* ---------- export pengajuan ---------- */
+const reqStat = r => r.ada >= r.min ? 'Selesai' : r.ada ? 'Sebagian' : 'Menunggu';
+function pgRows() {
+  const f = $('#xFrom').value, t = $('#xTo').value;
+  return reqs.filter(r => (!f || dayWIB(r.ts) >= f) && (!t || dayWIB(r.ts) <= t)).sort((a, b) => a.ts - b.ts);
+}
+$('#pgXls').onclick = () => {
+  if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
+  const rows = pgRows().map((r, i) => ({ No: i + 1, Tanggal: dayWIB(r.ts), Produk: r.prod, Varian: r.vn, 'Kode Warna': r.vc, Ada: r.ada, Diminta: r.min, Status: reqStat(r), Asal: r.src }));
+  if (!rows.length) return alert('Tidak ada pengajuan pada rentang tanggal itu.');
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Pengajuan');
+  XLSX.writeFile(wb, 'pengajuan-' + dayWIB(Date.now()) + '.xlsx');
+};
+$('#pgPdf').onclick = () => {
+  if (!window.jspdf) return alert('Library PDF gagal dimuat. Pastikan terhubung ke internet.');
+  const rows = pgRows(); if (!rows.length) return alert('Tidak ada pengajuan pada rentang tanggal itu.');
+  const doc = new jspdf.jsPDF({ orientation: 'landscape' });
+  doc.setFontSize(14); doc.text('Laporan Pengajuan Barang', 14, 14);
+  doc.autoTable({
+    startY: 20, headStyles: { fillColor: [74, 123, 208] },
+    head: [['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Status']],
+    body: rows.map((r, i) => [i + 1, dayWIB(r.ts), r.prod, '', r.ada + ' / ' + r.min + ' pcs', r.src, reqStat(r)]),
+    didDrawCell: d => {
+      if (d.section === 'body' && d.column.index === 3) {
+        const r = rows[d.row.index];
+        if (r.vc) { doc.setFillColor(r.vc); doc.circle(d.cell.x + 6, d.cell.y + d.cell.height / 2, 2.2, 'F') }
+      }
+    }
+  });
+  doc.save('pengajuan-' + dayWIB(Date.now()) + '.pdf');
+};
+$('#xFrom').value = $('#xTo').value = dayWIB(Date.now());
 
 /* ---------- INPUT ---------- */
 let blocks = [], photo = '';

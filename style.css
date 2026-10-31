@@ -113,6 +113,9 @@ code{background:var(--soft);padding:1px 6px;border-radius:5px}
 #lb{position:fixed;inset:0;background:rgba(10,20,40,.78);display:flex;align-items:center;justify-content:center;z-index:50}
 #lb img{max-width:92%;max-height:90%;border-radius:10px}
 
+.exf{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;align-items:end;margin:4px 0 8px}
+.exf label{margin:0 0 4px}
+.exf .xb{display:flex;gap:8px;flex-wrap:wrap}
 #grp{margin-top:6px}
 details{border:1px solid var(--line);border-radius:12px;margin-top:12px;overflow:hidden}
 summary{cursor:pointer;padding:13px 16px;font-weight:600;display:flex;align-items:center;gap:10px;background:var(--soft);list-style:none;user-select:none}

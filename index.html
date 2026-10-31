@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Purchasing Barang</title>
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
 
@@ -56,6 +56,11 @@
     <div class="card">
       <h3>Daftar Pengajuan Hari Ini</h3>
       <p class="hint">Otomatis kosong setiap pukul 00.00 WIB. Data penerimaan tetap tersimpan di menu Purchase.</p>
+      <div class="exf">
+        <div><label>Export dari tanggal</label><input type="date" id="xFrom"></div>
+        <div><label>Sampai tanggal</label><input type="date" id="xTo"></div>
+        <div class="xb"><button class="btn ghost sm" id="pgXls" type="button">Export Excel</button><button class="btn ghost sm" id="pgPdf" type="button">Export PDF</button></div>
+      </div>
       <div class="tw"><table>
         <thead><tr><th>No</th><th>Tanggal</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Asal</th><th>Status</th><th></th></tr></thead>
         <tbody id="pgTb"></tbody>
@@ -134,7 +139,22 @@
   </section>
 </main>
 
-<!-- MODAL EDIT -->
+<!-- MODAL EDIT PENGAJUAN -->
+<div class="modal" id="rmdl" hidden><div class="box">
+  <h3>Edit Pengajuan</h3>
+  <label>Produk</label><select id="rProd"></select>
+  <label>Varian</label>
+  <div class="vsel"><span class="sw" id="rSw"></span><select id="rVar"></select></div>
+  <div class="row">
+    <div><label>Ada (pcs)</label><input id="rAda" disabled></div>
+    <div><label>Diminta (pcs)</label><input type="number" id="rMin" min="1" inputmode="numeric"></div>
+  </div>
+  <label>Asal</label><select id="rSrc" data-src="Pilih asal barang"></select>
+  <div class="msg" id="rMsg"></div>
+  <div class="acts"><button class="btn ghost" id="rCancel" type="button">Batal</button><button class="btn" id="rSave" type="button">Simpan</button></div>
+</div></div>
+
+<!-- MODAL EDIT PURCHASE -->
 <div class="modal" id="mdl" hidden><div class="box">
   <h3>Edit Purchase</h3>
   <label>Tanggal</label><input type="date" id="eDate">
@@ -173,6 +193,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="script.js?v=8"></script>
+<script src="script.js?v=9"></script>
 </body>
 </html>
