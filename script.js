@@ -1,6 +1,5 @@
 const $ = s => document.querySelector(s), $$ = s => document.querySelectorAll(s);
 const SRC = ['Kode A', 'Kode B', 'Aling', 'Kode AG', 'Kode BG'];
-const ADM = ['Najwa', 'Irma', 'Zara', 'Vika'];
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const sw = (c, n) => c ? `<span class="sw" title="${esc(n || '')}" style="background:${c}"></span>` : '-';
@@ -49,7 +48,7 @@ const FIREBASE_CONFIG = {
   appId: "1:306713086751:web:3aad1af4d0dbd89f727e2a"
 };
 
-let db = null, products = [], reqs = [], records = [], photos = {};
+let db = null, products = [], reqs = [], records = [], photos = {}, admins = [], me = null; // me: {username, name} atau null (tamu)
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d } catch (e) { return d } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true } catch (e) { return false } }
@@ -64,6 +63,7 @@ function loadLocal() {
     { id: 'p2', name: 'Tas Kanvas', variants: [] }
   ];
   reqs = store.get('pp_requests', []); records = store.get('pp_records', []); photos = store.get('pp_photos', {});
+  admins = Object.values(store.get('pp_admins', {}));
 }
 // ops: [['koleksi','set',objek] | ['koleksi','del',id]]
 function commit(ops = []) {
@@ -111,7 +111,7 @@ async function diagnose() {
 }
 $('#sync').onclick = diagnose; $('#sync').title = 'Klik untuk tes koneksi Firebase';
 function refresh() {
-  renderReqs(); renderProducts();
+  fillAdm(); renderReqs(); renderProducts();
   if ($('#pu').classList.contains('on')) renderTable();
 }
 function startSync() {
@@ -123,11 +123,12 @@ function startSync() {
     on('requests', a => reqs = a.sort((x, y) => y.ts - x.ts));
     on('records', a => records = a.sort((x, y) => y.ts - x.ts));
     on('photos', a => { photos = {}; a.forEach(p => photos[p.id] = p.d) });
+    on('admins', a => admins = a);
   } catch (e) { db = null; loadLocal(); setSync('err'); refresh() }
 }
 
 /* ---------- menu & hamburger ---------- */
-const TT = { pg: ['Pengajuan', 'Secara bawaan menampilkan hari ini, otomatis berganti hari pukul 00.00 WIB'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], pr: ['Produk', 'Kelola database produk dan varian warna'] };
+const TT = { pg: ['Pengajuan', 'Hari ini tampil di atas; hari sebelumnya masuk riwayat per bulan (ganti hari pukul 00.00 WIB)'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], pr: ['Produk', 'Kelola database produk dan varian warna'] };
 function go(t) {
   $$('nav button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
   $$('.sec').forEach(s => s.classList.toggle('on', s.id === t));
@@ -142,9 +143,15 @@ document.addEventListener('click', e => { if (!e.target.closest('#nav')) $('#nav
 $$('select[data-src]').forEach(s => {
   s.innerHTML = `<option value="">${s.dataset.src}</option>` + SRC.map(x => `<option>${x}</option>`).join('');
 });
-$$('select[data-adm]').forEach(s => {
-  s.innerHTML = `<option value="">${s.dataset.adm}</option>` + ADM.map(x => `<option>${x}</option>`).join('');
-});
+function fillAdm() { // daftar nama admin = akun terdaftar + nama yang sudah tercatat di data
+  const names = [...new Set(admins.map(a => a.name).concat(reqs.map(r => r.adm), records.map(r => r.adm)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  $$('select[data-adm]').forEach(s => {
+    const v = s.value;
+    s.innerHTML = `<option value="">${s.dataset.adm}</option>` + names.map(x => `<option>${esc(x)}</option>`).join('');
+    s.value = v;
+  });
+}
+fillAdm();
 
 /* ---------- tombol x (hapus teks) pada kolom pencarian ---------- */
 function addClear(inp) {
@@ -204,9 +211,9 @@ const pgSearch = psearch($('#pgSearch'), () => products, p => { pgProd = p; pgVa
 $('#pgSearch').dataset.next = '#pgVarName';
 function pgNewUI() { // isian warna manual: untuk produk baru, atau varian baru pada produk yang sudah ada
   if (!pgProd) pgAdd = false;
-  pgNew = (!pgProd && pgSearch.text() !== '') || (!!pgProd && pgAdd);
+  pgNew = (!pgProd && pgSearch.text() !== '') || (!!pgProd && (pgAdd || !pgProd.variants.length)); // warna wajib: produk tanpa varian harus isi warna
   $('#pgNew').hidden = !pgNew; $('#pgVarWrap').hidden = pgNew;
-  $('#pgToggle').hidden = !pgProd; $('#pgToggle').textContent = pgAdd ? 'Pilih dari daftar warna' : '+ Warna baru';
+  $('#pgToggle').hidden = !pgProd || !pgProd.variants.length; $('#pgToggle').textContent = pgAdd ? 'Pilih dari daftar warna' : '+ Warna baru';
 }
 $('#pgToggle').onclick = () => { pgAdd = !pgAdd; pgVar = null; pgNewUI(); pgVarUI() };
 $('#pgVarName').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('#pgMin').focus() } });
@@ -238,24 +245,19 @@ $('#pgSubmit').onclick = () => {
   const typed = normName(pgSearch.text());
   let prod = pgProd, vr = pgVar;
   if (!prod && !typed) return msg('#pgMsg', 'Pilih produk dari hasil pencarian atau ketik nama produk baru.');
-  if (prod && prod.variants.length && !pgAdd && !vr) return msg('#pgMsg', 'Pilih varian warna.');
-  const m = parseInt($('#pgMin').value, 10), src = $('#pgSrc').value, adm = $('#pgAdm').value;
+  if (prod && prod.variants.length && !pgAdd && !vr) return msg('#pgMsg', 'Warna wajib diisi. Pilih varian warna.');
+  const m = parseInt($('#pgMin').value, 10), src = $('#pgSrc').value, adm = me ? me.name : ''; // nama admin otomatis dari akun yang login (tamu: kosong)
   if (!(m >= 1)) return msg('#pgMsg', 'Isi jumlah barang diminta (angka).');
   if (!src) return msg('#pgMsg', 'Pilih asal barang.');
-  if (!adm) return msg('#pgMsg', 'Pilih nama admin.');
   const ops = []; let np = null, nvAdded = null;
   if (!prod) { // produk baru: langsung masuk ke database produk
     np = prod = { id: uid(), name: typed, variants: [] }; products.push(np);
   }
   if (pgNew) { // warna diketik: pakai varian yang sama jika sudah ada, kalau belum tambahkan ke produk yang sama
     const vt = normName($('#pgVarName').value);
-    if (vt) {
-      vr = prod.variants.find(v => normName(v.n) === vt);
-      if (!vr) { vr = { n: vt, c: $('#pgVarCol').value }; prod.variants.push(vr); nvAdded = vt }
-    } else if (prod.variants.length) {
-      if (np) products.pop();
-      return msg('#pgMsg', 'Ketik nama warna atau pilih dari daftar warna.');
-    }
+    if (!vt) { if (np) products.pop(); return msg('#pgMsg', 'Warna wajib diisi. Ketik nama warna, mis. MERAH.') }
+    vr = prod.variants.find(v => normName(v.n) === vt);
+    if (!vr) { vr = { n: vt, c: $('#pgVarCol').value }; prod.variants.push(vr); nvAdded = vt }
   }
   if (np || nvAdded) ops.push(['products', 'set', prod]);
   const vn = vr ? vr.n : '', vc = vr ? vr.c : '';
@@ -276,16 +278,29 @@ $('#pgSubmit').onclick = () => {
   renderReqs(); renderProducts();
 };
 const todayReqs = () => reqs.filter(r => dayWIB(r.ts) === dayWIB(Date.now()));
-function renderReqs() {
-  const L = pgFiltered();
-  $('#pgTb').innerHTML = L.length ? L.map((r, n) => `<tr>
+const pgRow = (r, n) => `<tr>
     <td>${n + 1}</td><td>${fmt(r.ts)}${tm(r.ts)}</td><td>${esc(r.prod)}</td><td>${sw(r.vc, r.vn)}</td>
     <td>${r.ada} / ${r.min} pcs</td><td><span class="tag">${esc(r.src)}</span></td><td>${esc(r.adm || '-')}</td>
     <td>${reqStat(r)}</td>
-    <td class="nw"><button class="btn ghost sm" data-redit="${r.id}">Edit</button> <button class="btn ghost sm" data-del="${r.id}">Hapus</button></td></tr>`).join('')
-    : '<tr><td colspan="9" class="empty">Belum ada pengajuan pada filter ini.</td></tr>';
+    <td class="nw"><button class="btn ghost sm" data-redit="${r.id}">Edit</button> <button class="btn ghost sm" data-del="${r.id}">Hapus</button></td></tr>`;
+const pgTbl = list => `<div class="tw"><table><thead><tr><th>No</th><th>Tanggal</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Asal</th><th>Admin</th><th>Status</th><th></th></tr></thead><tbody>${list.map(pgRow).join('')}</tbody></table></div>`;
+function renderReqs() { // hari ini tampil di atas; hari-hari sebelumnya otomatis masuk riwayat per tahun > bulan (tertutup)
+  const all = pgFiltered(), today = dayWIB(Date.now()), filt = PGF.some(x => $(x).value);
+  const tr = all.filter(r => dayWIB(r.ts) === today), hr = all.filter(r => dayWIB(r.ts) !== today), g = {};
+  hr.forEach(r => { const d = dayWIB(r.ts), y = d.slice(0, 4), m = d.slice(5, 7); ((g[y] = g[y] || {})[m] = g[y][m] || []).push(r) });
+  const isOpen = (k, dflt) => k in openState ? openState[k] : (filt || dflt);
+  let html = '<div class="dayh">Hari ini <span class="tag">' + tr.length + ' data</span></div>' + (tr.length ? pgTbl(tr) : '<div class="empty">Belum ada pengajuan hari ini.</div>');
+  if (hr.length) {
+    html += '<div class="dayh" style="margin-top:24px">Riwayat <span class="tag">' + hr.length + ' data</span></div>' + Object.keys(g).sort().reverse().map(y => {
+      const ms = Object.keys(g[y]).sort().reverse(), cnt = ms.reduce((s, m) => s + g[y][m].length, 0), ky = 'ry' + y;
+      return `<details class="yr" data-k="${ky}" ${isOpen(ky, y === today.slice(0, 4)) ? 'open' : ''}><summary>${y} <span class="tag">${cnt} data</span></summary>` +
+        ms.map(m => { const km = 'rm' + y + m; return `<details class="mo" data-k="${km}" ${isOpen(km, false) ? 'open' : ''}><summary>${BLN[+m - 1]} ${y} <span class="tag">${g[y][m].length} data</span></summary>${pgTbl(g[y][m])}</details>` }).join('') + '</details>';
+    }).join('');
+  }
+  $('#pgGrp').innerHTML = html;
 }
-$('#pgTb').onclick = e => {
+$('#pgGrp').addEventListener('click', e => { const s = e.target.closest('summary'); if (s) { const d = s.parentElement; openState[d.dataset.k] = !d.open } });
+$('#pgGrp').onclick = e => {
   if (e.target.dataset.redit) return openREdit(e.target.dataset.redit);
   const id = e.target.dataset.del;
   if (!id || !confirm('Hapus pengajuan ini?')) return;
@@ -330,9 +345,8 @@ $('#rSave').onclick = () => {
   const p = products.find(x => x.name === name); let v = rList[$('#rVar').value];
   if (!(m >= 1)) return msg('#rMsg', 'Isi jumlah diminta dengan angka.');
   if (m < r.ada) return msg('#rMsg', 'Jumlah diminta tidak boleh kurang dari barang yang sudah ada (' + r.ada + ').');
-  if (!rAddNew && p && p.variants.length && !v) return msg('#rMsg', 'Pilih varian warna.');
+  if (!rAddNew && !v) return msg('#rMsg', 'Warna wajib diisi: pilih dari daftar atau klik "+ Warna baru".');
   if (!$('#rSrc').value) return msg('#rMsg', 'Pilih asal barang.');
-  if (!$('#rAdm').value) return msg('#rMsg', 'Pilih nama admin.');
   const ops = [];
   if (rAddNew) { // warna baru: masuk ke varian produk (database produk) kalau belum ada
     const vt = normName($('#rVarName').value);
@@ -357,45 +371,55 @@ function pgFiltered() { // dipakai oleh daftar di layar DAN export
   return reqs.filter(r => (f === null || r.ts >= f) && (t === null || r.ts <= t) && (!s || r.src === s) && (!a || r.adm === a) &&
     (!q || String(r.prod).toLowerCase().includes(q)) && (!st || reqStat(r) === st)).sort((a, b) => a.ts - b.ts);
 }
-function pgHead() {
+// nama admin untuk header & nama file: sesuai filter, atau nama admin yang ada di data
+const admList = (sel, rows) => $(sel).value ? [$(sel).value] : [...new Set(rows.map(r => r.adm).filter(Boolean))];
+const admHead = (sel, rows) => admList(sel, rows).join(', ') || '-';
+function fileName(asal, adm, form, ext) { // KODE ASAL BARANG-NAMA ADMIN-DDMMYY-FORM DOWNLOAD
+  const d = dayWIB(Date.now()).split('-');
+  return [asal || 'SEMUA', adm || 'SEMUA', d[2] + d[1] + d[0].slice(2), form].join('-').toUpperCase().replace(/[\\/:*?"<>|]+/g, '') + '.' + ext;
+}
+const admFile = (sel, rows) => { const l = admList(sel, rows); return l.length === 1 ? l[0] : 'SEMUA' };
+function pgHead(rows) {
   const f = dtVal('#xFrom'), t = dtVal('#xTo', true);
   const tgl = !f && !t ? 'Semua tanggal' : f && t ? fDT(f) + ' s/d ' + fDT(t) : f ? 'Mulai ' + fDT(f) : 'Sampai ' + fDT(t);
-  return { title: 'Permintaan Pengajuan Barang', tgl: 'Tanggal & Jam Pengajuan: ' + tgl, asal: 'Asal Barang: ' + ($('#xSrc').value || 'Semua'), adm: 'Nama Admin: ' + ($('#xAdm').value || 'Semua') };
+  return { title: 'Permintaan Pengajuan Barang', tgl: 'Tanggal & Jam Pengajuan: ' + tgl, asal: 'Asal Barang: ' + ($('#xSrc').value || 'Semua'), adm: 'Nama Admin: ' + admHead('#xAdm', rows || []) };
 }
 $('#pgXls').onclick = () => {
   if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
-  const H = pgHead(), rows = pgFiltered();
+  const rows = pgFiltered();
   if (!rows.length) return alert('Tidak ada pengajuan pada filter itu.');
-  const aoa = [[H.title], [H.tgl], [H.asal], [H.adm], [], ['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Admin', 'Status']]
-    .concat(rows.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', SL + r.min + ' pcs', r.src, r.adm || '', '\u2610']));
+  const H = pgHead(rows);
+  const aoa = [[H.title], [H.tgl], [H.asal], [H.adm], [], ['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Status']]
+    .concat(rows.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', SL + r.min + ' pcs', r.src, '\u2610']));
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!merges'] = [0, 1, 2, 3].map(r => ({ s: { r, c: 0 }, e: { r, c: 7 } }));
-  ws['!cols'] = [5, 17, 28, 16, 18, 10, 10, 8].map(w => ({ wch: w }));
+  ws['!merges'] = [0, 1, 2, 3].map(r => ({ s: { r, c: 0 }, e: { r, c: 6 } }));
+  ws['!cols'] = [5, 17, 28, 16, 18, 10, 8].map(w => ({ wch: w }));
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Pengajuan');
-  XLSX.writeFile(wb, 'pengajuan-' + dayWIB(Date.now()) + '.xlsx');
+  XLSX.writeFile(wb, fileName($('#xSrc').value, admFile('#xAdm', rows), 'PENGAJUAN', 'xlsx'));
 };
 $('#pgPdf').onclick = () => {
   if (!window.jspdf) return alert('Library PDF gagal dimuat. Pastikan terhubung ke internet.');
-  const H = pgHead(), rows = pgFiltered(); if (!rows.length) return alert('Tidak ada pengajuan pada filter itu.');
+  const rows = pgFiltered(); if (!rows.length) return alert('Tidak ada pengajuan pada filter itu.');
+  const H = pgHead(rows);
   const doc = new jspdf.jsPDF({ orientation: 'landscape' });
   doc.setFontSize(16); doc.text(H.title, 14, 15);
   doc.setFontSize(10); doc.text(H.tgl, 14, 22); doc.text(H.asal + '     ' + H.adm, 14, 28);
   doc.autoTable({
     startY: 33, headStyles: { fillColor: [74, 123, 208] },
-    head: [['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Admin', 'Status']],
-    body: rows.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', SL + r.min + ' pcs', r.src, r.adm || '-', '']),
+    head: [['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Status']],
+    body: rows.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', SL + r.min + ' pcs', r.src, '']),
     didDrawCell: d => {
       if (d.section !== 'body') return;
-      if (d.column.index === 7) { // kotak centang kosong
+      if (d.column.index === 6) { // kotak centang kosong
         const s = 4.5; doc.setDrawColor(60); doc.setLineWidth(.3);
         doc.rect(d.cell.x + (d.cell.width - s) / 2, d.cell.y + (d.cell.height - s) / 2, s, s);
       }
     }
   });
-  doc.save('pengajuan-' + dayWIB(Date.now()) + '.pdf');
+  doc.save(fileName($('#xSrc').value, admFile('#xAdm', rows), 'PENGAJUAN', 'pdf'));
 };
 const PGF = ['#xFromD', '#xFromT', '#xToD', '#xToT', '#xSrc', '#xAdm', '#xProd', '#xSt'];
-function setPgToday() { const d = dayWIB(Date.now()); $('#xFromD').value = $('#xToD').value = d; $('#xFromT').value = '00:00'; $('#xToT').value = '23:59' }
+function setPgToday() { $('#xFromD').value = $('#xToD').value = $('#xFromT').value = $('#xToT').value = '' } // filter tanggal kosong = semua data
 setPgToday();
 PGF.forEach(x => { $(x).addEventListener('input', renderReqs); $(x).addEventListener('change', renderReqs) });
 $('#xReset').onclick = () => {
@@ -502,7 +526,7 @@ $('#inSubmit').onclick = () => {
   blocks.forEach(b => b.el.querySelectorAll('.ln').forEach(ln => {
     const r = reqs.find(x => x.id === ln.dataset.id);
     const v = Math.min(parseInt(ln.querySelector('input').value, 10) || 0, r ? r.min - r.ada : 0);
-    if (r && v > 0) lines.push([r, v]);
+    if (r && dayWIB(r.ts) === dayWIB(Date.now()) && v > 0) lines.push([r, v]);
   }));
   if (!lines.length) return msg('#inMsg', 'Isi jumlah barang ada minimal pada satu produk/varian.');
   const ts = Date.now(), sj = $('#sj').value.trim(), pid = photo ? uid() : '', ops = [];
@@ -620,25 +644,36 @@ $('#mdl').onclick = e => { if (e.target.id === 'mdl') closeEdit() };
 
 /* ---------- export ---------- */
 const stDesc = r => r.ada === r.min ? 'Lengkap' : 'Kurang';
+function puHead(rows) {
+  const f = dtVal('#dFrom'), t = dtVal('#dTo', true);
+  const tgl = !f && !t ? 'Semua tanggal' : f && t ? fDT(f) + ' s/d ' + fDT(t) : f ? 'Mulai ' + fDT(f) : 'Sampai ' + fDT(t);
+  return { title: 'Laporan Purchase', tgl: 'Tanggal & Jam: ' + tgl, asal: 'Asal Barang: ' + ($('#fqSrc').value || 'Semua'), adm: 'Nama Admin: ' + admHead('#fqAdm', rows) };
+}
 $('#xXls').onclick = () => {
   if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
-  const seq = seqMap();
-  const rows = filtered().sort((a, b) => seq[a.id] - seq[b.id]).map(r => ({ No: seq[r.id], Tanggal: ymd(r.ts), Jam: hm(r.ts), 'No Surat Jalan': r.sj || '', Produk: r.prod, Varian: r.vn || '-', Ada: r.ada, Diminta: r.min, Status: stDesc(r), Asal: r.src, Admin: r.adm || '' }));
+  const seq = seqMap(), rows = filtered().sort((a, b) => seq[a.id] - seq[b.id]);
   if (!rows.length) return alert('Tidak ada data untuk diexport.');
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Purchase');
-  XLSX.writeFile(wb, 'purchase-' + ymd(Date.now()) + '.xlsx');
+  const H = puHead(rows);
+  const aoa = [[H.title], [H.tgl], [H.asal], [H.adm], [], ['No', 'Tanggal', 'Jam', 'No Surat Jalan', 'Produk', 'Varian', 'Ada', 'Diminta', 'Status', 'Asal']]
+    .concat(rows.map(r => [seq[r.id], ymd(r.ts), hm(r.ts), r.sj || '', r.prod, r.vn || '-', r.ada, r.min, stDesc(r), r.src]));
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges'] = [0, 1, 2, 3].map(r => ({ s: { r, c: 0 }, e: { r, c: 9 } }));
+  ws['!cols'] = [5, 12, 8, 18, 28, 16, 6, 9, 10, 10].map(w => ({ wch: w }));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Purchase');
+  XLSX.writeFile(wb, fileName($('#fqSrc').value, admFile('#fqAdm', rows), 'PURCHASE', 'xlsx'));
 };
 $('#xPdf').onclick = () => {
   if (!window.jspdf) return alert('Library PDF gagal dimuat. Pastikan terhubung ke internet.');
   const seq = seqMap(), rows = filtered().sort((a, b) => seq[a.id] - seq[b.id]); if (!rows.length) return alert('Tidak ada data untuk diexport.');
-  const doc = new jspdf.jsPDF({ orientation: 'landscape' });
-  doc.setFontSize(14); doc.text('Laporan Purchase', 14, 14);
+  const H = puHead(rows), doc = new jspdf.jsPDF({ orientation: 'landscape' });
+  doc.setFontSize(16); doc.text(H.title, 14, 15);
+  doc.setFontSize(10); doc.text(H.tgl, 14, 22); doc.text(H.asal + '     ' + H.adm, 14, 28);
   doc.autoTable({
-    startY: 20, headStyles: { fillColor: [74, 123, 208] },
-    head: [['No', 'Tanggal', 'No. Surat Jalan', 'Produk', 'Varian', 'Ada / Diminta', 'Status', 'Asal', 'Admin']],
-    body: rows.map(r => [seq[r.id], tsFmt(r.ts), r.sj || '-', r.prod, r.vn || '-', r.ada + ' / ' + r.min + ' pcs', stDesc(r), r.src, r.adm || '-']),
+    startY: 33, headStyles: { fillColor: [74, 123, 208] },
+    head: [['No', 'Tanggal', 'No. Surat Jalan', 'Produk', 'Varian', 'Ada / Diminta', 'Status', 'Asal']],
+    body: rows.map(r => [seq[r.id], tsFmt(r.ts), r.sj || '-', r.prod, r.vn || '-', r.ada + ' / ' + r.min + ' pcs', stDesc(r), r.src]),
   });
-  doc.save('purchase-' + ymd(Date.now()) + '.pdf');
+  doc.save(fileName($('#fqSrc').value, admFile('#fqAdm', rows), 'PURCHASE', 'pdf'));
 };
 
 /* ---------- PRODUK ---------- */
@@ -755,4 +790,79 @@ const dayCheck = () => {
   }
 };
 setInterval(dayCheck, 30000); document.addEventListener('visibilitychange', dayCheck);
+/* ---------- login admin ---------- */
+function sha256(str) { // hash password (SHA-256, JavaScript murni, sama di semua perangkat)
+  const b = unescape(encodeURIComponent(str)), K = [], H = []; let n = 2;
+  while (K.length < 64) { let p = true; for (let d = 2; d * d <= n; d++) if (n % d === 0) { p = false; break }
+    if (p) { if (H.length < 8) H.push(Math.floor(Math.pow(n, .5) % 1 * 4294967296) | 0); K.push(Math.floor(Math.pow(n, 1 / 3) % 1 * 4294967296) | 0) } n++ }
+  const l = b.length, w = new Array((((l + 8) >> 6) + 1) * 16).fill(0), R = (x, c) => (x >>> c) | (x << (32 - c));
+  for (let i = 0; i < l; i++) w[i >> 2] |= b.charCodeAt(i) << (24 - (i % 4) * 8);
+  w[l >> 2] |= 0x80 << (24 - (l % 4) * 8); w[w.length - 1] = l * 8;
+  for (let j = 0; j < w.length; j += 16) {
+    const W = w.slice(j, j + 16); let [a, b2, c, d, e, f, g, h] = H;
+    for (let i = 0; i < 64; i++) {
+      if (i >= 16) { const x = W[i - 15], y = W[i - 2]; W[i] = (W[i - 16] + (R(x, 7) ^ R(x, 18) ^ (x >>> 3)) + W[i - 7] + (R(y, 17) ^ R(y, 19) ^ (y >>> 10))) | 0 }
+      const t1 = (h + (R(e, 6) ^ R(e, 11) ^ R(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + W[i]) | 0, t2 = ((R(a, 2) ^ R(a, 13) ^ R(a, 22)) + ((a & b2) ^ (a & c) ^ (b2 & c))) | 0;
+      h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b2; b2 = a; a = (t1 + t2) | 0;
+    }
+    [a, b2, c, d, e, f, g, h].forEach((v, i) => H[i] = (H[i] + v) | 0);
+  }
+  return H.map(v => (v >>> 0).toString(16).padStart(8, '0')).join('');
+}
+const pwHash = (u, p) => sha256('pp1:' + u + ':' + p);
+async function adminGet(u) {
+  if (db) { const s = await db.collection('admins').doc(u).get({ source: 'server' }); return s.exists ? s.data() : null }
+  return store.get('pp_admins', {})[u] || null;
+}
+async function adminCreate(rec) {
+  if (db) {
+    await db.runTransaction(async t => { const ref = db.collection('admins').doc(rec.username); if ((await t.get(ref)).exists) throw new Error('exists'); t.set(ref, rec) });
+  } else {
+    const a = store.get('pp_admins', {}); if (a[rec.username]) throw new Error('exists');
+    a[rec.username] = rec; store.set('pp_admins', a); admins.push(rec);
+  }
+}
+const authMsg = (t, ok) => msg('#aMsg', t, ok);
+function authTab(t) {
+  $$('.atabs button').forEach(b => b.classList.toggle('on', b.dataset.a === t));
+  $('#fLogin').hidden = t !== 'in'; $('#fSignup').hidden = t !== 'up'; authMsg('');
+}
+function showAuth(t) { $('#auth').hidden = false; authTab(t || 'in') }
+function renderWho() {
+  $('#who').textContent = me ? '👤 ' + me.name : '🔒 Tamu';
+  $('#who').title = me ? 'Klik untuk keluar' : 'Klik untuk masuk / daftar';
+}
+function setMe(m) { me = m; store.set('pp_session', m ? { username: m.username, name: m.name } : { guest: true }); $('#auth').hidden = true; renderWho() }
+$$('.atabs button').forEach(b => b.onclick = () => authTab(b.dataset.a));
+$('#who').onclick = () => {
+  if (!me) return showAuth('in');
+  if (!confirm('Keluar dari akun ' + me.name + '?')) return;
+  store.set('pp_session', null); me = null; renderWho(); showAuth('in');
+};
+$('#guestBtn').onclick = () => setMe(null); // masuk tanpa akun: nama admin tidak terisi
+$('#fLogin').onsubmit = async e => {
+  e.preventDefault();
+  const u = $('#lUser').value.trim().toLowerCase(), p = $('#lPass').value;
+  if (!u || !p) return authMsg('Isi username dan password.');
+  try {
+    const a = await adminGet(u);
+    if (!a || a.pass !== pwHash(u, p)) return authMsg('Username atau password salah.');
+    $('#lPass').value = ''; setMe({ username: a.username, name: a.name });
+  } catch (err) { authMsg('Tidak bisa terhubung ke server. Periksa internet lalu coba lagi.') }
+};
+$('#fSignup').onsubmit = async e => {
+  e.preventDefault();
+  const name = $('#sName').value.trim().replace(/\s+/g, ' '), u = $('#sUser').value.trim().toLowerCase(), p = $('#sPass').value;
+  if (!name) return authMsg('Isi nama.');
+  if (!/^[a-z0-9._-]{3,20}$/.test(u)) return authMsg('Username 3-20 karakter: huruf kecil, angka, titik, strip, atau garis bawah.');
+  if (p.length < 4) return authMsg('Password minimal 4 karakter.');
+  try {
+    await adminCreate({ username: u, name, pass: pwHash(u, p), ts: Date.now() });
+    $('#sPass').value = ''; setMe({ username: u, name });
+  } catch (err) { authMsg(err && err.message === 'exists' ? 'Username sudah dipakai, pilih yang lain.' : 'Gagal mendaftar. Periksa koneksi internet.') }
+};
+{ const s = store.get('pp_session', null);
+  if (s && s.username) me = { username: s.username, name: s.name };
+  renderWho(); if (!s) showAuth('in'); }
+
 pgVarUI(); addBlock(); startSync();

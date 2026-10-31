@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Purchasing Barang</title>
-<link rel="stylesheet" href="style.css?v=21">
+<link rel="stylesheet" href="style.css?v=24">
 </head>
 <body>
 
@@ -24,7 +24,7 @@
   </div>
     <div class="ph">
       <div><h2 id="pt">Pengajuan</h2><p id="ps">Ajukan barang yang dibutuhkan</p></div>
-      <div class="sync loc" id="sync"><i></i><span>Mode lokal</span></div>
+      <div class="hr"><button class="who" id="who" type="button">🔒 Tamu</button><div class="sync loc" id="sync"><i></i><span>Mode lokal</span></div></div>
     </div>
 </header>
 
@@ -34,7 +34,7 @@
   <section class="sec on" id="pg">
     <div class="card">
       <h3>Form Pengajuan</h3>
-      <div class="grid5">
+      <div class="grid4">
         <div class="f"><label>Cari Produk</label><div id="pgSearch"></div></div>
         <div class="f"><label>Varian (warna)</label>
           <div class="pop" id="pgVarWrap">
@@ -55,13 +55,12 @@
           </div>
         </div>
         <div class="f"><label>Asal Barang</label><select id="pgSrc" data-src="Pilih asal barang"></select></div>
-        <div class="f"><label>Nama Admin</label><select id="pgAdm" data-adm="Pilih nama admin"></select></div>
       </div>
       <div class="foot"><div class="msg" id="pgMsg"></div><button class="btn" id="pgSubmit">Submit</button></div>
     </div>
     <div class="card">
       <h3>Daftar Pengajuan</h3>
-      <p class="hint">Bawaan: menampilkan pengajuan hari ini dan otomatis pindah ke hari baru setiap pukul 00.00 WIB. Ubah filter tanggal &amp; jam untuk melihat/export hari lain. Data penerimaan tetap tersimpan di menu Purchase.</p>
+      <p class="hint">Pengajuan hari ini tampil di atas. Setelah pukul 00.00 WIB, pengajuan hari itu otomatis masuk ke Riwayat dan dikelompokkan per tahun &amp; bulan (tertutup, klik untuk membuka). Filter tanggal &amp; jam yang dikosongkan berarti semua tanggal, termasuk untuk export. Data penerimaan tetap tersimpan di menu Purchase.</p>
       <div class="exf">
         <div><label>Dari tanggal &amp; jam</label><div class="dt"><input type="date" id="xFromD"><input class="tm24" id="xFromT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
         <div><label>Sampai tanggal &amp; jam</label><div class="dt"><input type="date" id="xToD"><input class="tm24" id="xToT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
@@ -71,10 +70,7 @@
         <div><label>Status</label><select id="xSt"><option value="">Semua</option><option value="Menunggu">Menunggu</option><option value="Sebagian">Sebagian</option><option value="Selesai">Selesai</option></select></div>
         <div class="xb"><button class="btn ghost sm" id="xReset" type="button">Reset filter</button><button class="btn ghost sm" id="pgXls" type="button">Export Excel</button><button class="btn ghost sm" id="pgPdf" type="button">Export PDF</button></div>
       </div>
-      <div class="tw"><table>
-        <thead><tr><th>No</th><th>Tanggal</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Asal</th><th>Admin</th><th>Status</th><th></th></tr></thead>
-        <tbody id="pgTb"></tbody>
-      </table></div>
+      <div id="pgGrp"></div>
     </div>
   </section>
 
@@ -155,6 +151,27 @@
   </section>
 </main>
 
+<!-- LOGIN ADMIN -->
+<div class="auth" id="auth" hidden><div class="abox">
+  <div class="alogo">🛒</div>
+  <h2>Purchasing</h2>
+  <div class="atabs"><button type="button" data-a="in" class="on">Masuk</button><button type="button" data-a="up">Daftar</button></div>
+  <form id="fLogin" autocomplete="on">
+    <label>Username</label><input id="lUser" autocomplete="username" autocapitalize="none" placeholder="username">
+    <label>Password</label><input id="lPass" type="password" autocomplete="current-password" placeholder="password">
+    <button class="btn" type="submit" style="width:100%;margin-top:18px">Masuk</button>
+  </form>
+  <form id="fSignup" autocomplete="on" hidden>
+    <label>Nama</label><input id="sName" autocomplete="name" placeholder="Nama lengkap / nama panggilan">
+    <label>Username (untuk login)</label><input id="sUser" autocomplete="username" autocapitalize="none" placeholder="huruf kecil, angka, . _ -">
+    <label>Password</label><input id="sPass" type="password" autocomplete="new-password" placeholder="minimal 4 karakter">
+    <button class="btn" type="submit" style="width:100%;margin-top:18px">Daftar &amp; Masuk</button>
+  </form>
+  <div class="msg" id="aMsg"></div>
+  <button class="guest" id="guestBtn" type="button">🔒 Masuk tanpa akun</button>
+  <p class="hint2" style="text-align:center">Tanpa akun, nama admin tidak tercatat pada data yang Anda submit.</p>
+</div></div>
+
 <!-- MODAL EDIT PENGAJUAN -->
 <div class="modal" id="rmdl" hidden><div class="box">
   <h3>Edit Pengajuan</h3>
@@ -219,6 +236,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="script.js?v=21"></script>
+<script src="script.js?v=24"></script>
 </body>
 </html>
