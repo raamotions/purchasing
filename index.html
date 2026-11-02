@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Purchasing Barang</title>
-<link rel="stylesheet" href="style.css?v=24">
+<link rel="stylesheet" href="style.css?v=25">
 </head>
 <body>
 
@@ -77,10 +77,13 @@
   <!-- INPUT -->
   <section class="sec" id="in">
     <div class="card">
-      <div style="max-width:420px">
-        <label style="margin-top:0">Nomor Surat Jalan</label>
-        <input id="sj" placeholder="Contoh: SJ/2026/10-001">
+      <div class="inh">
+        <div><label>Nomor Surat Jalan</label><input id="sj" placeholder="Contoh: SJ/2026/10-001"></div>
+        <div><label>Nama Admin</label><select id="inAdm" data-adm="Semua"></select></div>
+        <div><label>Asal Barang</label><select id="inSrc" data-src="Semua"></select></div>
       </div>
+      <div class="hint2">Pilih nama admin dan/atau asal barang untuk menampilkan semua pengajuan hari ini sekaligus. Kosongkan filter untuk mencari produk manual.</div>
+      <div id="auto" hidden></div>
       <div id="blocks"></div>
       <button class="btn ghost" id="addBlk" type="button" style="margin-top:16px">+ Tambahkan produk lainnya</button>
       <label>Foto Surat Jalan (jika ada)</label>
@@ -236,6 +239,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="script.js?v=26"></script>
+<script src="script.js?v=28"></script>
 </body>
 </html>

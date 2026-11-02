@@ -111,7 +111,7 @@ async function diagnose() {
 }
 $('#sync').onclick = diagnose; $('#sync').title = 'Klik untuk tes koneksi Firebase';
 function refresh() {
-  fillAdm(); renderReqs(); renderProducts();
+  fillAdm(); renderReqs(); renderProducts(); renderAuto();
   if ($('#pu').classList.contains('on')) renderTable();
 }
 function startSync() {
@@ -454,15 +454,7 @@ function addBlock() {
       <div class="st">-</div></div>`).join('')
       : '<div class="empty">Tidak ada pengajuan terbuka untuk produk ini.</div>';
   };
-  el.querySelector('.rows').oninput = e => {
-    const ln = e.target.closest('.ln'); if (!ln) return;
-    const r = reqs.find(x => x.id === ln.dataset.id), i = e.target, s = ln.querySelector('.st');
-    if (i.value === '') { s.className = 'st'; s.textContent = '-'; return }
-    let v = parseInt(i.value, 10); if (isNaN(v) || v < 0) v = 0;
-    v = Math.min(v, r.min - r.ada); i.value = v;
-    const ok = r.ada + v === r.min;
-    s.className = 'st ' + (ok ? 'ok' : 'bad'); s.textContent = ok ? '✓' : '✕';
-  };
+  el.querySelector('.rows').oninput = lineInput;
   el.querySelector('.x').onclick = () => {
     el.remove(); blocks = blocks.filter(o => o !== b); if (!blocks.length) addBlock();
   };
@@ -472,8 +464,58 @@ function refreshBlocks() {
   blocks.forEach(b => {
     if (b.prod && !openProducts().some(p => String(p.id) === String(b.prod.id))) b.s.reset(); else b.render();
   });
+  renderAuto();
 }
 $('#addBlk').onclick = addBlock;
+
+/* input angka "Ada" pada satu baris pengajuan (dipakai mode cari produk dan mode filter admin/asal) */
+let autoVals = {}, autoSig = '';
+function setLnStatus(ln, r, v) {
+  const s = ln.querySelector('.st');
+  if (v === '' || v == null) { s.className = 'st'; s.textContent = '-'; return }
+  const ok = r.ada + v === r.min;
+  s.className = 'st ' + (ok ? 'ok' : 'bad'); s.textContent = ok ? '✓' : '✕';
+}
+function lineInput(e) {
+  const ln = e.target.closest('.ln'); if (!ln) return;
+  const r = reqs.find(x => x.id === ln.dataset.id), i = e.target, auto = !!ln.closest('#auto');
+  if (!r) return;
+  if (i.value === '') { if (auto) delete autoVals[r.id]; setLnStatus(ln, r, ''); return }
+  let v = parseInt(i.value, 10); if (isNaN(v) || v < 0) v = 0;
+  v = Math.min(v, r.min - r.ada); i.value = v;
+  if (auto) autoVals[r.id] = v;
+  setLnStatus(ln, r, v);
+}
+
+/* mode filter: pilih nama admin dan/atau asal barang -> semua pengajuan hari ini tampil sebagai daftar isian */
+const autoMode = () => !!($('#inAdm').value || $('#inSrc').value);
+const autoReqs = () => {
+  const a = $('#inAdm').value, s = $('#inSrc').value;
+  return todayReqs().filter(r => r.ada < r.min && (!a || (r.adm || '') === a) && (!s || r.src === s))
+    .sort((x, y) => x.ts - y.ts || (x.id < y.id ? -1 : 1)); // urut sesuai waktu pengisian form pengajuan (terlama di atas)
+};
+function renderAuto(force) {
+  const on = autoMode();
+  $('#auto').hidden = !on; $('#blocks').hidden = on; $('#addBlk').hidden = on;
+  if (!on) { autoSig = ''; return }
+  const rs = autoReqs(), sig = $('#inAdm').value + '|' + $('#inSrc').value + '|' + JSON.stringify(rs.map(r => [r.id, r.ada, r.min]));
+  if (!force && sig === autoSig) return; // tidak ada perubahan data: jangan hapus isian yang sedang diketik
+  autoSig = sig;
+  $('#auto').innerHTML = rs.length
+    ? '<div class="hint">' + rs.length + ' barang diajukan hari ini. Isi jumlah "Ada" (boleh 0), kolom yang dikosongkan akan dilewati.</div>' + rs.map(r => `<div class="ln" data-id="${r.id}">
+      ${r.vc ? sw(r.vc, r.vn) : ''}
+      <div class="inf"><b class="pn">${esc(r.prod)}${r.vn ? ' · ' + esc(r.vn) : ''}</b>
+        <span>Diajukan <b>${r.min}</b> pcs · sudah ada ${r.ada} · <span class="tag">${esc(r.src)}</span> · Admin: <b>${esc(r.adm || '-')}</b></span></div>
+      <input type="number" min="0" max="${r.min - r.ada}" inputmode="numeric" placeholder="Ada (0 boleh)" value="${autoVals[r.id] != null ? Math.min(autoVals[r.id], r.min - r.ada) : ''}">
+      <div class="st">-</div></div>`).join('')
+    : '<div class="empty">Tidak ada pengajuan terbuka hari ini untuk filter ini.</div>';
+  $('#auto').querySelectorAll('.ln').forEach(ln => {
+    const r = reqs.find(x => x.id === ln.dataset.id), raw = ln.querySelector('input').value;
+    if (r && raw !== '') setLnStatus(ln, r, parseInt(raw, 10));
+  });
+}
+$('#auto').addEventListener('input', lineInput);
+$('#inAdm').onchange = $('#inSrc').onchange = () => { msg('#inMsg', ''); renderAuto(true) };
 
 function compress(f, cb) {
   const r = new FileReader();
@@ -520,10 +562,11 @@ const inPF = photoField($('#in'), d => { photo = d });
 function resetInput() {
   $('#sj').value = ''; photo = ''; inPF.set('');
   $('#blocks').innerHTML = ''; blocks = []; addBlock(); msg('#inMsg', '');
+  autoVals = {}; renderAuto(true);
 }
 $('#inSubmit').onclick = () => {
-  const lines = [];
-  blocks.forEach(b => b.el.querySelectorAll('.ln').forEach(ln => {
+  const lines = [], roots = autoMode() ? [$('#auto')] : blocks.map(b => b.el); // mode filter: ambil dari daftar otomatis
+  roots.forEach(root => root.querySelectorAll('.ln').forEach(ln => {
     const r = reqs.find(x => x.id === ln.dataset.id), raw = ln.querySelector('input').value.trim();
     if (raw === '') return; // kosong = dilewati; angka 0 tetap dicatat (barang tidak ada)
     const v = Math.max(0, Math.min(parseInt(raw, 10) || 0, r ? r.min - r.ada : 0));

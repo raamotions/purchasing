@@ -191,3 +191,11 @@ details .tw{margin:0 8px 8px}
 
 .dayh{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px;margin:18px 0 6px}
 #pgGrp{margin-top:6px}
+/* input: filter admin + asal */
+.inh{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:12px 16px;align-items:end}
+.inh label{margin:0 0 6px}
+#auto{border:1px solid var(--line);border-radius:12px;padding:4px 14px 14px;margin-top:16px}
+#auto .hint{margin:12px 0 0}
+#auto .ln:first-of-type{border-top:0}
+.ln .inf .pn{color:var(--ink);font-size:14px;text-transform:uppercase}
+@media(max-width:700px){.inh{grid-template-columns:1fr}}
