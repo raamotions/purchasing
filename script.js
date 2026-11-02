@@ -364,6 +364,9 @@ $('#rSave').onclick = () => {
 
 /* ---------- export pengajuan ---------- */
 const SL = '\u00A0'.repeat(8) + '/ '; // kolom Ada dikosongkan, garis miring tetap ada
+// urutan export: abjad A-Z menurut nama produk, lalu varian (warna), lalu waktu
+const azSort = (a, b) => String(a.prod).localeCompare(String(b.prod), 'id', { sensitivity: 'base', numeric: true })
+  || String(a.vn || '').localeCompare(String(b.vn || ''), 'id', { sensitivity: 'base', numeric: true }) || a.ts - b.ts;
 const reqStat = r => r.ada >= r.min ? 'Selesai' : r.ada ? 'Sebagian' : 'Menunggu';
 function pgFiltered() { // dipakai oleh daftar di layar DAN export
   const f = dtv(dtVal('#xFrom')), t = dtv(dtVal('#xTo', true), true), s = $('#xSrc').value, a = $('#xAdm').value,
@@ -386,7 +389,7 @@ function pgHead(rows) {
 }
 $('#pgXls').onclick = () => {
   if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
-  const rows = pgFiltered();
+  const rows = pgFiltered().sort(azSort);
   if (!rows.length) return alert('Tidak ada pengajuan pada filter itu.');
   const H = pgHead(rows);
   const aoa = [[H.title], [H.tgl], [H.asal], [H.adm], [], ['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Status']]
@@ -399,7 +402,7 @@ $('#pgXls').onclick = () => {
 };
 $('#pgPdf').onclick = () => {
   if (!window.jspdf) return alert('Library PDF gagal dimuat. Pastikan terhubung ke internet.');
-  const rows = pgFiltered(); if (!rows.length) return alert('Tidak ada pengajuan pada filter itu.');
+  const rows = pgFiltered().sort(azSort); if (!rows.length) return alert('Tidak ada pengajuan pada filter itu.');
   const H = pgHead(rows);
   const doc = new jspdf.jsPDF({ orientation: 'landscape' });
   doc.setFontSize(16); doc.text(H.title, 14, 15);
@@ -496,8 +499,8 @@ const autoReqs = () => {
 };
 function renderAuto(force) {
   const on = autoMode();
-  $('#auto').hidden = !on; $('#blocks').hidden = on; $('#addBlk').hidden = on;
-  if (!on) { autoSig = ''; return }
+  $('#auto').hidden = !on; $('#autoQBox').hidden = !on; $('#blocks').hidden = on; $('#addBlk').hidden = on;
+  if (!on) { autoSig = ''; $('#autoQ').value = ''; $('#autoQ')._upd && $('#autoQ')._upd(); return }
   const rs = autoReqs(), sig = $('#inAdm').value + '|' + $('#inSrc').value + '|' + JSON.stringify(rs.map(r => [r.id, r.ada, r.min]));
   if (!force && sig === autoSig) return; // tidak ada perubahan data: jangan hapus isian yang sedang diketik
   autoSig = sig;
@@ -513,9 +516,21 @@ function renderAuto(force) {
     const r = reqs.find(x => x.id === ln.dataset.id), raw = ln.querySelector('input').value;
     if (r && raw !== '') setLnStatus(ln, r, parseInt(raw, 10));
   });
+  applyAutoQ();
 }
 $('#auto').addEventListener('input', lineInput);
 $('#inAdm').onchange = $('#inSrc').onchange = () => { msg('#inMsg', ''); renderAuto(true) };
+// cari produk di dalam daftar hasil filter (baris yang tidak cocok disembunyikan; isian yang sudah diketik tetap tersimpan & ikut ter-submit)
+function applyAutoQ() {
+  const q = $('#autoQ').value.trim().toLowerCase(), lns = $('#auto').querySelectorAll('.ln');
+  let vis = 0;
+  lns.forEach(ln => { const ok = !q || ln.querySelector('.pn').textContent.toLowerCase().includes(q); ln.hidden = !ok; if (ok) vis++ });
+  $('#autoCnt').textContent = !lns.length || !q ? '' : vis ? vis + ' dari ' + lns.length + ' barang cocok.' : 'Tidak ada barang yang cocok dengan pencarian.';
+}
+caps($('#autoQ')); addClear($('#autoQ')); $('#autoQ').addEventListener('input', applyAutoQ);
+$('#inReset').onclick = () => { // reset filter admin & asal (isian jumlah yang sudah diketik tidak dihapus)
+  $('#inAdm').value = ''; $('#inSrc').value = ''; msg('#inMsg', ''); renderAuto(true);
+};
 
 function compress(f, cb) {
   const r = new FileReader();
@@ -594,8 +609,12 @@ function filtered() {
     (!s || r.src === s) && (!a || r.adm === a) && (!v || r.vc === v) && (!st || (st === 'ok') === (r.ada === r.min)));
 }
 const openState = {};
-// nomor urut berdasarkan urutan masuk (terlama = 1), tidak berubah oleh filter
-const seqMap = () => { const m = {}; records.slice().sort((a, b) => a.ts - b.ts || (a.id < b.id ? -1 : 1)).forEach((r, i) => m[r.id] = i + 1); return m };
+// nomor urut per BULAN berdasarkan urutan masuk (terlama = 1), mulai dari 1 lagi setiap ganti bulan; tidak berubah oleh filter
+const seqMap = () => {
+  const m = {}, c = {};
+  records.slice().sort((a, b) => a.ts - b.ts || (a.id < b.id ? -1 : 1)).forEach(r => { const k = ymd(r.ts).slice(0, 7); m[r.id] = c[k] = (c[k] || 0) + 1 });
+  return m;
+};
 function renderTable() {
   const seq = seqMap();
   const cols = [...new Map(records.filter(r => r.vc).map(r => [r.vc, r.vn])).entries()], cur = $('#fqVar').value;
@@ -695,11 +714,11 @@ function puHead(rows) {
 }
 $('#xXls').onclick = () => {
   if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
-  const seq = seqMap(), rows = filtered().sort((a, b) => seq[a.id] - seq[b.id]);
+  const rows = filtered().sort(azSort);
   if (!rows.length) return alert('Tidak ada data untuk diexport.');
   const H = puHead(rows);
   const aoa = [[H.title], [H.tgl], [H.asal], [H.adm], [], ['No', 'Tanggal', 'Jam', 'No Surat Jalan', 'Produk', 'Varian', 'Ada', 'Diminta', 'Status', 'Asal']]
-    .concat(rows.map(r => [seq[r.id], ymd(r.ts), hm(r.ts), r.sj || '', r.prod, r.vn || '-', r.ada, r.min, stDesc(r), r.src]));
+    .concat(rows.map((r, i) => [i + 1, ymd(r.ts), hm(r.ts), r.sj || '', r.prod, r.vn || '-', r.ada, r.min, stDesc(r), r.src]));
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!merges'] = [0, 1, 2, 3].map(r => ({ s: { r, c: 0 }, e: { r, c: 9 } }));
   ws['!cols'] = [5, 12, 8, 18, 28, 16, 6, 9, 10, 10].map(w => ({ wch: w }));
@@ -708,14 +727,14 @@ $('#xXls').onclick = () => {
 };
 $('#xPdf').onclick = () => {
   if (!window.jspdf) return alert('Library PDF gagal dimuat. Pastikan terhubung ke internet.');
-  const seq = seqMap(), rows = filtered().sort((a, b) => seq[a.id] - seq[b.id]); if (!rows.length) return alert('Tidak ada data untuk diexport.');
+  const rows = filtered().sort(azSort); if (!rows.length) return alert('Tidak ada data untuk diexport.');
   const H = puHead(rows), doc = new jspdf.jsPDF({ orientation: 'landscape' });
   doc.setFontSize(16); doc.text(H.title, 14, 15);
   doc.setFontSize(10); doc.text(H.tgl, 14, 22); doc.text(H.asal + '     ' + H.adm, 14, 28);
   doc.autoTable({
     startY: 33, headStyles: { fillColor: [74, 123, 208] },
     head: [['No', 'Tanggal', 'No. Surat Jalan', 'Produk', 'Varian', 'Ada / Diminta', 'Status', 'Asal']],
-    body: rows.map(r => [seq[r.id], tsFmt(r.ts), r.sj || '-', r.prod, r.vn || '-', r.ada + ' / ' + r.min + ' pcs', stDesc(r), r.src]),
+    body: rows.map((r, i) => [i + 1, tsFmt(r.ts), r.sj || '-', r.prod, r.vn || '-', r.ada + ' / ' + r.min + ' pcs', stDesc(r), r.src]),
   });
   doc.save(fileName($('#fqSrc').value, admFile('#fqAdm', rows), 'PURCHASE', 'pdf'));
 };
