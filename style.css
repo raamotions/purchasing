@@ -201,3 +201,16 @@ details .tw{margin:0 8px 8px}
 #autoQBox{margin-top:14px}
 .inh .dtw{grid-column:span 2}
 @media(max-width:700px){.inh .dtw{grid-column:auto}}
+/* jam input produk yang sama (digabung) */
+.arw{display:block;margin-top:5px;border:0;background:var(--soft);color:var(--pri2);font:inherit;font-size:12px;font-weight:700;padding:3px 10px;border-radius:20px;cursor:pointer}
+.arw::before{content:"\25B8  "}
+.arw.on{background:var(--pri);color:#fff}
+.arw.on::before{content:"\25BE  "}
+.hrow td{background:var(--soft);font-size:13px}
+.hl{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;color:var(--mute)}
+.hl b{color:var(--ink)}
+.hl .ar{color:var(--pri2);font-weight:700}
+.mt{min-width:0;width:100%;background:var(--card);border-radius:10px;overflow:hidden}
+.mt th,.mt td{background:var(--card);padding:9px 10px;font-size:13px}
+.mt th{border-radius:0;color:var(--mute)}
+.hl{display:none}

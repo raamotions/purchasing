@@ -263,11 +263,13 @@ $('#pgSubmit').onclick = () => {
   const vn = vr ? vr.n : '', vc = vr ? vr.c : '';
   // produk + warna + asal yang sama (hari ini) digabung, jumlah diminta dijumlahkan
   const ex = np ? null : todayReqs().find(r => String(r.pid) === String(prod.id) && r.vn === vn && r.vc === vc && r.src === src && (r.adm || '') === adm);
+  const now = Date.now();
   if (ex) {
+    ex.hist = reqHist(ex).concat({ ts: now, n: m }); // catat jam input tambahan
     ex.min += m; ops.push(['requests', 'set', ex]);
     records.filter(x => x.rid === ex.id).forEach(x => { x.min = ex.min; ops.push(['records', 'set', x]) });
   } else {
-    const q = { id: uid(), ts: Date.now(), pid: prod.id, prod: prod.name, vn, vc, min: m, ada: 0, src, adm };
+    const q = { id: uid(), ts: now, pid: prod.id, prod: prod.name, vn, vc, min: m, ada: 0, src, adm, hist: [{ ts: now, n: m }] };
     reqs.unshift(q); ops.push(['requests', 'set', q]);
   }
   if (!commit(ops)) return msg('#pgMsg', 'Penyimpanan penuh.');
@@ -278,11 +280,19 @@ $('#pgSubmit').onclick = () => {
   renderReqs(); renderProducts();
 };
 const todayReqs = () => reqs.filter(r => dayWIB(r.ts) === dayWIB(Date.now()));
+const openHist = {}; // id pengajuan -> daftar jam input sedang dibuka
+const histLab = (r, x) => ymd(x.ts) === ymd(r.ts) ? hm(x.ts) : tsFmt(x.ts);
+const histBtn = r => { const h = reqHist(r); return h.length > 1 ? `<button type="button" class="arw${openHist[r.id] ? ' on' : ''}" data-hist="${r.id}" title="Lihat jam input">${h.length}×</button>` : '' };
+const histRow = r => {
+  const h = reqHist(r); if (h.length < 2) return '';
+  return `<tr class="hrow" data-for="${r.id}"${openHist[r.id] ? '' : ' hidden'}><td></td><td colspan="8"><table class="mt"><thead><tr><th>Produk</th><th>Varian</th><th>Ada / Diajukan</th><th>Waktu input</th></tr></thead><tbody>`
+    + reqEntries(r).map(x => `<tr><td>${esc(r.prod)}</td><td>${r.vc ? sw(r.vc, r.vn) + ' ' : ''}${esc(r.vn || '-')}</td><td>${x.a} / ${x.n} pcs</td><td>${tsFmt(x.ts)}</td></tr>`).join('') + '</tbody></table></td></tr>';
+};
 const pgRow = (r, n) => `<tr>
-    <td>${n + 1}</td><td>${fmt(r.ts)}${tm(r.ts)}</td><td>${esc(r.prod)}</td><td>${sw(r.vc, r.vn)}</td>
-    <td>${r.ada} / ${r.min} pcs</td><td><span class="tag">${esc(r.src)}</span></td><td>${esc(r.adm || '-')}</td>
+    <td>${n + 1}</td><td>${fmt(r.ts)}${tm(r.ts)}${histBtn(r)}</td><td>${esc(r.prod)}</td><td>${sw(r.vc, r.vn)}</td>
+    <td>${r.ada} / ${r.min} pcs${r.part ? '<div class="tm">sesuai filter · total ' + r.tot + ' pcs</div>' : ''}</td><td><span class="tag">${esc(r.src)}</span></td><td>${esc(r.adm || '-')}</td>
     <td>${reqStat(r)}</td>
-    <td class="nw"><button class="btn ghost sm" data-redit="${r.id}">Edit</button> <button class="btn ghost sm" data-del="${r.id}">Hapus</button></td></tr>`;
+    <td class="nw"><button class="btn ghost sm" data-redit="${r.id}">Edit</button> <button class="btn ghost sm" data-del="${r.id}">Hapus</button></td></tr>${histRow(r)}`;
 const pgTbl = list => `<div class="tw"><table><thead><tr><th>No</th><th>Tanggal</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Asal</th><th>Admin</th><th>Status</th><th></th></tr></thead><tbody>${list.map(pgRow).join('')}</tbody></table></div>`;
 function renderReqs() { // hari ini tampil di atas; hari-hari sebelumnya otomatis masuk riwayat per tahun > bulan (tertutup)
   const all = pgFiltered(), today = dayWIB(Date.now()), filt = PGF.some(x => $(x).value);
@@ -301,6 +311,12 @@ function renderReqs() { // hari ini tampil di atas; hari-hari sebelumnya otomati
 }
 $('#pgGrp').addEventListener('click', e => { const s = e.target.closest('summary'); if (s) { const d = s.parentElement; openState[d.dataset.k] = !d.open } });
 $('#pgGrp').onclick = e => {
+  const hb = e.target.closest('[data-hist]');
+  if (hb) { // buka/tutup daftar jam input produk yang sama
+    const id = hb.dataset.hist; openHist[id] = !openHist[id];
+    const row = $('#pgGrp').querySelector('tr.hrow[data-for="' + id + '"]'); if (row) row.hidden = !openHist[id];
+    hb.classList.toggle('on', !!openHist[id]); return;
+  }
   if (e.target.dataset.redit) return openREdit(e.target.dataset.redit);
   const id = e.target.dataset.del;
   if (!id || !confirm('Hapus pengajuan ini?')) return;
@@ -367,12 +383,34 @@ const SL = '\u00A0'.repeat(8) + '/ '; // kolom Ada dikosongkan, garis miring tet
 // urutan export: abjad A-Z menurut nama produk, lalu varian (warna), lalu waktu
 const azSort = (a, b) => String(a.prod).localeCompare(String(b.prod), 'id', { sensitivity: 'base', numeric: true })
   || String(a.vn || '').localeCompare(String(b.vn || ''), 'id', { sensitivity: 'base', numeric: true }) || a.ts - b.ts;
+// riwayat jam input pengajuan: setiap submit (termasuk yang digabung) dicatat {ts, n}. Data lama: hanya waktu pertama.
+const reqHist = r => (r.hist && r.hist.length) ? r.hist : [{ ts: r.ts, n: r.min }];
+// entri per input: {ts, n: jumlah diajukan, a: jumlah ada}. "Ada" dialokasikan berurutan dari input terlama; jika jumlah diminta diedit, selisih dimasukkan ke input terakhir.
+function reqEntries(r) {
+  const E = reqHist(r).map(h => ({ ts: h.ts, n: h.n })), sum = E.reduce((s, h) => s + h.n, 0);
+  E[E.length - 1].n = Math.max(0, E[E.length - 1].n + (r.min - sum));
+  let left = r.ada || 0;
+  return E.map(h => { const a = Math.min(h.n, left); left -= a; return { ts: h.ts, n: h.n, a } });
+}
+// tampilan pengajuan sesuai filter tanggal & jam: jika produk diajukan lebih dari sekali, hanya input yang masuk rentang yang diambil
+function pgView(r, f, t) {
+  if (f === null && t === null) return r;
+  const E = reqEntries(r), M = E.filter(h => (f === null || h.ts >= f) && (t === null || h.ts <= t));
+  if (!M.length) return null;
+  if (M.length === E.length) return r;
+  return Object.assign({}, r, { ts: M[0].ts, min: M.reduce((s, h) => s + h.n, 0), ada: M.reduce((s, h) => s + h.a, 0), hist: M.map(h => ({ ts: h.ts, n: h.n })), part: true, tot: r.min });
+}
+const inTime = (r, f, t) => reqHist(r).some(h => (f === null || h.ts >= f) && (t === null || h.ts <= t)); // salah satu jam input masuk rentang filter
 const reqStat = r => r.ada >= r.min ? 'Selesai' : r.ada ? 'Sebagian' : 'Menunggu';
 function pgFiltered() { // dipakai oleh daftar di layar DAN export
   const f = dtv(dtVal('#xFrom')), t = dtv(dtVal('#xTo', true), true), s = $('#xSrc').value, a = $('#xAdm').value,
-    q = $('#xProd').value.trim().toLowerCase(), st = $('#xSt').value;
-  return reqs.filter(r => (f === null || r.ts >= f) && (t === null || r.ts <= t) && (!s || r.src === s) && (!a || r.adm === a) &&
-    (!q || String(r.prod).toLowerCase().includes(q)) && (!st || reqStat(r) === st)).sort((a, b) => a.ts - b.ts);
+    q = $('#xProd').value.trim().toLowerCase(), st = $('#xSt').value, out = [];
+  reqs.forEach(r => {
+    if ((s && r.src !== s) || (a && r.adm !== a) || (q && !String(r.prod).toLowerCase().includes(q))) return;
+    const v = pgView(r, f, t); // filter tanggal & jam: hanya input yang sesuai rentang
+    if (v && (!st || reqStat(v) === st)) out.push(v);
+  });
+  return out.sort((x, y) => x.ts - y.ts);
 }
 // nama admin untuk header & nama file: sesuai filter, atau nama admin yang ada di data
 const admList = (sel, rows) => $(sel).value ? [$(sel).value] : [...new Set(rows.map(r => r.adm).filter(Boolean))];
@@ -436,7 +474,8 @@ let blocks = [], photo = '';
 const IN_DT = ['#iFromD', '#iFromT', '#iToD', '#iToT'];
 const inRange = () => ({ f: dtv(dtVal('#iFrom')), t: dtv(dtVal('#iTo', true), true) });
 const inDateOn = () => { const { f, t } = inRange(); return f !== null || t !== null };
-const inReqs = () => { const { f, t } = inRange(); return f === null && t === null ? todayReqs() : reqs.filter(r => (f === null || r.ts >= f) && (t === null || r.ts <= t)) };
+const inReqs = () => { const { f, t } = inRange(); return f === null && t === null ? todayReqs() : reqs.filter(r => inTime(r, f, t)) };
+const inInfo = r => { const h = reqHist(r); return (inDateOn() ? ' · ' + tsFmt(r.ts) : '') + (h.length > 1 ? ' · Diinput ' + h.length + '× (' + h.map(x => hm(x.ts)).join(' → ') + ')' : '') };
 const openProducts = () => [...new Map(inReqs().filter(r => r.ada < r.min).map(r => [r.pid, { id: r.pid, name: r.prod }])).values()];
 
 function addBlock() {
@@ -457,7 +496,7 @@ function addBlock() {
     R.innerHTML = rs.length ? rs.map(r => `<div class="ln" data-id="${r.id}">
       ${r.vc ? sw(r.vc, r.vn) : ''}
       <div class="inf">${r.vn ? '' : '<b>Satuan (tanpa varian)</b>'}
-        <span>Diajukan <b>${r.min}</b> pcs · sudah ada ${r.ada} · <span class="tag">${esc(r.src)}</span> · Admin: <b>${esc(r.adm || '-')}</b>${inDateOn() ? ' · ' + tsFmt(r.ts) : ''}</span></div>
+        <span>Diajukan <b>${r.min}</b> pcs · sudah ada ${r.ada} · <span class="tag">${esc(r.src)}</span> · Admin: <b>${esc(r.adm || '-')}</b>${inInfo(r)}</span></div>
       <input type="number" min="0" max="${r.min - r.ada}" inputmode="numeric" placeholder="Ada (0 boleh)">
       <div class="st">-</div></div>`).join('')
       : '<div class="empty">Tidak ada pengajuan terbuka untuk produk ini.</div>';
@@ -513,7 +552,7 @@ function renderAuto(force) {
     ? '<div class="hint">' + rs.length + ' barang diajukan ' + (inDateOn() ? 'pada rentang tanggal & jam yang dipilih' : 'hari ini') + '. Isi jumlah "Ada" (boleh 0), kolom yang dikosongkan akan dilewati.</div>' + rs.map(r => `<div class="ln" data-id="${r.id}">
       ${r.vc ? sw(r.vc, r.vn) : ''}
       <div class="inf"><b class="pn">${esc(r.prod)}${r.vn ? ' · ' + esc(r.vn) : ''}</b>
-        <span>Diajukan <b>${r.min}</b> pcs · sudah ada ${r.ada} · <span class="tag">${esc(r.src)}</span> · Admin: <b>${esc(r.adm || '-')}</b>${inDateOn() ? ' · ' + tsFmt(r.ts) : ''}</span></div>
+        <span>Diajukan <b>${r.min}</b> pcs · sudah ada ${r.ada} · <span class="tag">${esc(r.src)}</span> · Admin: <b>${esc(r.adm || '-')}</b>${inInfo(r)}</span></div>
       <input type="number" min="0" max="${r.min - r.ada}" inputmode="numeric" placeholder="Ada (0 boleh)" value="${autoVals[r.id] != null ? Math.min(autoVals[r.id], r.min - r.ada) : ''}">
       <div class="st">-</div></div>`).join('')
     : '<div class="empty">Tidak ada pengajuan terbuka ' + (inDateOn() ? 'pada rentang tanggal & jam itu' : 'hari ini') + ' untuk filter ini.</div>';
