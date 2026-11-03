@@ -32,6 +32,11 @@ function caps(el) { // kolom selalu HURUF KAPITAL
 }
 const dayWIB = t => new Date(t).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
 const BLN = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+const HARI = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+const dayLbl = d => HARI[new Date(Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10))).getUTCDay()] + ', ' + (+d.slice(8, 10)) + ' ' + BLN[+d.slice(5, 7) - 1] + ' ' + d.slice(0, 4);
+// kelompokkan per tanggal (terbaru di atas) menjadi panah harian di dalam bulan
+const dayBlocks = (list, dayFn, pre, isOpen, dflt, tblFn) => { const o = {}; list.forEach(r => { const d = dayFn(r.ts); (o[d] = o[d] || []).push(r) });
+  return Object.keys(o).sort().reverse().map(d => { const k = pre + d; return `<details class="dy" data-k="${k}" ${isOpen(k, dflt(d)) ? 'open' : ''}><summary>${dayLbl(d)} <span class="tag">${o[d].length} data</span></summary>${tblFn(o[d])}</details>` }).join('') };
 const stat = (a, m) => a === m ? '<b class="okc">✓</b>' : '<b class="badc">✕</b>';
 const msg = (id, t, ok) => { const m = $(id); m.textContent = t; m.className = 'msg' + (ok ? ' ok' : '') };
 
@@ -304,7 +309,7 @@ function renderReqs() { // hari ini tampil di atas; hari-hari sebelumnya otomati
     html += '<div class="dayh" style="margin-top:24px">Riwayat <span class="tag">' + hr.length + ' data</span></div>' + Object.keys(g).sort().reverse().map(y => {
       const ms = Object.keys(g[y]).sort().reverse(), cnt = ms.reduce((s, m) => s + g[y][m].length, 0), ky = 'ry' + y;
       return `<details class="yr" data-k="${ky}" ${isOpen(ky, y === today.slice(0, 4)) ? 'open' : ''}><summary>${y} <span class="tag">${cnt} data</span></summary>` +
-        ms.map(m => { const km = 'rm' + y + m; return `<details class="mo" data-k="${km}" ${isOpen(km, false) ? 'open' : ''}><summary>${BLN[+m - 1]} ${y} <span class="tag">${g[y][m].length} data</span></summary>${pgTbl(g[y][m])}</details>` }).join('') + '</details>';
+        ms.map(m => { const km = 'rm' + y + m; return `<details class="mo" data-k="${km}" ${isOpen(km, false) ? 'open' : ''}><summary>${BLN[+m - 1]} ${y} <span class="tag">${g[y][m].length} data</span></summary>${dayBlocks(g[y][m], dayWIB, 'rd', isOpen, d => false, pgTbl)}</details>` }).join('') + '</details>';
     }).join('');
   }
   $('#pgGrp').innerHTML = html;
@@ -679,7 +684,7 @@ function renderTable() {
   $('#grp').innerHTML = rows.length ? Object.keys(g).sort().reverse().map(y => {
     const ms = Object.keys(g[y]).sort().reverse(), cnt = ms.reduce((s, m) => s + g[y][m].length, 0), ky = 'y' + y;
     return `<details class="yr" data-k="${ky}" ${isOpen(ky, y === now.slice(0, 4)) ? 'open' : ''}><summary>${y} <span class="tag">${cnt} data</span></summary>` +
-      ms.map(m => { const km = 'm' + y + m; return `<details class="mo" data-k="${km}" ${isOpen(km, y + '-' + m === now.slice(0, 7)) ? 'open' : ''}><summary>${BLN[+m - 1]} ${y} <span class="tag">${g[y][m].length} data</span></summary>${tbl(g[y][m])}</details>` }).join('') + '</details>';
+      ms.map(m => { const km = 'm' + y + m; return `<details class="mo" data-k="${km}" ${isOpen(km, y + '-' + m === now.slice(0, 7)) ? 'open' : ''}><summary>${BLN[+m - 1]} ${y} <span class="tag">${g[y][m].length} data</span></summary>${dayBlocks(g[y][m], ymd, 'd', isOpen, d => d === now, tbl)}</details>` }).join('') + '</details>';
   }).join('') : '<div class="empty">Belum ada data purchase.</div>';
 }
 $('#grp').addEventListener('click', e => { const s = e.target.closest('summary'); if (s) { const d = s.parentElement; openState[d.dataset.k] = !d.open } });

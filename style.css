@@ -140,6 +140,8 @@ details[open]>summary::before{transform:rotate(90deg)}
 details.yr>summary{font-size:16px}
 details.mo{margin:10px 12px 12px}
 details.mo>summary{background:var(--card);font-size:14px}
+details.dy{margin:8px 12px 10px;border-radius:10px}
+details.dy>summary{background:var(--soft);font-size:13px;padding:10px 14px}
 details .tw{margin:0 8px 8px}
 #cam{z-index:60}
 .camb{max-width:560px}
