@@ -432,7 +432,12 @@ $('#xReset').onclick = () => {
 
 /* ---------- INPUT ---------- */
 let blocks = [], photo = '';
-const openProducts = () => [...new Map(todayReqs().filter(r => r.ada < r.min).map(r => [r.pid, { id: r.pid, name: r.prod }])).values()];
+// cakupan pengajuan di menu Input: bawaan hanya hari ini (WIB). Jika filter tanggal & jam diisi, pengajuan pada rentang itu muncul lagi.
+const IN_DT = ['#iFromD', '#iFromT', '#iToD', '#iToT'];
+const inRange = () => ({ f: dtv(dtVal('#iFrom')), t: dtv(dtVal('#iTo', true), true) });
+const inDateOn = () => { const { f, t } = inRange(); return f !== null || t !== null };
+const inReqs = () => { const { f, t } = inRange(); return f === null && t === null ? todayReqs() : reqs.filter(r => (f === null || r.ts >= f) && (t === null || r.ts <= t)) };
+const openProducts = () => [...new Map(inReqs().filter(r => r.ada < r.min).map(r => [r.pid, { id: r.pid, name: r.prod }])).values()];
 
 function addBlock() {
   const el = document.createElement('div'); el.className = 'blk';
@@ -448,11 +453,11 @@ function addBlock() {
   b.render = () => {
     const R = el.querySelector('.rows');
     if (!b.prod) { R.innerHTML = ''; return }
-    const rs = todayReqs().filter(r => String(r.pid) === String(b.prod.id) && r.ada < r.min);
+    const rs = inReqs().filter(r => String(r.pid) === String(b.prod.id) && r.ada < r.min);
     R.innerHTML = rs.length ? rs.map(r => `<div class="ln" data-id="${r.id}">
       ${r.vc ? sw(r.vc, r.vn) : ''}
       <div class="inf">${r.vn ? '' : '<b>Satuan (tanpa varian)</b>'}
-        <span>Diajukan <b>${r.min}</b> pcs · sudah ada ${r.ada} · <span class="tag">${esc(r.src)}</span> · Admin: <b>${esc(r.adm || '-')}</b></span></div>
+        <span>Diajukan <b>${r.min}</b> pcs · sudah ada ${r.ada} · <span class="tag">${esc(r.src)}</span> · Admin: <b>${esc(r.adm || '-')}</b>${inDateOn() ? ' · ' + tsFmt(r.ts) : ''}</span></div>
       <input type="number" min="0" max="${r.min - r.ada}" inputmode="numeric" placeholder="Ada (0 boleh)">
       <div class="st">-</div></div>`).join('')
       : '<div class="empty">Tidak ada pengajuan terbuka untuk produk ini.</div>';
@@ -491,27 +496,27 @@ function lineInput(e) {
 }
 
 /* mode filter: pilih nama admin dan/atau asal barang -> semua pengajuan hari ini tampil sebagai daftar isian */
-const autoMode = () => !!($('#inAdm').value || $('#inSrc').value);
+const autoMode = () => !!($('#inAdm').value || $('#inSrc').value || inDateOn());
 const autoReqs = () => {
   const a = $('#inAdm').value, s = $('#inSrc').value;
-  return todayReqs().filter(r => r.ada < r.min && (!a || (r.adm || '') === a) && (!s || r.src === s))
+  return inReqs().filter(r => r.ada < r.min && (!a || (r.adm || '') === a) && (!s || r.src === s))
     .sort((x, y) => x.ts - y.ts || (x.id < y.id ? -1 : 1)); // urut sesuai waktu pengisian form pengajuan (terlama di atas)
 };
 function renderAuto(force) {
   const on = autoMode();
   $('#auto').hidden = !on; $('#autoQBox').hidden = !on; $('#blocks').hidden = on; $('#addBlk').hidden = on;
   if (!on) { autoSig = ''; $('#autoQ').value = ''; $('#autoQ')._upd && $('#autoQ')._upd(); return }
-  const rs = autoReqs(), sig = $('#inAdm').value + '|' + $('#inSrc').value + '|' + JSON.stringify(rs.map(r => [r.id, r.ada, r.min]));
+  const rs = autoReqs(), sig = $('#inAdm').value + '|' + $('#inSrc').value + '|' + inDateOn() + '|' + JSON.stringify(rs.map(r => [r.id, r.ada, r.min]));
   if (!force && sig === autoSig) return; // tidak ada perubahan data: jangan hapus isian yang sedang diketik
   autoSig = sig;
   $('#auto').innerHTML = rs.length
-    ? '<div class="hint">' + rs.length + ' barang diajukan hari ini. Isi jumlah "Ada" (boleh 0), kolom yang dikosongkan akan dilewati.</div>' + rs.map(r => `<div class="ln" data-id="${r.id}">
+    ? '<div class="hint">' + rs.length + ' barang diajukan ' + (inDateOn() ? 'pada rentang tanggal & jam yang dipilih' : 'hari ini') + '. Isi jumlah "Ada" (boleh 0), kolom yang dikosongkan akan dilewati.</div>' + rs.map(r => `<div class="ln" data-id="${r.id}">
       ${r.vc ? sw(r.vc, r.vn) : ''}
       <div class="inf"><b class="pn">${esc(r.prod)}${r.vn ? ' · ' + esc(r.vn) : ''}</b>
-        <span>Diajukan <b>${r.min}</b> pcs · sudah ada ${r.ada} · <span class="tag">${esc(r.src)}</span> · Admin: <b>${esc(r.adm || '-')}</b></span></div>
+        <span>Diajukan <b>${r.min}</b> pcs · sudah ada ${r.ada} · <span class="tag">${esc(r.src)}</span> · Admin: <b>${esc(r.adm || '-')}</b>${inDateOn() ? ' · ' + tsFmt(r.ts) : ''}</span></div>
       <input type="number" min="0" max="${r.min - r.ada}" inputmode="numeric" placeholder="Ada (0 boleh)" value="${autoVals[r.id] != null ? Math.min(autoVals[r.id], r.min - r.ada) : ''}">
       <div class="st">-</div></div>`).join('')
-    : '<div class="empty">Tidak ada pengajuan terbuka hari ini untuk filter ini.</div>';
+    : '<div class="empty">Tidak ada pengajuan terbuka ' + (inDateOn() ? 'pada rentang tanggal & jam itu' : 'hari ini') + ' untuk filter ini.</div>';
   $('#auto').querySelectorAll('.ln').forEach(ln => {
     const r = reqs.find(x => x.id === ln.dataset.id), raw = ln.querySelector('input').value;
     if (r && raw !== '') setLnStatus(ln, r, parseInt(raw, 10));
@@ -528,8 +533,10 @@ function applyAutoQ() {
   $('#autoCnt').textContent = !lns.length || !q ? '' : vis ? vis + ' dari ' + lns.length + ' barang cocok.' : 'Tidak ada barang yang cocok dengan pencarian.';
 }
 caps($('#autoQ')); addClear($('#autoQ')); $('#autoQ').addEventListener('input', applyAutoQ);
-$('#inReset').onclick = () => { // reset filter admin & asal (isian jumlah yang sudah diketik tidak dihapus)
-  $('#inAdm').value = ''; $('#inSrc').value = ''; msg('#inMsg', ''); renderAuto(true);
+const onInDate = () => { msg('#inMsg', ''); refreshBlocks() };
+IN_DT.forEach(x => { $(x).addEventListener('input', onInDate); $(x).addEventListener('change', onInDate) });
+$('#inReset').onclick = () => { // reset filter admin, asal, tanggal & jam (isian jumlah yang sudah diketik tidak dihapus)
+  $('#inAdm').value = ''; $('#inSrc').value = ''; IN_DT.forEach(x => $(x).value = ''); msg('#inMsg', ''); refreshBlocks(); renderAuto(true);
 };
 
 function compress(f, cb) {
@@ -580,12 +587,12 @@ function resetInput() {
   autoVals = {}; renderAuto(true);
 }
 $('#inSubmit').onclick = () => {
-  const lines = [], roots = autoMode() ? [$('#auto')] : blocks.map(b => b.el); // mode filter: ambil dari daftar otomatis
+  const lines = [], roots = autoMode() ? [$('#auto')] : blocks.map(b => b.el), scope = new Set(inReqs().map(x => x.id)); // mode filter: ambil dari daftar otomatis
   roots.forEach(root => root.querySelectorAll('.ln').forEach(ln => {
     const r = reqs.find(x => x.id === ln.dataset.id), raw = ln.querySelector('input').value.trim();
     if (raw === '') return; // kosong = dilewati; angka 0 tetap dicatat (barang tidak ada)
     const v = Math.max(0, Math.min(parseInt(raw, 10) || 0, r ? r.min - r.ada : 0));
-    if (r && dayWIB(r.ts) === dayWIB(Date.now())) lines.push([r, v]);
+    if (r && scope.has(r.id)) lines.push([r, v]);
   }));
   if (!lines.length) return msg('#inMsg', 'Isi jumlah barang ada (boleh 0) minimal pada satu produk/varian.');
   const ts = Date.now(), sj = $('#sj').value.trim(), pid = photo ? uid() : '', ops = [];

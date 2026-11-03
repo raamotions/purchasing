@@ -199,3 +199,5 @@ details .tw{margin:0 8px 8px}
 @media(max-width:700px){.inh{grid-template-columns:1fr}.inh .rsb .btn{width:100%}}
 .ln[hidden]{display:none}
 #autoQBox{margin-top:14px}
+.inh .dtw{grid-column:span 2}
+@media(max-width:700px){.inh .dtw{grid-column:auto}}

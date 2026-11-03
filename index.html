@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Purchasing Barang</title>
-<link rel="stylesheet" href="style.css?v=26">
+<link rel="stylesheet" href="style.css?v=27">
 </head>
 <body>
 
@@ -82,8 +82,10 @@
         <div><label>Nama Admin</label><select id="inAdm" data-adm="Semua"></select></div>
         <div><label>Asal Barang</label><select id="inSrc" data-src="Semua"></select></div>
         <div class="rsb"><button class="btn ghost" id="inReset" type="button">Reset filter</button></div>
+        <div class="dtw"><label>Dari tanggal &amp; jam (opsional)</label><div class="dt"><input type="date" id="iFromD"><input class="tm24" id="iFromT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
+        <div class="dtw"><label>Sampai tanggal &amp; jam (opsional)</label><div class="dt"><input type="date" id="iToD"><input class="tm24" id="iToT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
       </div>
-      <div class="hint2">Pilih nama admin dan/atau asal barang untuk menampilkan semua pengajuan hari ini sekaligus. Kosongkan filter untuk mencari produk manual.</div>
+      <div class="hint2">Tanpa filter tanggal, menu ini hanya membaca pengajuan <b>hari ini</b>. Isi tanggal &amp; jam untuk memunculkan lagi pengajuan hari sebelumnya yang belum diinput. Pilih nama admin, asal barang, atau tanggal untuk menampilkan semua pengajuannya sekaligus; kosongkan semua filter untuk mencari produk manual.</div>
       <div id="autoQBox" hidden><input id="autoQ" placeholder="Cari produk dalam daftar..." autocomplete="off"><div class="hint2" id="autoCnt"></div></div>
       <div id="auto" hidden></div>
       <div id="blocks"></div>
@@ -241,6 +243,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="script.js?v=31"></script>
+<script src="script.js?v=32"></script>
 </body>
 </html>
