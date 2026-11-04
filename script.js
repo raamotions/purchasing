@@ -178,7 +178,7 @@ function psearch(box, opts, onPick, onText) { // onText: aktifkan mode ketik pro
   const show = () => {
     const q = i.value.trim().toLowerCase();
     const m = opts().filter(p => p.name.toLowerCase().includes(q));
-    l.innerHTML = m.length ? m.map(p => `<div data-id="${p.id}">${esc(p.name)}</div>`).join('') : '<em>' + (onText ? 'Tidak ditemukan. Produk baru akan ditambahkan saat Submit.' : 'Produk tidak ditemukan') + '</em>';
+    l.innerHTML = m.length ? m.map(p => `<div data-id="${p.id}">${esc(p.name)}</div>`).join('') : '<em>' + (onText ? 'Tidak ditemukan. Produk baru akan ditambahkan saat disimpan.' : 'Produk tidak ditemukan') + '</em>';
     l.classList.add('open');
   };
   let pick = null;
@@ -203,7 +203,7 @@ function psearch(box, opts, onPick, onText) { // onText: aktifkan mode ketik pro
     i.value = pick.name; upd(); l.classList.remove('open'); onPick(pick);
   };
   document.addEventListener('click', e => { if (!box.contains(e.target)) l.classList.remove('open') });
-  return { get: () => pick, text: () => i.value.trim(), reset() { i.value = ''; upd(); pick = null; onPick(null) } };
+  return { get: () => pick, text: () => i.value.trim(), set(v) { i.value = v; upd(); pick = null }, reset() { i.value = ''; upd(); pick = null; onPick(null) } };
 }
 
 /* ---------- PENGAJUAN ---------- */
@@ -290,8 +290,8 @@ const histLab = (r, x) => ymd(x.ts) === ymd(r.ts) ? hm(x.ts) : tsFmt(x.ts);
 const histBtn = r => { const h = reqHist(r); return h.length > 1 ? `<button type="button" class="arw${openHist[r.id] ? ' on' : ''}" data-hist="${r.id}" title="Lihat jam input">${h.length}×</button>` : '' };
 const histRow = r => {
   const h = reqHist(r); if (h.length < 2) return '';
-  return `<tr class="hrow" data-for="${r.id}"${openHist[r.id] ? '' : ' hidden'}><td></td><td colspan="8"><table class="mt"><thead><tr><th>Produk</th><th>Varian</th><th>Ada / Diajukan</th><th>Waktu input</th></tr></thead><tbody>`
-    + reqEntries(r).map(x => `<tr><td>${esc(r.prod)}</td><td>${r.vc ? sw(r.vc, r.vn) + ' ' : ''}${esc(r.vn || '-')}</td><td>${x.a} / ${x.n} pcs</td><td>${tsFmt(x.ts)}</td></tr>`).join('') + '</tbody></table></td></tr>';
+  return `<tr class="hrow" data-for="${r.id}"${openHist[r.id] ? '' : ' hidden'}><td></td><td colspan="8"><table class="mt"><thead><tr><th>Produk</th><th>Varian</th><th>Ada / Diajukan</th><th>Waktu input</th><th></th></tr></thead><tbody>`
+    + reqEntries(r).map(x => `<tr><td>${esc(r.prod)}</td><td>${r.vc ? sw(r.vc, r.vn) + ' ' : ''}${esc(r.vn || '-')}</td><td>${x.a} / ${x.n} pcs</td><td>${tsFmt(x.ts)}</td><td class="nw"><button class="btn ghost sm" data-hedit="${r.id}" data-ts="${x.ts}">Edit</button> <button class="btn ghost sm" data-hdel="${r.id}" data-ts="${x.ts}">Hapus</button></td></tr>`).join('') + '</tbody></table></td></tr>';
 };
 const pgRow = (r, n) => `<tr>
     <td>${n + 1}</td><td>${fmt(r.ts)}${tm(r.ts)}${histBtn(r)}</td><td>${esc(r.prod)}</td><td>${sw(r.vc, r.vn)}</td>
@@ -322,6 +322,8 @@ $('#pgGrp').onclick = e => {
     const row = $('#pgGrp').querySelector('tr.hrow[data-for="' + id + '"]'); if (row) row.hidden = !openHist[id];
     hb.classList.toggle('on', !!openHist[id]); return;
   }
+  const he = e.target.closest('[data-hedit]'); if (he) return openHEdit(he.dataset.hedit, +he.dataset.ts);
+  const hd = e.target.closest('[data-hdel]'); if (hd) return delHEntry(hd.dataset.hdel, +hd.dataset.ts);
   if (e.target.dataset.redit) return openREdit(e.target.dataset.redit);
   const id = e.target.dataset.del;
   if (!id || !confirm('Hapus pengajuan ini?')) return;
@@ -341,47 +343,102 @@ function fillRVar(name, vn, vc) {
 }
 function openREdit(id) {
   const r = rRec = reqs.find(x => x.id === id); if (!r) return;
-  const names = products.map(p => p.name); if (!names.includes(r.prod)) names.unshift(r.prod);
-  $('#rProd').innerHTML = names.map(n => `<option>${esc(n)}</option>`).join(''); $('#rProd').value = r.prod;
+  rSearch.set(r.prod);
   fillRVar(r.prod, r.vn, r.vc);
   $('#rAda').value = r.ada; $('#rMin').value = r.min; $('#rSrc').value = r.src; $('#rAdm').value = r.adm || '';
   rAddNew = false; $('#rVarName').value = ''; $('#rVarCol').value = '#4a7bd0'; rNewUI();
   msg('#rMsg', ''); $('#rmdl').hidden = false;
 }
-function rNewUI() { // isian warna baru <-> pilih dari daftar warna
-  $('#rNew').hidden = !rAddNew; $('#rVsel').hidden = rAddNew; $('#rToggle').textContent = rAddNew ? 'Pilih dari daftar warna' : '+ Warna baru';
+function rNewUI() { // isian warna ketik <-> pilih dari daftar warna (produk baru / tanpa varian: wajib ketik warna)
+  const p = rProdObj(), forced = !p || !p.variants.length, typed = forced || rAddNew;
+  $('#rNew').hidden = !typed; $('#rVsel').hidden = typed; $('#rToggle').hidden = forced;
+  $('#rToggle').textContent = rAddNew ? 'Pilih dari daftar warna' : '+ Warna baru';
 }
+const rProdObj = () => products.find(x => normName(x.name) === normName(rSearch.text()));
+function rSelChanged() { // nama produk berubah (ketik / pilih saran)
+  const p = rProdObj(); rAddNew = false;
+  if (p) { const same = rRec && p.name === rRec.prod; fillRVar(p.name, same ? rRec.vn : '', same ? rRec.vc : '') }
+  else { rList = []; $('#rVar').innerHTML = ''; rSwatch() }
+  rNewUI();
+}
+const rSearch = psearch($('#rProdBox'), () => products, p => { if (p) rSelChanged() }, () => rSelChanged());
 $('#rToggle').onclick = () => { rAddNew = !rAddNew; rNewUI() };
 $('#rVarName').oninput = e => {
   const s = e.target.selectionStart; e.target.value = e.target.value.toUpperCase(); e.target.setSelectionRange(s, s);
   const c = toHex(e.target.value); if (c) $('#rVarCol').value = c;
 };
 const closeREdit = () => { $('#rmdl').hidden = true; rRec = null };
-$('#rProd').onchange = () => fillRVar($('#rProd').value, '', '');
 $('#rVar').onchange = rSwatch;
 $('#rCancel').onclick = closeREdit;
 $('#rmdl').onclick = e => { if (e.target.id === 'rmdl') closeREdit() };
 $('#rSave').onclick = () => {
-  const r = reqs.find(x => x.id === rRec.id) || rRec, m = parseInt($('#rMin').value, 10), name = $('#rProd').value;
-  const p = products.find(x => x.name === name); let v = rList[$('#rVar').value];
+  const r = reqs.find(x => x.id === rRec.id) || rRec, m = parseInt($('#rMin').value, 10), name = normName(rSearch.text());
+  if (!name) return msg('#rMsg', 'Isi nama produk.');
   if (!(m >= 1)) return msg('#rMsg', 'Isi jumlah diminta dengan angka.');
   if (m < r.ada) return msg('#rMsg', 'Jumlah diminta tidak boleh kurang dari barang yang sudah ada (' + r.ada + ').');
-  if (!rAddNew && !v) return msg('#rMsg', 'Warna wajib diisi: pilih dari daftar atau klik "+ Warna baru".');
   if (!$('#rSrc').value) return msg('#rMsg', 'Pilih asal barang.');
+  let p = rProdObj(), v = null, np = null;
   const ops = [];
-  if (rAddNew) { // warna baru: masuk ke varian produk (database produk) kalau belum ada
+  if (!p || !p.variants.length || rAddNew) { // warna diketik
     const vt = normName($('#rVarName').value);
-    if (!vt) return msg('#rMsg', 'Ketik nama warna atau pilih dari daftar warna.');
-    if (!p) return msg('#rMsg', 'Produk tidak ada di database produk, warna baru tidak bisa ditambahkan.');
+    if (!vt) return msg('#rMsg', 'Warna wajib diisi: ketik nama warna.');
+    if (!p) np = p = { id: uid(), name, variants: [] }; // nama produk baru (belum ada di database)
     v = p.variants.find(x => normName(x.n) === vt);
     if (!v) { v = { n: vt, c: $('#rVarCol').value }; p.variants.push(v); ops.push(['products', 'set', p]) }
+  } else {
+    v = rList[$('#rVar').value];
+    if (!v) return msg('#rMsg', 'Warna wajib diisi: pilih dari daftar atau klik "+ Warna baru".');
   }
-  Object.assign(r, { pid: p ? p.id : r.pid, prod: name, vn: v ? v.n : '', vc: v ? v.c : '', min: m, src: $('#rSrc').value, adm: $('#rAdm').value });
+  if (np) products.push(np);
+  Object.assign(r, { pid: p.id, prod: p.name, vn: v.n, vc: v.c, min: m, src: $('#rSrc').value, adm: $('#rAdm').value });
   ops.push(['requests', 'set', r]);
   records.filter(x => x.rid === r.id).forEach(x => { Object.assign(x, { prod: r.prod, vn: r.vn, vc: r.vc, min: r.min, src: r.src, adm: r.adm }); ops.push(['records', 'set', x]) });
   if (!commit(ops)) return msg('#rMsg', 'Penyimpanan penuh.');
   closeREdit(); renderReqs(); renderProducts();
 };
+
+/* ---------- edit / hapus per input (jam input produk yang sama) ---------- */
+// n === null: hapus input; selain itu ubah jumlah (n) dan waktu (nts). Mengembalikan {err} atau {ops}.
+function histApply(r, ts, n, nts) {
+  const E = reqEntries(r).map(x => ({ ts: x.ts, n: x.n })), i = E.findIndex(x => x.ts === ts);
+  if (i < 0) return { err: 'Input tidak ditemukan.' };
+  if (n === null) { if (E.length < 2) return { err: 'Ini satu-satunya input. Gunakan tombol Hapus pada baris pengajuan.' }; E.splice(i, 1) }
+  else { if (E.some((x, k) => k !== i && x.ts === nts)) return { err: 'Waktu itu sudah dipakai input lain, ubah menitnya.' }; E[i] = { ts: nts, n } }
+  E.sort((a, b) => a.ts - b.ts);
+  const total = E.reduce((s, x) => s + x.n, 0);
+  if (total < r.ada) return { err: 'Total diminta menjadi ' + total + ' pcs, lebih kecil dari barang yang sudah ada (' + r.ada + ').' };
+  r.hist = E; r.min = total; r.ts = E[0].ts;
+  const ops = [['requests', 'set', r]];
+  records.forEach(x => { if (x.rid === r.id) { x.min = total; ops.push(['records', 'set', x]) } });
+  return { ops };
+}
+let hRef = null;
+function openHEdit(id, ts) {
+  const r = reqs.find(x => x.id === id), h = r && reqEntries(r).find(x => x.ts === ts); if (!h) return;
+  hRef = { id, ts };
+  $('#hInfo').textContent = r.prod + (r.vn ? ' · ' + r.vn : '') + ' · asal ' + r.src;
+  $('#hN').value = h.n; $('#hD').value = ymd(h.ts); $('#hT').value = hm(h.ts);
+  msg('#hMsg', ''); $('#hmdl').hidden = false;
+}
+const closeH = () => { $('#hmdl').hidden = true; hRef = null };
+$('#hCancel').onclick = closeH;
+$('#hmdl').onclick = e => { if (e.target.id === 'hmdl') closeH() };
+$('#hSave').onclick = () => {
+  const r = reqs.find(x => x.id === hRef.id); if (!r) return closeH();
+  const n = parseInt($('#hN').value, 10), d = $('#hD').value, t = $('#hT').value.trim();
+  if (!(n >= 1)) return msg('#hMsg', 'Isi jumlah diajukan dengan angka.');
+  if (!d || !T24.test(t)) return msg('#hMsg', 'Isi tanggal dan jam (format 24 jam, mis. 14:30).');
+  const res = histApply(r, hRef.ts, n, new Date(d + 'T' + t).getTime());
+  if (res.err) return msg('#hMsg', res.err);
+  if (!commit(res.ops)) return msg('#hMsg', 'Penyimpanan penuh.');
+  closeH(); renderReqs();
+};
+function delHEntry(id, ts) {
+  const r = reqs.find(x => x.id === id), h = r && reqEntries(r).find(x => x.ts === ts); if (!h) return;
+  if (!confirm('Hapus input ' + tsFmt(ts) + ' (' + h.n + ' pcs)? Total diminta berkurang ' + h.n + ' pcs.')) return;
+  const res = histApply(r, ts, null); if (res.err) return alert(res.err);
+  commit(res.ops); renderReqs();
+}
 
 /* ---------- export pengajuan ---------- */
 const SL = '\u00A0'.repeat(8) + '/ '; // kolom Ada dikosongkan, garis miring tetap ada
@@ -819,7 +876,7 @@ function renderProducts() {
   const L = products.filter(p => !q || p.name.toLowerCase().includes(q) || p.variants.some(v => v.n.toLowerCase().includes(q)));
   $('#pList').innerHTML = '<label>Daftar Produk (' + (q ? L.length + ' dari ' : '') + products.length + ')</label>' + (L.length ? L.map(p => `<div class="pl">
     <div><b>${esc(p.name)}</b><div style="margin-top:6px">${p.variants.length ? p.variants.map(v => sw(v.c, v.n)).join(' ') : '<span style="color:var(--mute);font-size:13px">Tanpa varian</span>'}</div></div>
-    <button class="btn ghost sm" data-p="${p.id}">Hapus</button></div>`).join('') : '<div class="empty">' + (products.length ? 'Produk tidak ditemukan.' : 'Belum ada produk.') + '</div>');
+    <div class="nw"><button class="btn ghost sm" data-pe="${p.id}">Edit</button> <button class="btn ghost sm" data-p="${p.id}">Hapus</button></div></div>`).join('') : '<div class="empty">' + (products.length ? 'Produk tidak ditemukan.' : 'Belum ada produk.') + '</div>');
 }
 $('#pSearch').oninput = renderProducts;
 caps($('#pSearch')); caps($('#pName'));
@@ -842,9 +899,59 @@ $('#pFix').onclick = () => {
   alert('Selesai. ' + lost + ' produk dobel digabung, semua nama menjadi huruf kapital.');
 };
 $('#pList').onclick = e => {
+  if (e.target.dataset.pe) return openPEdit(e.target.dataset.pe);
   const id = e.target.dataset.p;
   if (!id || !confirm('Hapus produk ini? Data pengajuan dan purchase lama tetap tersimpan.')) return;
   products = products.filter(p => String(p.id) !== id); commit([['products', 'del', id]]); renderProducts();
+};
+
+/* ---------- edit produk (popup) ---------- */
+// terapkan hasil edit ke produk + pengajuan + purchase yang terkait (nama produk & varian tersimpan di tiap data); kembalikan ops
+function applyProductEdit(p, name, rows) {
+  const oldName = p.name, oldVars = p.variants.slice(), map = {}, ops = [['products', 'set', p]];
+  rows.forEach(r => { if (r.orig !== '') map[r.orig] = { n: r.n, c: r.c } });
+  p.name = name; p.variants = rows.map(r => ({ n: r.n, c: r.c }));
+  const fix = x => {
+    let i = oldVars.findIndex(v => v.n === x.vn && v.c === x.vc); if (i < 0) i = oldVars.findIndex(v => v.n === x.vn);
+    const nv = i >= 0 ? map[String(i)] : null, before = x.prod + '|' + x.vn + '|' + x.vc;
+    x.prod = name; if (nv) { x.vn = nv.n; x.vc = nv.c }
+    return before !== x.prod + '|' + x.vn + '|' + x.vc;
+  };
+  const ids = new Set();
+  reqs.forEach(x => { if (String(x.pid) === String(p.id)) { ids.add(x.id); if (fix(x)) ops.push(['requests', 'set', x]) } });
+  records.forEach(x => { if (ids.has(x.rid) || (!reqs.some(q => q.id === x.rid) && x.prod === oldName)) { if (fix(x)) ops.push(['records', 'set', x]) } });
+  return ops;
+}
+let pERec = null;
+function pEVarRow(n, c, orig) {
+  const d = document.createElement('div'); d.className = 'vrow'; d.dataset.orig = orig;
+  d.innerHTML = `<input type="color" value="${c}"><input placeholder="Nama warna" value="${esc(n)}"><button class="btn ghost sm" type="button">Hapus</button>`;
+  const ni = d.querySelector('input:not([type=color])'), ci = d.querySelector('input[type=color]');
+  caps(ni); if (orig === '') ni.addEventListener('input', () => { const h = toHex(ni.value); if (h) ci.value = h }); // warna baru: warna terisi otomatis dari nama
+  d.querySelector('button').onclick = () => d.remove(); $('#pEVars').appendChild(d);
+}
+function openPEdit(id) {
+  const p = products.find(x => String(x.id) === String(id)); if (!p) return;
+  pERec = p.id; $('#pEName').value = p.name; $('#pEVars').innerHTML = '';
+  p.variants.forEach((v, i) => pEVarRow(v.n, v.c, String(i)));
+  msg('#pEMsg', ''); $('#pmdl').hidden = false;
+}
+const closePE = () => { $('#pmdl').hidden = true; pERec = null };
+caps($('#pEName'));
+$('#pEAdd').onclick = () => pEVarRow('', '#4a7bd0', '');
+$('#pECancel').onclick = closePE;
+$('#pmdl').onclick = e => { if (e.target.id === 'pmdl') closePE() };
+$('#pESave').onclick = () => {
+  const p = products.find(x => String(x.id) === String(pERec)); if (!p) return closePE();
+  const name = normName($('#pEName').value);
+  if (!name) return msg('#pEMsg', 'Isi nama produk.');
+  if (products.some(x => x !== p && normName(x.name) === name)) return msg('#pEMsg', 'Sudah ada produk lain dengan nama itu. Untuk menggabungkan, pakai tombol "Rapikan & gabungkan produk lama".');
+  const rows = [...$$('#pEVars .vrow')].map(r => ({ orig: r.dataset.orig, c: r.querySelector('input[type=color]').value, n: normName(r.querySelector('input:not([type=color])').value) }));
+  if (rows.some(r => !r.n)) return msg('#pEMsg', 'Nama warna tidak boleh kosong.');
+  const seen = new Set(); for (const r of rows) { if (seen.has(r.n)) return msg('#pEMsg', 'Nama warna kembar: ' + r.n); seen.add(r.n) }
+  const ops = applyProductEdit(p, name, rows);
+  if (!commit(ops)) return msg('#pEMsg', 'Penyimpanan penuh.');
+  closePE(); renderProducts(); renderReqs(); renderTable();
 };
 
 /* input massal */

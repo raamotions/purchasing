@@ -216,3 +216,6 @@ details .tw{margin:0 8px 8px}
 .mt th,.mt td{background:var(--card);padding:9px 10px;font-size:13px}
 .mt th{border-radius:0;color:var(--mute)}
 .hl{display:none}
+.mt .btn.sm{padding:5px 10px;font-size:12px}
+.pl .nw{display:flex;gap:8px;flex:none}
+#hmdl,#pmdl{z-index:45}
