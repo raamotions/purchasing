@@ -477,9 +477,10 @@ function pgFiltered() { // dipakai oleh daftar di layar DAN export
 // nama admin untuk header & nama file: sesuai filter, atau nama admin yang ada di data
 const admList = (sel, rows) => $(sel).value ? [$(sel).value] : [...new Set(rows.map(r => r.adm).filter(Boolean))];
 const admHead = (sel, rows) => admList(sel, rows).join(', ') || '-';
-function fileName(asal, adm, form, ext) { // KODE ASAL BARANG-NAMA ADMIN-DDMMYY-FORM DOWNLOAD
+function fileName(asal, adm, form, ext) { // KODE ASAL BARANG-NAMA ADMIN-DDMMYY-FORM DOWNLOAD-JJ-MM
   const d = dayWIB(Date.now()).split('-');
-  return [asal || 'SEMUA', adm || 'SEMUA', d[2] + d[1] + d[0].slice(2), form].join('-').toUpperCase().replace(/[\\/:*?"<>|]+/g, '') + '.' + ext;
+  const jam = new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).replace(':', '-'); // jam export (WIB), mis. 15-00
+  return [asal || 'SEMUA', adm || 'SEMUA', d[2] + d[1] + d[0].slice(2), form, jam].join('-').toUpperCase().replace(/[\\/:*?"<>|]+/g, '') + '.' + ext;
 }
 const admFile = (sel, rows) => { const l = admList(sel, rows); return l.length === 1 ? l[0] : 'SEMUA' };
 function pgHead(rows) {
