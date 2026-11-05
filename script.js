@@ -505,7 +505,7 @@ $('#pgXls').onclick = () => {
   ws['!cols'] = [5, 17, 28, 16, 18, 10, 8].map(w => ({ wch: w }));
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Pengajuan');
   const fn = fileName($('#xSrc').value, admFile('#xAdm', rows), 'PENGAJUAN', 'xlsx'); XLSX.writeFile(wb, fn);
-  logDl({ form: 'PENGAJUAN', fmt: 'Excel', fname: fn, src: $('#xSrc').value, title: H.title, tgl: H.tgl, cols: aoa[5], rows: aoa.slice(6) });
+  logDl({ form: 'PENGAJUAN', fmt: 'Excel', fname: fn, src: $('#xSrc').value, subs: rows.map(r => reqHist(r).length > 1 ? reqEntries(r).map(x => [tsFmt(x.ts), x.a, x.n]) : null), title: H.title, tgl: H.tgl, cols: aoa[5], rows: aoa.slice(6) });
 };
 $('#pgPdf').onclick = () => {
   if (!window.jspdf) return alert('Library PDF gagal dimuat. Pastikan terhubung ke internet.');
@@ -527,7 +527,7 @@ $('#pgPdf').onclick = () => {
     }
   });
   const fn = fileName($('#xSrc').value, admFile('#xAdm', rows), 'PENGAJUAN', 'pdf'); doc.save(fn);
-  logDl({ form: 'PENGAJUAN', fmt: 'PDF', fname: fn, src: $('#xSrc').value, title: H.title, tgl: H.tgl, cols: ['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Status'], rows: rows.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', SL + r.min + ' pcs', r.src, '\u2610']) });
+  logDl({ form: 'PENGAJUAN', fmt: 'PDF', fname: fn, src: $('#xSrc').value, subs: rows.map(r => reqHist(r).length > 1 ? reqEntries(r).map(x => [tsFmt(x.ts), x.a, x.n]) : null), title: H.title, tgl: H.tgl, cols: ['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Status'], rows: rows.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', SL + r.min + ' pcs', r.src, '\u2610']) });
 };
 const PGF = ['#xFromD', '#xFromT', '#xToD', '#xToT', '#xSrc', '#xAdm', '#xProd', '#xSt'];
 function setPgToday() { $('#xFromD').value = $('#xToD').value = $('#xFromT').value = $('#xToT').value = '' } // filter tanggal kosong = semua data
@@ -862,7 +862,7 @@ $('#xPdf').onclick = () => {
 function logDl(o) {
   try {
     const rec = { id: uid(), ts: Date.now(), fname: o.fname, fmt: o.fmt, form: o.form, adm: me ? me.name : '', src: o.src || 'Semua',
-      data: JSON.stringify({ title: o.title, tgl: o.tgl, cols: o.cols, rows: o.rows }) };
+      data: JSON.stringify({ title: o.title, tgl: o.tgl, cols: o.cols, rows: o.rows, subs: o.subs }) };
     downloads.unshift(rec); commit([['downloads', 'set', rec]]);
     if ($('#dl').classList.contains('on')) renderDl();
   } catch (e) { console.error('catat download', e) }
@@ -916,38 +916,73 @@ const dlData = r => { try { return JSON.parse(r.data) || {} } catch (e) { return
 // header tiap file: Nama Admin & Asal Barang, lalu info file
 const dlHead = (r, d) => ['Nama Admin: ' + (r.adm || '-'), 'Asal Barang: ' + r.src, 'File: ' + r.fname + ' (' + r.fmt + ') - diunduh ' + tsFmt(r.ts), (d.title || '') + (d.tgl ? ' - ' + d.tgl : '')];
 // export gabungan: file terlama -> terbaru; tiap file = header + isi data file tersebut, lalu terpotong ke file berikutnya
-$('#dlXls').onclick = () => {
-  if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
-  const rows = dlFiltered().reverse();
-  if (!rows.length) return alert('Tidak ada riwayat download pada filter itu.');
-  const aoa = [], merges = [], wd = [];
+// baris isi + baris data yang termerge (jam input) tepat di bawah baris induknya
+const dlRows = (d, pre) => {
+  const out = [];
+  (d.rows || []).forEach((x, i) => {
+    out.push({ v: x, sub: false });
+    ((d.subs || [])[i] || []).forEach(z => out.push({ v: x.map((_, c) => c === 1 ? z[0] : c === 2 ? pre + x[2] : c === 3 ? x[3] : c === 4 ? z[1] + ' / ' + z[2] + ' pcs' : c === 5 ? x[5] : ''), sub: true }));
+  });
+  return out;
+};
+async function dlExcelJS(rows, fn) { // Excel bergaya: data termerge berwarna & berukuran 2/3
+  const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Riwayat Download'), wd = [];
+  const SF = { name: 'Calibri', size: 7.5, color: { argb: 'FF3A66B4' } }, FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCEBF9' } };
   rows.forEach((r, i) => {
     const d = dlData(r), cols = d.cols || [], n = Math.max(1, cols.length);
+    if (i) { ws.addRow([]); ws.addRow([]) }
+    dlHead(r, d).forEach(t => { const w = ws.addRow([t]); if (n > 1) ws.mergeCells(w.number, 1, w.number, n); w.font = { bold: true } });
+    ws.addRow([]);
+    const hr = ws.addRow(cols); hr.font = { bold: true }; hr.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9EBF9' } } });
+    const fl = dlRows(d, '\u21B3 ');
+    [{ v: cols }].concat(fl).forEach(o => o.v.forEach((v, c) => { wd[c] = Math.min(40, Math.max(wd[c] || 6, String(v == null ? '' : v).length + 2)) }));
+    fl.forEach(o => {
+      const w = ws.addRow(o.v);
+      if (o.sub) { w.height = 12; w.eachCell({ includeEmpty: true }, (c, k) => { if (k <= n) { c.fill = FILL; c.font = SF } }) }
+    });
+  });
+  wd.forEach((w, c) => ws.getColumn(c + 1).width = w);
+  const buf = await wb.xlsx.writeBuffer();
+  const url = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  const a = document.createElement('a'); a.href = url; a.download = fn; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 3000);
+}
+$('#dlXls').onclick = async () => {
+  const rows = dlFiltered().reverse();
+  if (!rows.length) return alert('Tidak ada riwayat download pada filter itu.');
+  const fn = fileName($('#dlSrc').value, $('#dlAdm').value, 'RIWAYAT DOWNLOAD', 'xlsx');
+  if (window.ExcelJS) { try { return await dlExcelJS(rows, fn) } catch (e) { console.error(e); alert('Export bergaya gagal, memakai format Excel biasa (tanpa warna).') } }
+  if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
+  const aoa = [], merges = [], wd = [];
+  rows.forEach((r, i) => { // cadangan: tanpa warna/ukuran
+    const d = dlData(r), cols = d.cols || [], n = Math.max(1, cols.length), fl = dlRows(d, '\u21B3 ');
     if (i) aoa.push([], []);
     dlHead(r, d).forEach(t => { if (n > 1) merges.push({ s: { r: aoa.length, c: 0 }, e: { r: aoa.length, c: n - 1 } }); aoa.push([t]) });
     aoa.push([], cols);
-    [cols].concat(d.rows || []).forEach(x => x.forEach((v, c) => { wd[c] = Math.min(40, Math.max(wd[c] || 6, String(v == null ? '' : v).length + 2)) }));
-    (d.rows || []).forEach(x => aoa.push(x));
+    [{ v: cols }].concat(fl).forEach(o => o.v.forEach((v, c) => { wd[c] = Math.min(40, Math.max(wd[c] || 6, String(v == null ? '' : v).length + 2)) }));
+    fl.forEach(o => aoa.push(o.v));
   });
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!merges'] = merges; ws['!cols'] = wd.map(w => ({ wch: w }));
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Riwayat Download');
-  XLSX.writeFile(wb, fileName($('#dlSrc').value, $('#dlAdm').value, 'RIWAYAT DOWNLOAD', 'xlsx'));
+  XLSX.writeFile(wb, fn);
 };
 $('#dlPdf').onclick = () => {
   if (!window.jspdf) return alert('Library PDF gagal dimuat. Pastikan terhubung ke internet.');
   const rows = dlFiltered().reverse(); if (!rows.length) return alert('Tidak ada riwayat download pada filter itu.');
   const doc = new jspdf.jsPDF({ orientation: 'landscape' });
   rows.forEach((r, i) => {
-    const d = dlData(r), H = dlHead(r, d), src = d.rows || [];
+    const d = dlData(r), H = dlHead(r, d), fl = dlRows(d, '- ');
     if (i) doc.addPage();
     doc.setFontSize(12); doc.setFont(undefined, 'bold'); doc.text(H[0] + '     ' + H[1], 14, 15);
     doc.setFont(undefined, 'normal'); doc.setFontSize(10); doc.text(H[2], 14, 22); doc.text(H[3], 14, 28);
     doc.autoTable({
       startY: 33, headStyles: { fillColor: [74, 123, 208] },
-      head: [d.cols || []], body: src.map(x => x.map(v => v === '\u2610' ? '' : v)),
+      head: [d.cols || []], body: fl.map(o => o.v.map(v => v === '\u2610' ? '' : v)),
+      didParseCell: c => { // data termerge: warna beda, ukuran 2/3 dari baris induk
+        if (c.section === 'body' && fl[c.row.index] && fl[c.row.index].sub) { c.cell.styles.fontSize = 10 * 2 / 3; c.cell.styles.textColor = [58, 102, 180]; c.cell.styles.fillColor = [220, 235, 249]; c.cell.styles.cellPadding = 1.2 }
+      },
       didDrawCell: c => {
-        if (c.section !== 'body' || (src[c.row.index] || [])[c.column.index] !== '\u2610') return;
+        if (c.section !== 'body' || ((fl[c.row.index] || { v: [] }).v[c.column.index]) !== '\u2610') return;
         const z = 4.5; doc.setDrawColor(60); doc.setLineWidth(.3);
         doc.rect(c.cell.x + (c.cell.width - z) / 2, c.cell.y + (c.cell.height - z) / 2, z, z);
       }
