@@ -25,7 +25,7 @@
   </div>
     <div class="ph">
       <div><h2 id="pt">Pengajuan</h2><p id="ps">Ajukan barang yang dibutuhkan</p></div>
-      <div class="hr"><button class="who" id="who" type="button">🔒 Tamu</button><div class="sync loc" id="sync"><i></i><span>Mode lokal</span></div></div>
+      <div class="hr"><button class="who" id="lockBtn" type="button" title="Dashboard khusus pemilik">🔒</button><button class="who" id="who" type="button">👤 Tamu</button><div class="sync loc" id="sync"><i></i><span>Mode lokal</span></div></div>
     </div>
 </header>
 
@@ -148,6 +148,21 @@
     </div>
   </section>
 
+  <!-- DASHBOARD KHUSUS -->
+  <section class="sec" id="ow">
+    <div class="card">
+      <div class="owh"><h3>Dashboard Khusus Pemilik</h3><button class="btn ghost sm" id="owLock" type="button">Kunci &amp; keluar</button></div>
+      <div class="exf">
+        <div><label>Periode</label><select id="owPer"><option value="all">Semua waktu</option><option value="7">7 hari terakhir</option><option value="30">30 hari terakhir</option><option value="month">Bulan ini</option><option value="custom">Pilih tanggal...</option></select></div>
+        <div id="owFromW" hidden><label>Dari tanggal</label><input type="date" id="owFrom"></div>
+        <div id="owToW" hidden><label>Sampai tanggal</label><input type="date" id="owTo"></div>
+        <div><label>Asal Barang</label><select id="owSrc" data-src="Semua"></select></div>
+      </div>
+      <div class="otabs"><button data-o="sum" class="on" type="button">Ringkasan</button><button data-o="prod" type="button">Produk</button><button data-o="adm" type="button">Admin &amp; Akses</button><button data-o="rec" type="button">Rekomendasi</button></div>
+    </div>
+    <div id="owBody"></div>
+  </section>
+
   <!-- PRODUK -->
   <section class="sec" id="pr">
     <div class="cols2">
@@ -245,6 +260,24 @@
   <div class="acts"><button class="btn ghost" id="pECancel" type="button">Batal</button><button class="btn" id="pESave" type="button">Simpan</button></div>
 </div></div>
 
+<!-- MODAL KODE DASHBOARD KHUSUS -->
+<div class="modal" id="gmdl" hidden><div class="box">
+  <h3>🔒 Dashboard Khusus</h3>
+  <p class="hint">Menu ini khusus pemilik. Masukkan kode verifikasi.</p>
+  <input id="gCode" type="password" inputmode="numeric" autocomplete="off" placeholder="Kode verifikasi">
+  <div class="msg" id="gMsg"></div>
+  <div class="acts"><button class="btn ghost" id="gCancel" type="button">Batal</button><button class="btn" id="gOk" type="button">Masuk</button></div>
+</div></div>
+
+<!-- MODAL RESET PASSWORD ADMIN -->
+<div class="modal" id="rpmdl" hidden><div class="box">
+  <h3>Reset Password Admin</h3>
+  <div class="hint2" id="rpInfo"></div>
+  <label>Password baru</label><input id="rpPass" type="text" autocomplete="off" placeholder="Minimal 4 karakter">
+  <div class="msg" id="rpMsg"></div>
+  <div class="acts"><button class="btn ghost" id="rpCancel" type="button">Batal</button><button class="btn" id="rpOk" type="button">Simpan</button></div>
+</div></div>
+
 <!-- MODAL HAPUS DOWNLOAD -->
 <div class="modal" id="dmdl" hidden><div class="box">
   <h3>Hapus Riwayat Download</h3>
@@ -298,6 +331,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="script.js?v=39"></script>
+<script src="script.js?v=40"></script>
 </body>
 </html>

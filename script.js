@@ -119,6 +119,7 @@ function refresh() {
   fillAdm(); renderReqs(); renderProducts(); renderAuto();
   if ($('#pu').classList.contains('on')) renderTable();
   if ($('#dl').classList.contains('on')) renderDl();
+  if ($('#ow').classList.contains('on')) renderOw();
 }
 function startSync() {
   if (!FIREBASE_CONFIG || !window.firebase) { loadLocal(); setSync('loc'); refresh(); return }
@@ -135,13 +136,14 @@ function startSync() {
 }
 
 /* ---------- menu & hamburger ---------- */
-const TT = { pg: ['Pengajuan', 'Hari ini tampil di atas; hari sebelumnya masuk riwayat per bulan (ganti hari pukul 00.00 WIB)'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], dl: ['Download', 'Riwayat export Excel / PDF, bisa difilter dan diexport gabungan'], pr: ['Produk', 'Kelola database produk dan varian warna'] };
+const TT = { pg: ['Pengajuan', 'Hari ini tampil di atas; hari sebelumnya masuk riwayat per bulan (ganti hari pukul 00.00 WIB)'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], ow: ['Dashboard Khusus', 'Kontrol admin & analisa pemasaran (khusus pemilik)'], dl: ['Download', 'Riwayat export Excel / PDF, bisa difilter dan diexport gabungan'], pr: ['Produk', 'Kelola database produk dan varian warna'] };
 function go(t) {
   $$('nav button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
   $$('.sec').forEach(s => s.classList.toggle('on', s.id === t));
   $('#nav').classList.remove('open'); $('#pt').textContent = TT[t][0]; $('#ps').textContent = TT[t][1];
   if (t === 'pu') renderTable();
   if (t === 'dl') renderDl();
+  if (t === 'ow') renderOw();
   if (t === 'pg') renderReqs();
   if (t === 'in') refreshBlocks();
 }
@@ -1167,7 +1169,7 @@ function authTab(t) {
 }
 function showAuth(t) { $('#auth').hidden = false; authTab(t || 'in') }
 function renderWho() {
-  $('#who').textContent = me ? '👤 ' + me.name : '🔒 Tamu';
+  $('#who').textContent = me ? '👤 ' + me.name : '👤 Tamu';
   $('#who').title = me ? 'Klik untuk keluar' : 'Klik untuk masuk / daftar';
 }
 function setMe(m) { me = m; store.set('pp_session', m ? { username: m.username, name: m.name } : { guest: true }); $('#auth').hidden = true; renderWho() }
@@ -1206,4 +1208,202 @@ $('#fSignup').onsubmit = async e => {
   if (s && s.username) me = { username: s.username, name: s.name };
   renderWho(); if (!s) showAuth('in'); }
 
-pgVarUI(); addBlock(); startSync();
+/* ---------- DASHBOARD KHUSUS PEMILIK (ikon gembok) ---------- */
+const OW_CODE = '030201';
+let owOk = false, owTab = 'sum', owMore = {}, owSort = 'pcs';
+const nf = n => Number(n || 0).toLocaleString('id-ID');
+const pc = (a, b) => b ? Math.round(a / b * 100) : 0;
+const tone = p => p >= 80 ? 'ok' : p >= 50 ? 'mid' : 'bad';
+const pbar = p => `<div class="pb ${tone(p)}"><i style="width:${Math.min(100, p)}%"></i></div>`;
+const kpi = (l, v, s, t) => `<div class="kc ${t || ''}"><span>${l}</span><b>${v}</b><small>${s || ''}</small></div>`;
+const sumK = (a, k) => a.reduce((s, x) => s + (x[k] || 0), 0);
+const dayTxt = d => d == null ? '-' : d < 1 ? '< 1 hari' : d.toFixed(1).replace('.', ',') + ' hari';
+const avgL = g => g.L.length ? g.L.reduce((a, b) => a + b, 0) / g.L.length : null;
+const NO_ADM = '(Tamu / tanpa nama)';
+
+function owRange() {
+  const p = $('#owPer').value, now = Date.now();
+  $('#owFromW').hidden = $('#owToW').hidden = p !== 'custom';
+  if (p === '7') return [now - 7 * 864e5, null];
+  if (p === '30') return [now - 30 * 864e5, null];
+  if (p === 'month') { const d = new Date(); return [new Date(d.getFullYear(), d.getMonth(), 1).getTime(), null] }
+  if (p === 'custom') { const a = $('#owFrom').value, b = $('#owTo').value; return [a ? new Date(a + 'T00:00:00').getTime() : null, b ? new Date(b + 'T23:59:59.999').getTime() : null] }
+  return [null, null];
+}
+const inR = (ts, f, t) => (f === null || ts >= f) && (t === null || ts <= t);
+function owData() {
+  const [f, t] = owRange(), s = $('#owSrc').value, now = Date.now();
+  const rs = reqs.filter(r => !s || r.src === s);
+  const R = rs.map(r => pgView(r, f, t)).filter(Boolean);
+  const E = []; // satu entri per input pengajuan yang masuk periode
+  rs.forEach(r => reqEntries(r).forEach(e => { if (inR(e.ts, f, t)) E.push(Object.assign({ r }, e)) }));
+  const recMax = {}; records.forEach(x => { if (x.rid && (!recMax[x.rid] || x.ts > recMax[x.rid])) recMax[x.rid] = x.ts });
+  const lead = r => r.ada >= r.min && recMax[r.id] ? Math.max(0, (recMax[r.id] - r.ts) / 864e5) : null;
+  return { f, t, s, now, rs, R, E, lead };
+}
+function grp(R, keyFn, lead, init) {
+  const m = new Map();
+  R.forEach(r => {
+    const k = keyFn(r);
+    if (!m.has(k)) m.set(k, Object.assign({ k, n: 0, freq: 0, min: 0, ada: 0, done: 0, L: [] }, init ? init(r) : {}));
+    const g = m.get(k), l = lead(r);
+    g.n++; g.freq += reqHist(r).length; g.min += r.min; g.ada += r.ada; if (r.ada >= r.min) g.done++; if (l != null) g.L.push(l);
+  });
+  return [...m.values()];
+}
+function trendSvg(E, f, t) {
+  const end = t || Date.now(); let start = f !== null ? f : (E.length ? Math.min(...E.map(e => e.ts)) : end - 29 * 864e5);
+  start = Math.max(start, end - 44 * 864e5);
+  const days = [], last = new Date(dayWIB(end) + 'T00:00:00Z').getTime();
+  for (let d = new Date(dayWIB(start) + 'T00:00:00Z').getTime(); d <= last; d += 864e5) days.push(new Date(d).toISOString().slice(0, 10));
+  const m = {}; days.forEach(d => m[d] = { n: 0, a: 0 });
+  E.forEach(e => { const d = dayWIB(e.ts); if (m[d]) { m[d].n += e.n; m[d].a += e.a } });
+  const mx = Math.max(1, ...days.map(d => m[d].n)), W = 700, H = 200, pl = 40, pb = 24, ph = H - pb - 8, bw = (W - pl) / days.length, st = Math.ceil(days.length / 9);
+  let g = [0, .5, 1].map(k => { const y = 8 + ph - ph * k; return `<line x1="${pl}" x2="${W}" y1="${y}" y2="${y}" class="gl"/><text x="${pl - 6}" y="${y + 4}" text-anchor="end" class="tx">${nf(Math.round(mx * k))}</text>` }).join('');
+  days.forEach((d, i) => {
+    const x = pl + i * bw + 1, w = Math.max(2, bw - 2), hn = ph * m[d].n / mx, ha = ph * m[d].a / mx;
+    g += `<g><title>${d.split('-').reverse().join('-')}: diajukan ${nf(m[d].n)} pcs, terpenuhi ${nf(m[d].a)} pcs</title><rect x="${x}" y="${8 + ph - hn}" width="${w}" height="${hn}" class="bn"/><rect x="${x}" y="${8 + ph - ha}" width="${w}" height="${ha}" class="ba"/></g>`;
+    if (i % st === 0) g += `<text x="${x + w / 2}" y="${H - 6}" text-anchor="middle" class="tx">${d.slice(8)}/${d.slice(5, 7)}</text>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" class="ch" role="img" aria-label="Grafik pengajuan harian">${g}</svg>`;
+}
+const WD = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+const wdOf = ts => new Date(dayWIB(ts) + 'T00:00:00Z').getUTCDay();
+function momentum(D) { // 7 hari terakhir vs 7 hari sebelumnya (tidak terpengaruh filter periode)
+  const m = {};
+  D.rs.forEach(r => reqEntries(r).forEach(e => {
+    const age = D.now - e.ts; if (age < 0 || age >= 14 * 864e5) return;
+    const o = m[r.prod] = m[r.prod] || { k: r.prod, cur: 0, prev: 0 };
+    age < 7 * 864e5 ? o.cur += e.n : o.prev += e.n;
+  }));
+  return Object.values(m);
+}
+function tabSum(D) {
+  const { R, E, lead, f, t } = D, min = sumK(R, 'min'), ada = sumK(R, 'ada'), lines = R.length;
+  const done = R.filter(r => r.ada >= r.min).length, part = R.filter(r => r.ada > 0 && r.ada < r.min).length, wait = R.filter(r => !r.ada).length;
+  const L = R.map(lead).filter(x => x != null), al = L.length ? L.reduce((a, b) => a + b, 0) / L.length : null;
+  const nProd = new Set(R.map(r => r.prod)).size, dl = downloads.filter(x => inR(x.ts, f, t)).length, fr = pc(ada, min);
+  const wd = [0, 0, 0, 0, 0, 0, 0]; E.forEach(e => wd[wdOf(e.ts)] += e.n);
+  const wmx = Math.max(1, ...wd), S = grp(R, r => r.src, lead).sort((a, b) => b.min - a.min);
+  return `<div class="kpis">${kpi('Total diajukan', nf(min) + ' pcs', lines + ' baris pengajuan · ' + nProd + ' produk')}${kpi('Terpenuhi', nf(ada) + ' pcs', fr + '% dari yang diajukan', tone(fr))}${kpi('Belum terpenuhi', nf(min - ada) + ' pcs', 'backlog pengadaan', min - ada ? 'bad' : 'ok')}${kpi('Pengajuan lengkap', nf(done) + ' / ' + nf(lines), pc(done, lines) + '% baris selesai', tone(pc(done, lines)))}${kpi('Rata-rata waktu penuhi', dayTxt(al), L.length + ' pengajuan selesai')}${kpi('Download file', nf(dl), 'Excel / PDF pada periode ini')}</div>
+  <div class="card"><h3>Status pengajuan</h3><div class="stk"><i class="ok" style="flex:${done}" title="Selesai"></i><i class="mid" style="flex:${part}" title="Sebagian"></i><i class="bad" style="flex:${wait}" title="Menunggu"></i></div>
+  <div class="lg"><span><i class="ok"></i>Selesai ${nf(done)}</span><span><i class="mid"></i>Sebagian ${nf(part)}</span><span><i class="bad"></i>Menunggu ${nf(wait)}</span></div></div>
+  <div class="card"><h3>Tren pengajuan harian</h3><p class="hint">Batang biru muda = pcs diajukan, hijau = pcs yang sudah terpenuhi dari pengajuan hari itu (maks. 45 hari terakhir pada periode).</p>${trendSvg(E, f, t)}</div>
+  <div class="cols2"><div class="card"><h3>Hari tersibuk</h3><p class="hint">Total pcs diajukan per hari dalam seminggu.</p>${wd.map((v, i) => [i, v]).sort((a, b) => ((a[0] + 6) % 7) - ((b[0] + 6) % 7)).map(([i, v]) => `<div class="hb"><span>${WD[i]}</span><div class="pb"><i style="width:${pc(v, wmx)}%"></i></div><b>${nf(v)}</b></div>`).join('')}</div>
+  <div class="card"><h3>Per asal barang</h3><p class="hint">Kecepatan & keandalan tiap sumber.</p><div class="tw"><table class="ot"><thead><tr><th>Asal</th><th>Diajukan</th><th>Terpenuhi</th><th>Waktu penuhi</th></tr></thead><tbody>${S.map(g => `<tr><td><span class="tag">${esc(g.k)}</span></td><td>${nf(g.min)}</td><td>${pc(g.ada, g.min)}%${pbar(pc(g.ada, g.min))}</td><td>${dayTxt(avgL(g))}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Belum ada data.</td></tr>'}</tbody></table></div></div></div>`;
+}
+function tabProd(D) {
+  const { R, lead } = D, P = grp(R, r => r.prod, lead).sort(owSort === 'freq' ? (a, b) => b.freq - a.freq || b.min - a.min : (a, b) => b.min - a.min || b.freq - a.freq);
+  const V = grp(R, r => r.prod + '|' + (r.vn || '-'), lead, r => ({ prod: r.prod, vn: r.vn || '-', vc: r.vc })).sort((a, b) => b.min - a.min);
+  const crit = P.filter(p => p.min > p.ada).sort((a, b) => (b.min - b.ada) - (a.min - a.ada)).slice(0, 10);
+  const names = new Set(R.map(r => r.prod)), dead = products.filter(p => !names.has(p.name));
+  const lim = (k, a) => owMore[k] ? a : a.slice(0, 10), more = (k, a) => a.length > 10 ? `<button class="lnk" data-owmore="${k}">${owMore[k] ? 'Tampilkan 10 teratas saja' : 'Tampilkan semua (' + a.length + ')'}</button>` : '';
+  return `<div class="card"><div class="owh"><h3>Produk paling sering diajukan</h3><select data-owsort style="width:auto"><option value="pcs"${owSort === 'pcs' ? ' selected' : ''}>Urut: total pcs</option><option value="freq"${owSort === 'freq' ? ' selected' : ''}>Urut: sering diajukan</option></select></div>
+  <p class="hint">Dari yang terbanyak sampai tersedikit. "Sering diajukan" = berapa kali produk diinput; "Terpenuhi" = pcs yang sudah diterima.</p>
+  <div class="tw"><table class="ot"><thead><tr><th>#</th><th>Produk</th><th>Diajukan (kali)</th><th>Diminta</th><th>Terpenuhi</th><th>% Terpenuhi</th><th>Baris lengkap</th><th>Kurang</th></tr></thead><tbody>${lim('p', P).map((p, i) => `<tr><td>${i + 1}</td><td><b>${esc(p.k)}</b></td><td>${nf(p.freq)}×</td><td>${nf(p.min)} pcs</td><td>${nf(p.ada)} pcs</td><td>${pc(p.ada, p.min)}%${pbar(pc(p.ada, p.min))}</td><td>${p.done} / ${p.n}</td><td>${nf(p.min - p.ada)}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">Belum ada data.</td></tr>'}</tbody></table></div>${more('p', P)}</div>
+  <div class="card"><h3>Warna / varian terlaris</h3><div class="tw"><table class="ot"><thead><tr><th>#</th><th>Produk · Warna</th><th>Diminta</th><th>Terpenuhi</th></tr></thead><tbody>${lim('v', V).map((v, i) => `<tr><td>${i + 1}</td><td><span class="sw" style="background:${esc(v.vc || '#ccc')};width:14px;height:14px;margin-right:6px"></span><b>${esc(v.prod)}</b> · ${esc(v.vn)}</td><td>${nf(v.min)} pcs</td><td>${pc(v.ada, v.min)}%${pbar(pc(v.ada, v.min))}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Belum ada data.</td></tr>'}</tbody></table></div>${more('v', V)}</div>
+  <div class="cols2"><div class="card"><h3>Perlu perhatian (kekurangan terbesar)</h3><p class="hint">Produk dengan pcs belum terpenuhi paling banyak.</p>${crit.map(p => `<div class="hb"><span>${esc(p.k)}</span><div class="pb bad"><i style="width:${pc(p.min - p.ada, crit[0].min - crit[0].ada)}%"></i></div><b>${nf(p.min - p.ada)}</b></div>`).join('') || '<div class="empty">Semua pengajuan sudah terpenuhi 🎉</div>'}</div>
+  <div class="card"><h3>Produk tanpa pengajuan</h3><p class="hint">Ada di daftar produk, tetapi tidak pernah diajukan pada periode ini (${dead.length}).</p>${dead.slice(0, 30).map(p => `<span class="tag" style="display:inline-block;margin:0 6px 6px 0">${esc(p.name)}</span>`).join('') || '<div class="empty">Semua produk pernah diajukan.</div>'}${dead.length > 30 ? '<div class="hint2">dan ' + (dead.length - 30) + ' produk lainnya</div>' : ''}</div></div>`;
+}
+function tabAdm(D) {
+  const { f, t, R } = D, A = {};
+  const get = n => A[n] = A[n] || { name: n, acc: null, req: 0, pcs: 0, ada: 0, rec: 0, dl: 0, last: 0 };
+  admins.forEach(a => { get(a.name).acc = a });
+  reqs.forEach(r => { const o = get(r.adm || NO_ADM); o.last = Math.max(o.last, ...reqHist(r).map(h => h.ts)) });
+  records.forEach(r => { const o = get(r.adm || NO_ADM); o.last = Math.max(o.last, r.ts); if (inR(r.ts, f, t)) o.rec++ });
+  downloads.forEach(r => { const o = get(r.adm || NO_ADM); o.last = Math.max(o.last, r.ts); if (inR(r.ts, f, t)) o.dl++ });
+  R.forEach(r => { const o = get(r.adm || NO_ADM); o.req++; o.pcs += r.min; o.ada += r.ada });
+  const L = Object.values(A).sort((a, b) => (!!b.acc - !!a.acc) || b.pcs - a.pcs || a.name.localeCompare(b.name));
+  return `<div class="card"><h3>Kontrol Admin</h3><p class="hint">Semua admin yang terdaftar beserta aktivitasnya pada periode terpilih. <b>Hapus akses</b> membuat akun tidak bisa login lagi (data yang pernah diinput tetap tersimpan). <b>Reset password</b> mengganti password admin dengan yang baru.</p>
+  <div class="tw"><table class="ot" style="min-width:900px"><thead><tr><th>Admin</th><th>Terdaftar</th><th>Pengajuan</th><th>Pcs diajukan</th><th>% Terpenuhi</th><th>Input purchase</th><th>Download</th><th>Aktivitas terakhir</th><th></th></tr></thead><tbody>${L.map(o => `<tr><td><b>${esc(o.name)}</b>${o.acc ? '<div class="tm">@' + esc(o.acc.username) + '</div>' : '<div class="tm">tanpa akun</div>'}</td><td>${o.acc && o.acc.ts ? fmt(o.acc.ts) : '-'}</td><td>${nf(o.req)}</td><td>${nf(o.pcs)}</td><td>${o.pcs ? pc(o.ada, o.pcs) + '%' + pbar(pc(o.ada, o.pcs)) : '-'}</td><td>${nf(o.rec)}</td><td>${nf(o.dl)}</td><td>${o.last ? fmt(o.last) + tm(o.last) : '-'}</td><td class="nw">${o.acc ? `<button class="btn ghost sm" data-owreset="${esc(o.acc.username)}">Reset password</button> <button class="btn sm" style="background:var(--bad)" data-owdel="${esc(o.acc.username)}">Hapus akses</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">Belum ada admin.</td></tr>'}</tbody></table></div></div>`;
+}
+function owReco(D) {
+  const { R, E, lead } = D, out = [], add = (t, h, x) => out.push({ t, h, x });
+  const P = grp(R, r => r.prod, lead).sort((a, b) => b.min - a.min);
+  if (!P.length) return [{ t: 'info', h: 'Belum ada data', x: 'Tidak ada pengajuan pada periode / filter ini, jadi belum ada yang bisa dianalisa.' }];
+  const tot = sumK(P, 'min'), tAda = sumK(P, 'ada'), fr = pc(tAda, tot), lst = a => a.map(p => `<b>${esc(p.k)}</b> (${nf(p.min)} pcs, ${pc(p.ada, p.min)}% terpenuhi)`).join('; ');
+  const stars = P.slice(0, Math.max(1, Math.ceil(P.length * .3))).filter(p => pc(p.ada, p.min) >= 80).slice(0, 5);
+  if (stars.length) add('good', 'Produk andalan: dorong promosi & jaga stok', lst(stars) + '. Permintaan tinggi dan pasokan lancar, aman untuk dipromosikan lebih agresif karena barangnya tersedia.');
+  const med = P[Math.floor(P.length / 2)].min;
+  const crit = P.filter(p => p.min >= Math.max(med, 1) && pc(p.ada, p.min) < 50).sort((a, b) => (b.min - b.ada) - (a.min - a.ada)).slice(0, 5);
+  if (crit.length) add('bad', 'Permintaan tinggi tetapi pasokan tertahan', lst(crit) + '. Prioritaskan pengadaan / cari pemasok tambahan, dan tahan promosi produk ini sampai stok aman supaya tidak mengecewakan pelanggan.');
+  const top3 = P.slice(0, 3), sh = pc(sumK(top3, 'min'), tot);
+  if (P.length > 3 && sh >= 60) add('warn', 'Permintaan terlalu bergantung pada sedikit produk', `3 produk teratas (${top3.map(p => esc(p.k)).join(', ')}) menyumbang ${sh}% dari seluruh pcs diajukan. Risiko tinggi bila pasokan terganggu: kembangkan produk pendamping atau bundling agar permintaan lebih merata.`);
+  if (fr < 70) add('bad', 'Tingkat pemenuhan keseluruhan rendah', `Baru ${fr}% dari ${nf(tot)} pcs yang diajukan terpenuhi (kurang ${nf(tot - tAda)} pcs). Evaluasi proses pembelian & pemasok sebelum menambah kampanye penjualan.`);
+  else if (fr >= 90) add('good', 'Pemenuhan stok sangat baik', `${fr}% pengajuan terpenuhi. Ada ruang untuk menaikkan target penjualan.`);
+  const S = grp(R, r => r.src, lead).filter(g => g.L.length >= 2).sort((a, b) => avgL(b) - avgL(a));
+  if (S.length > 1) add('warn', 'Sumber barang paling lambat', `<b>${esc(S[0].k)}</b> rata-rata ${dayTxt(avgL(S[0]))} untuk memenuhi pengajuan, versus <b>${esc(S[S.length - 1].k)}</b> ${dayTxt(avgL(S[S.length - 1]))}. Pertimbangkan memesan lebih awal dari sumber yang lambat atau mengalihkan item permintaan tinggi ke sumber yang lebih cepat.`);
+  const wd = [0, 0, 0, 0, 0, 0, 0]; E.forEach(e => wd[wdOf(e.ts)] += e.n);
+  const bi = wd.indexOf(Math.max(...wd)); if (wd[bi] > 0) add('info', 'Hari permintaan tertinggi: ' + WD[bi], `${pc(wd[bi], sumK(E, 'n'))}% pengajuan masuk pada hari ${WD[bi]}. Jadwalkan penambahan stok dan kampanye sehari sebelumnya agar siap saat permintaan naik.`);
+  const top = P[0], vs = grp(R.filter(r => r.prod === top.k), r => r.vn || '-', lead).sort((a, b) => b.min - a.min);
+  if (vs.length > 1) add('info', 'Warna terlaris untuk ' + top.k, `<b>${esc(vs[0].k)}</b> (${pc(vs[0].min, top.min)}% dari permintaan ${esc(top.k)}). Alokasikan stok terbesar pada warna ini, dan gunakan warna kurang laku (${esc(vs[vs.length - 1].k)}) sebagai bahan promo bundling.`);
+  const M = momentum(D), up = M.filter(m => m.cur >= 5 && m.cur > m.prev * 1.3).sort((a, b) => b.cur - b.prev - (a.cur - a.prev)).slice(0, 4), dn = M.filter(m => m.prev >= 5 && m.cur < m.prev * .7).sort((a, b) => (b.prev - b.cur) - (a.prev - a.cur)).slice(0, 4);
+  const mt = m => `<b>${esc(m.k)}</b> (${nf(m.prev)} → ${nf(m.cur)} pcs)`;
+  if (up.length) add('good', 'Permintaan naik (7 hari terakhir vs 7 hari sebelumnya)', up.map(mt).join('; ') + '. Tambah stok lebih awal dan manfaatkan momentum dengan promosi.');
+  if (dn.length) add('warn', 'Permintaan menurun (7 hari terakhir vs 7 hari sebelumnya)', dn.map(mt).join('; ') + '. Tahan restock besar, pertimbangkan diskon / bundling atau cari tahu penyebab penurunannya.');
+  const names = new Set(R.map(r => r.prod)), dead = products.filter(p => !names.has(p.name));
+  if (dead.length) add('warn', `${dead.length} produk tidak pernah diajukan pada periode ini`, dead.slice(0, 8).map(p => esc(p.name)).join(', ') + (dead.length > 8 ? ' dan lainnya' : '') + '. Jangan restock dulu; jalankan promo / bundling atau pertimbangkan menghentikan produk yang terus sepi.');
+  return out;
+}
+function tabReco(D) {
+  const ic = { good: '✅', bad: '🚨', warn: '⚠️', info: '💡' };
+  return `<div class="card"><h3>Rekomendasi kebijakan pemasaran</h3><p class="hint">Dihitung otomatis dari data pengajuan &amp; pemenuhan pada periode dan filter di atas. Catatan: pengajuan barang adalah <b>indikator permintaan internal</b>, bukan data penjualan ke pelanggan. Cocokkan dengan data penjualan sebelum mengambil keputusan besar.</p>${owReco(D).map(o => `<div class="rec ${o.t}"><b>${ic[o.t]} ${o.h}</b><p>${o.x}</p></div>`).join('')}</div>`;
+}
+function renderOw() {
+  if (!owOk) return;
+  $$('.otabs button').forEach(b => b.classList.toggle('on', b.dataset.o === owTab));
+  const D = owData();
+  $('#owBody').innerHTML = { sum: tabSum, prod: tabProd, adm: tabAdm, rec: tabReco }[owTab](D);
+}
+// ---- gerbang kode & kontrol akses ----
+function openOw() { if (owOk) return go('ow'); $('#gCode').value = ''; msg('#gMsg', ''); $('#gmdl').hidden = false; $('#gCode').focus() }
+function tryOw() {
+  if ($('#gCode').value.trim() !== OW_CODE) return msg('#gMsg', 'Kode salah.');
+  owOk = true; $('#gmdl').hidden = true; go('ow');
+}
+function lockOw() { owOk = false; $('#owBody').innerHTML = ''; go('pg') }
+$('#lockBtn').onclick = openOw; $('#gOk').onclick = tryOw; $('#gCancel').onclick = () => $('#gmdl').hidden = true;
+$('#gCode').addEventListener('keydown', e => { if (e.key === 'Enter') tryOw() });
+$('#owLock').onclick = lockOw;
+$$('.otabs button').forEach(b => b.onclick = () => { owTab = b.dataset.o; renderOw() });
+['#owPer', '#owFrom', '#owTo', '#owSrc'].forEach(x => { $(x).addEventListener('input', renderOw); $(x).addEventListener('change', renderOw) });
+function forceLogout(note) { store.set('pp_session', null); me = null; renderWho(); showAuth('in'); authMsg(note || '') }
+let rpUser = null;
+$('#owBody').addEventListener('click', e => {
+  const m = e.target.closest('[data-owmore]'), r = e.target.closest('[data-owreset]'), d = e.target.closest('[data-owdel]');
+  if (m) { owMore[m.dataset.owmore] = !owMore[m.dataset.owmore]; renderOw() }
+  if (r) { rpUser = r.dataset.owreset; $('#rpInfo').textContent = '@' + rpUser; $('#rpPass').value = ''; msg('#rpMsg', ''); $('#rpmdl').hidden = false; $('#rpPass').focus() }
+  if (d) delAccess(d.dataset.owdel);
+});
+$('#owBody').addEventListener('change', e => { const s = e.target.closest('[data-owsort]'); if (s) { owSort = s.value; renderOw() } });
+async function delAccess(u) {
+  const a = admins.find(x => x.username === u); if (!a) return;
+  if (!confirm('Hapus akses admin "' + a.name + '" (@' + u + ')?\nAkun ini tidak bisa login lagi. Data yang pernah diinput tetap tersimpan.')) return;
+  try {
+    if (db) await withTimeout(db.collection('admins').doc(u).delete());
+    else { const o = store.get('pp_admins', {}); delete o[u]; store.set('pp_admins', o) }
+    admins = admins.filter(x => x.username !== u);
+    if (me && me.username === u) forceLogout('Akses akun ini telah dihapus.');
+    renderOw(); fillAdm();
+  } catch (err) { console.error(err); alert('Gagal menghapus akses: ' + authErr(err, '')) }
+}
+async function doReset() {
+  const p = $('#rpPass').value, a = admins.find(x => x.username === rpUser);
+  if (!a) return $('#rpmdl').hidden = true;
+  if (p.length < 4) return msg('#rpMsg', 'Password minimal 4 karakter.');
+  const rec = Object.assign({}, a, { pass: pwHash(a.username, p) });
+  try {
+    if (db) await withTimeout(db.collection('admins').doc(a.username).set(rec));
+    else { const o = store.get('pp_admins', {}); o[a.username] = rec; store.set('pp_admins', o); admins = admins.map(x => x.username === a.username ? rec : x) }
+    $('#rpmdl').hidden = true; alert('Password @' + a.username + ' berhasil diganti.');
+  } catch (err) { console.error(err); msg('#rpMsg', authErr(err, 'Gagal mengganti password.')) }
+}
+$('#rpOk').onclick = doReset; $('#rpCancel').onclick = () => $('#rpmdl').hidden = true;
+$('#rpPass').addEventListener('keydown', e => { if (e.key === 'Enter') doReset() });
+// akun yang aksesnya dihapus langsung dikeluarkan di perangkat mana pun
+function watchAdmins() {
+  if (!db) return;
+  db.collection('admins').onSnapshot(s => { if (!s.metadata.fromCache && me && !s.docs.some(d => d.id === me.username)) forceLogout('Akses akun ini telah dihapus oleh pemilik.') });
+}
+
+pgVarUI(); addBlock(); startSync(); watchAdmins();
