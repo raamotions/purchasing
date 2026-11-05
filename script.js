@@ -53,7 +53,7 @@ const FIREBASE_CONFIG = {
   appId: "1:306713086751:web:3aad1af4d0dbd89f727e2a"
 };
 
-let db = null, products = [], reqs = [], records = [], photos = {}, admins = [], me = null; // me: {username, name} atau null (tamu)
+let db = null, products = [], reqs = [], records = [], downloads = [], photos = {}, admins = [], me = null; // me: {username, name} atau null (tamu)
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d } catch (e) { return d } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true } catch (e) { return false } }
@@ -68,14 +68,14 @@ function loadLocal() {
     { id: 'p2', name: 'Tas Kanvas', variants: [] }
   ];
   reqs = store.get('pp_requests', []); records = store.get('pp_records', []); photos = store.get('pp_photos', {});
-  admins = Object.values(store.get('pp_admins', {}));
+  admins = Object.values(store.get('pp_admins', {})); downloads = store.get('pp_downloads', []);
 }
 // ops: [['koleksi','set',objek] | ['koleksi','del',id]]
 function commit(ops = []) {
   if (!db) {
     const used = new Set(records.map(r => r.pid));
     Object.keys(photos).forEach(k => { if (!used.has(k)) delete photos[k] });
-    const ok = store.set('pp_products', products) && store.set('pp_requests', reqs) && store.set('pp_records', records) && store.set('pp_photos', photos);
+    const ok = store.set('pp_products', products) && store.set('pp_requests', reqs) && store.set('pp_records', records) && store.set('pp_photos', photos) && store.set('pp_downloads', downloads);
     if (!ok) loadLocal();
     return ok;
   }
@@ -118,6 +118,7 @@ $('#sync').onclick = diagnose; $('#sync').title = 'Klik untuk tes koneksi Fireba
 function refresh() {
   fillAdm(); renderReqs(); renderProducts(); renderAuto();
   if ($('#pu').classList.contains('on')) renderTable();
+  if ($('#dl').classList.contains('on')) renderDl();
 }
 function startSync() {
   if (!FIREBASE_CONFIG || !window.firebase) { loadLocal(); setSync('loc'); refresh(); return }
@@ -129,16 +130,18 @@ function startSync() {
     on('records', a => records = a.sort((x, y) => y.ts - x.ts));
     on('photos', a => { photos = {}; a.forEach(p => photos[p.id] = p.d) });
     on('admins', a => admins = a);
+    on('downloads', a => downloads = a.sort((x, y) => y.ts - x.ts));
   } catch (e) { db = null; loadLocal(); setSync('err'); refresh() }
 }
 
 /* ---------- menu & hamburger ---------- */
-const TT = { pg: ['Pengajuan', 'Hari ini tampil di atas; hari sebelumnya masuk riwayat per bulan (ganti hari pukul 00.00 WIB)'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], pr: ['Produk', 'Kelola database produk dan varian warna'] };
+const TT = { pg: ['Pengajuan', 'Hari ini tampil di atas; hari sebelumnya masuk riwayat per bulan (ganti hari pukul 00.00 WIB)'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], dl: ['Download', 'Riwayat export Excel / PDF, bisa difilter dan diexport gabungan'], pr: ['Produk', 'Kelola database produk dan varian warna'] };
 function go(t) {
   $$('nav button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
   $$('.sec').forEach(s => s.classList.toggle('on', s.id === t));
   $('#nav').classList.remove('open'); $('#pt').textContent = TT[t][0]; $('#ps').textContent = TT[t][1];
   if (t === 'pu') renderTable();
+  if (t === 'dl') renderDl();
   if (t === 'pg') renderReqs();
   if (t === 'in') refreshBlocks();
 }
@@ -149,7 +152,7 @@ $$('select[data-src]').forEach(s => {
   s.innerHTML = `<option value="">${s.dataset.src}</option>` + SRC.map(x => `<option>${x}</option>`).join('');
 });
 function fillAdm() { // daftar nama admin = akun terdaftar + nama yang sudah tercatat di data
-  const names = [...new Set(admins.map(a => a.name).concat(reqs.map(r => r.adm), records.map(r => r.adm)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const names = [...new Set(admins.map(a => a.name).concat(reqs.map(r => r.adm), records.map(r => r.adm), downloads.map(r => r.adm)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   $$('select[data-adm]').forEach(s => {
     const v = s.value;
     s.innerHTML = `<option value="">${s.dataset.adm}</option>` + names.map(x => `<option>${esc(x)}</option>`).join('');
@@ -499,7 +502,8 @@ $('#pgXls').onclick = () => {
   ws['!merges'] = [0, 1, 2, 3].map(r => ({ s: { r, c: 0 }, e: { r, c: 6 } }));
   ws['!cols'] = [5, 17, 28, 16, 18, 10, 8].map(w => ({ wch: w }));
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Pengajuan');
-  XLSX.writeFile(wb, fileName($('#xSrc').value, admFile('#xAdm', rows), 'PENGAJUAN', 'xlsx'));
+  const fn = fileName($('#xSrc').value, admFile('#xAdm', rows), 'PENGAJUAN', 'xlsx'); XLSX.writeFile(wb, fn);
+  logDl({ form: 'PENGAJUAN', fmt: 'Excel', fname: fn, src: $('#xSrc').value, title: H.title, tgl: H.tgl, cols: aoa[5], rows: aoa.slice(6) });
 };
 $('#pgPdf').onclick = () => {
   if (!window.jspdf) return alert('Library PDF gagal dimuat. Pastikan terhubung ke internet.');
@@ -520,7 +524,8 @@ $('#pgPdf').onclick = () => {
       }
     }
   });
-  doc.save(fileName($('#xSrc').value, admFile('#xAdm', rows), 'PENGAJUAN', 'pdf'));
+  const fn = fileName($('#xSrc').value, admFile('#xAdm', rows), 'PENGAJUAN', 'pdf'); doc.save(fn);
+  logDl({ form: 'PENGAJUAN', fmt: 'PDF', fname: fn, src: $('#xSrc').value, title: H.title, tgl: H.tgl, cols: ['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Status'], rows: rows.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', SL + r.min + ' pcs', r.src, '\u2610']) });
 };
 const PGF = ['#xFromD', '#xFromT', '#xToD', '#xToT', '#xSrc', '#xAdm', '#xProd', '#xSt'];
 function setPgToday() { $('#xFromD').value = $('#xToD').value = $('#xFromT').value = $('#xToT').value = '' } // filter tanggal kosong = semua data
@@ -832,7 +837,8 @@ $('#xXls').onclick = () => {
   ws['!merges'] = [0, 1, 2, 3].map(r => ({ s: { r, c: 0 }, e: { r, c: 9 } }));
   ws['!cols'] = [5, 12, 8, 18, 28, 16, 6, 9, 10, 10].map(w => ({ wch: w }));
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Purchase');
-  XLSX.writeFile(wb, fileName($('#fqSrc').value, admFile('#fqAdm', rows), 'PURCHASE', 'xlsx'));
+  const fn = fileName($('#fqSrc').value, admFile('#fqAdm', rows), 'PURCHASE', 'xlsx'); XLSX.writeFile(wb, fn);
+  logDl({ form: 'PURCHASE', fmt: 'Excel', fname: fn, src: $('#fqSrc').value, title: H.title, tgl: H.tgl, cols: aoa[5], rows: aoa.slice(6) });
 };
 $('#xPdf').onclick = () => {
   if (!window.jspdf) return alert('Library PDF gagal dimuat. Pastikan terhubung ke internet.');
@@ -845,7 +851,107 @@ $('#xPdf').onclick = () => {
     head: [['No', 'Tanggal', 'No. Surat Jalan', 'Produk', 'Varian', 'Ada / Diminta', 'Status', 'Asal']],
     body: rows.map((r, i) => [i + 1, tsFmt(r.ts), r.sj || '-', r.prod, r.vn || '-', r.ada + ' / ' + r.min + ' pcs', stDesc(r), r.src]),
   });
-  doc.save(fileName($('#fqSrc').value, admFile('#fqAdm', rows), 'PURCHASE', 'pdf'));
+  const fn = fileName($('#fqSrc').value, admFile('#fqAdm', rows), 'PURCHASE', 'pdf'); doc.save(fn);
+  logDl({ form: 'PURCHASE', fmt: 'PDF', fname: fn, src: $('#fqSrc').value, title: H.title, tgl: H.tgl, cols: ['No', 'Tanggal', 'No. Surat Jalan', 'Produk', 'Varian', 'Ada / Diminta', 'Status', 'Asal'], rows: rows.map((r, i) => [i + 1, tsFmt(r.ts), r.sj || '-', r.prod, r.vn || '-', r.ada + ' / ' + r.min + ' pcs', stDesc(r), r.src]) });
+};
+
+/* ---------- DOWNLOAD (riwayat export) ---------- */
+// Setiap export dicatat beserta isi datanya (snapshot). Tabel berlapis disimpan sebagai teks JSON karena Firestore tidak menerima array di dalam array.
+function logDl(o) {
+  try {
+    const rec = { id: uid(), ts: Date.now(), fname: o.fname, fmt: o.fmt, form: o.form, adm: me ? me.name : '', src: o.src || 'Semua',
+      data: JSON.stringify({ title: o.title, tgl: o.tgl, cols: o.cols, rows: o.rows }) };
+    downloads.unshift(rec); commit([['downloads', 'set', rec]]);
+    if ($('#dl').classList.contains('on')) renderDl();
+  } catch (e) { console.error('catat download', e) }
+}
+const DLF = ['#dlFromD', '#dlFromT', '#dlToD', '#dlToT', '#dlAdm', '#dlSrc', '#dlFmt', '#dlForm', '#dlFile'];
+function dlFiltered() { // dipakai oleh daftar di layar DAN export; terbaru di atas
+  const f = dtv(dtVal('#dlFrom')), t = dtv(dtVal('#dlTo', true), true), a = $('#dlAdm').value, s = $('#dlSrc').value,
+    m = $('#dlFmt').value, fm = $('#dlForm').value, q = $('#dlFile').value.trim().toLowerCase();
+  return downloads.filter(r => (f === null || r.ts >= f) && (t === null || r.ts <= t) && (!a || r.adm === a) && (!s || r.src === s)
+    && (!m || r.fmt === m) && (!fm || r.form === fm) && (!q || String(r.fname).toLowerCase().includes(q))).sort((x, y) => y.ts - x.ts);
+}
+const dlTbl = list => `<div class="tw"><table><thead><tr><th>No</th><th>Waktu Download</th><th>Nama File</th><th>Format</th><th>Admin</th><th>Asal</th><th></th></tr></thead><tbody>${list.map((r, i) => `<tr>
+    <td>${i + 1}</td><td>${fmt(r.ts)}${tm(r.ts)}</td><td>${esc(r.fname)}</td><td><span class="tag">${esc(r.fmt)}</span></td><td>${esc(r.adm || '-')}</td><td><span class="tag">${esc(r.src)}</span></td><td class="nw"><button class="btn ghost sm" data-dldel="${r.id}">Hapus</button></td></tr>`).join('')}</tbody></table></div>`;
+function renderDl() { // hari ini di atas; hari sebelumnya masuk Riwayat per tahun > bulan > tanggal (tertutup)
+  const all = dlFiltered(), today = dayWIB(Date.now()), filt = DLF.some(x => $(x).value);
+  const tr = all.filter(r => dayWIB(r.ts) === today), hr = all.filter(r => dayWIB(r.ts) !== today), g = {};
+  hr.forEach(r => { const d = dayWIB(r.ts), y = d.slice(0, 4), m = d.slice(5, 7); ((g[y] = g[y] || {})[m] = g[y][m] || []).push(r) });
+  const isOpen = (k, dflt) => k in openState ? openState[k] : (filt || dflt);
+  let html = '<div class="dayh">Hari ini <span class="tag">' + tr.length + ' data</span></div>' + (tr.length ? dlTbl(tr) : '<div class="empty">Belum ada download hari ini.</div>');
+  if (hr.length) {
+    html += '<div class="dayh" style="margin-top:24px">Riwayat <span class="tag">' + hr.length + ' data</span></div>' + Object.keys(g).sort().reverse().map(y => {
+      const ms = Object.keys(g[y]).sort().reverse(), cnt = ms.reduce((s, m) => s + g[y][m].length, 0), ky = 'ly' + y;
+      return `<details class="yr" data-k="${ky}" ${isOpen(ky, y === today.slice(0, 4)) ? 'open' : ''}><summary>${y} <span class="tag">${cnt} data</span></summary>` +
+        ms.map(m => { const km = 'lm' + y + m; return `<details class="mo" data-k="${km}" ${isOpen(km, false) ? 'open' : ''}><summary>${BLN[+m - 1]} ${y} <span class="tag">${g[y][m].length} data</span></summary>${dayBlocks(g[y][m], dayWIB, 'ld', isOpen, d => false, dlTbl)}</details>` }).join('') + '</details>';
+    }).join('');
+  }
+  $('#dlGrp').innerHTML = html;
+}
+$('#dlGrp').addEventListener('click', e => { const s = e.target.closest('summary'); if (s) { const d = s.parentElement; openState[d.dataset.k] = !d.open } });
+DLF.forEach(x => { $(x).addEventListener('input', renderDl); $(x).addEventListener('change', renderDl) });
+$('#dlReset').onclick = () => { DLF.forEach(x => $(x).value = ''); $('#dlFile')._upd && $('#dlFile')._upd(); renderDl() };
+// hapus riwayat download: wajib kode verifikasi
+const DL_CODE = '030201';
+let dDel = null;
+const closeD = () => { $('#dmdl').hidden = true; dDel = null };
+$('#dlGrp').addEventListener('click', e => {
+  const b = e.target.closest('[data-dldel]'); if (!b) return;
+  const r = downloads.find(x => x.id === b.dataset.dldel); if (!r) return;
+  dDel = r.id; $('#dInfo').textContent = r.fname; $('#dCode').value = ''; msg('#dMsg', ''); $('#dmdl').hidden = false; $('#dCode').focus();
+});
+function doDelDl() {
+  if (!dDel) return;
+  if ($('#dCode').value.trim() !== DL_CODE) return msg('#dMsg', 'Kode verifikasi salah.');
+  const id = dDel; downloads = downloads.filter(x => x.id !== id);
+  commit([['downloads', 'del', id]]); closeD(); renderDl();
+}
+$('#dOk').onclick = doDelDl; $('#dCancel').onclick = closeD;
+$('#dCode').addEventListener('keydown', e => { if (e.key === 'Enter') doDelDl() });
+$('#dmdl').addEventListener('mousedown', e => { if (e.target === $('#dmdl')) closeD() });
+const dlData = r => { try { return JSON.parse(r.data) || {} } catch (e) { return {} } };
+// header tiap file: Nama Admin & Asal Barang, lalu info file
+const dlHead = (r, d) => ['Nama Admin: ' + (r.adm || '-'), 'Asal Barang: ' + r.src, 'File: ' + r.fname + ' (' + r.fmt + ') - diunduh ' + tsFmt(r.ts), (d.title || '') + (d.tgl ? ' - ' + d.tgl : '')];
+// export gabungan: file terlama -> terbaru; tiap file = header + isi data file tersebut, lalu terpotong ke file berikutnya
+$('#dlXls').onclick = () => {
+  if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
+  const rows = dlFiltered().reverse();
+  if (!rows.length) return alert('Tidak ada riwayat download pada filter itu.');
+  const aoa = [], merges = [], wd = [];
+  rows.forEach((r, i) => {
+    const d = dlData(r), cols = d.cols || [], n = Math.max(1, cols.length);
+    if (i) aoa.push([], []);
+    dlHead(r, d).forEach(t => { if (n > 1) merges.push({ s: { r: aoa.length, c: 0 }, e: { r: aoa.length, c: n - 1 } }); aoa.push([t]) });
+    aoa.push([], cols);
+    [cols].concat(d.rows || []).forEach(x => x.forEach((v, c) => { wd[c] = Math.min(40, Math.max(wd[c] || 6, String(v == null ? '' : v).length + 2)) }));
+    (d.rows || []).forEach(x => aoa.push(x));
+  });
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges'] = merges; ws['!cols'] = wd.map(w => ({ wch: w }));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Riwayat Download');
+  XLSX.writeFile(wb, fileName($('#dlSrc').value, $('#dlAdm').value, 'RIWAYAT DOWNLOAD', 'xlsx'));
+};
+$('#dlPdf').onclick = () => {
+  if (!window.jspdf) return alert('Library PDF gagal dimuat. Pastikan terhubung ke internet.');
+  const rows = dlFiltered().reverse(); if (!rows.length) return alert('Tidak ada riwayat download pada filter itu.');
+  const doc = new jspdf.jsPDF({ orientation: 'landscape' });
+  rows.forEach((r, i) => {
+    const d = dlData(r), H = dlHead(r, d), src = d.rows || [];
+    if (i) doc.addPage();
+    doc.setFontSize(12); doc.setFont(undefined, 'bold'); doc.text(H[0] + '     ' + H[1], 14, 15);
+    doc.setFont(undefined, 'normal'); doc.setFontSize(10); doc.text(H[2], 14, 22); doc.text(H[3], 14, 28);
+    doc.autoTable({
+      startY: 33, headStyles: { fillColor: [74, 123, 208] },
+      head: [d.cols || []], body: src.map(x => x.map(v => v === '\u2610' ? '' : v)),
+      didDrawCell: c => {
+        if (c.section !== 'body' || (src[c.row.index] || [])[c.column.index] !== '\u2610') return;
+        const z = 4.5; doc.setDrawColor(60); doc.setLineWidth(.3);
+        doc.rect(c.cell.x + (c.cell.width - z) / 2, c.cell.y + (c.cell.height - z) / 2, z, z);
+      }
+    });
+  });
+  doc.save(fileName($('#dlSrc').value, $('#dlAdm').value, 'RIWAYAT DOWNLOAD', 'pdf'));
 };
 
 /* ---------- PRODUK ---------- */
@@ -1000,7 +1106,7 @@ $('#impFile').onchange = e => {
 };
 
 /* ---------- mulai ---------- */
-[$('#pSearch'), $('#fqProd'), $('#fqSj'), $('#xProd')].forEach(addClear);
+[$('#pSearch'), $('#fqProd'), $('#fqSj'), $('#xProd'), $('#dlFile')].forEach(addClear);
 $$('.tm24').forEach(time24);
 let curDay = dayWIB(Date.now());
 const dayCheck = () => {
@@ -1008,7 +1114,7 @@ const dayCheck = () => {
   if (d !== curDay) { // ganti hari: filter tanggal yang masih di "hari kemarin" ikut pindah ke hari baru
     if ($('#xFromD').value === curDay) $('#xFromD').value = d;
     if ($('#xToD').value === curDay) $('#xToD').value = d;
-    curDay = d; renderReqs(); refreshBlocks();
+    curDay = d; renderReqs(); refreshBlocks(); if ($('#dl').classList.contains('on')) renderDl();
   }
 };
 setInterval(dayCheck, 30000); document.addEventListener('visibilitychange', dayCheck);

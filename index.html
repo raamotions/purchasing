@@ -18,6 +18,7 @@
       <button class="on" data-t="pg">Pengajuan</button>
       <button data-t="in">Input</button>
       <button data-t="pu">Purchase</button>
+      <button data-t="dl">Download</button>
       <button data-t="pr">Produk</button>
     </nav>
     <button id="burger" aria-label="Menu" hidden>☰</button>
@@ -128,6 +129,25 @@
     </div>
   </section>
 
+  <!-- DOWNLOAD -->
+  <section class="sec" id="dl">
+    <div class="card">
+      <h3>Riwayat Download</h3>
+      <p class="hint">Setiap kali ada yang menekan Export Excel / PDF di menu Pengajuan atau Purchase, file tersebut tercatat di sini beserta isi datanya. Download hari ini tampil di atas; hari sebelumnya otomatis masuk Riwayat per tahun &amp; bulan &amp; tanggal (tertutup, klik untuk membuka). Tombol Export di bawah menggabungkan semua file yang lolos filter, urut dari yang terlama sampai terbaru. Setiap file diawali header Nama Admin &amp; Asal Barang.</p>
+      <div class="exf">
+        <div><label>Dari tanggal &amp; jam</label><div class="dt"><input type="date" id="dlFromD"><input class="tm24" id="dlFromT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
+        <div><label>Sampai tanggal &amp; jam</label><div class="dt"><input type="date" id="dlToD"><input class="tm24" id="dlToT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
+        <div><label>Nama Admin (yang download)</label><select id="dlAdm" data-adm="Semua"></select></div>
+        <div><label>Asal Barang</label><select id="dlSrc" data-src="Semua"></select></div>
+        <div><label>Format</label><select id="dlFmt"><option value="">Semua</option><option value="Excel">Excel</option><option value="PDF">PDF</option></select></div>
+        <div><label>Jenis</label><select id="dlForm"><option value="">Semua</option><option value="PENGAJUAN">Pengajuan</option><option value="PURCHASE">Purchase</option></select></div>
+        <div><label>Nama file</label><input id="dlFile" placeholder="Cari nama file" autocomplete="off"></div>
+        <div class="xb"><button class="btn ghost sm" id="dlReset" type="button">Reset filter</button><button class="btn ghost sm" id="dlXls" type="button">Export Excel</button><button class="btn ghost sm" id="dlPdf" type="button">Export PDF</button></div>
+      </div>
+      <div id="dlGrp"></div>
+    </div>
+  </section>
+
   <!-- PRODUK -->
   <section class="sec" id="pr">
     <div class="cols2">
@@ -225,6 +245,16 @@
   <div class="acts"><button class="btn ghost" id="pECancel" type="button">Batal</button><button class="btn" id="pESave" type="button">Simpan</button></div>
 </div></div>
 
+<!-- MODAL HAPUS DOWNLOAD -->
+<div class="modal" id="dmdl" hidden><div class="box">
+  <h3>Hapus Riwayat Download</h3>
+  <div class="hint2" id="dInfo" style="word-break:break-all"></div>
+  <p style="margin:14px 0 0;font-weight:600">Apakah Kamu Yakin Menghapusnya, Masukan Kode Verifikasi</p>
+  <label>Kode Verifikasi</label><input id="dCode" type="password" inputmode="numeric" autocomplete="off" placeholder="Masukkan kode">
+  <div class="msg" id="dMsg"></div>
+  <div class="acts"><button class="btn ghost" id="dCancel" type="button">Batal</button><button class="btn" id="dOk" type="button">Hapus</button></div>
+</div></div>
+
 <!-- MODAL EDIT PURCHASE -->
 <div class="modal" id="mdl" hidden><div class="box">
   <h3>Edit Purchase</h3>
@@ -268,6 +298,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="script.js?v=38"></script>
+<script src="script.js?v=39"></script>
 </body>
 </html>
