@@ -253,3 +253,8 @@ details .tw{margin:0 8px 8px}
 .rec p{margin:6px 0 0;font-size:14px;line-height:1.55;color:var(--ink)}
 .rec.good{border-left-color:var(--ok)}.rec.bad{border-left-color:var(--bad)}.rec.warn{border-left-color:#e0a21c}
 @media(max-width:700px){.hb{grid-template-columns:84px 1fr 44px}.kc b{font-size:19px}}
+/* riwayat & popup */
+.tag.del{background:#fde8e8;color:var(--bad)}
+.tag.ed{background:#fff4d6;color:#a06a00}
+#ymdl,#kmdl{z-index:70}
+#lmdl{z-index:45}

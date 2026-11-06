@@ -53,7 +53,7 @@ const FIREBASE_CONFIG = {
   appId: "1:306713086751:web:3aad1af4d0dbd89f727e2a"
 };
 
-let db = null, products = [], reqs = [], records = [], downloads = [], photos = {}, admins = [], me = null; // me: {username, name} atau null (tamu)
+let db = null, products = [], reqs = [], records = [], downloads = [], hlog = [], photos = {}, admins = [], me = null; // me: {username, name} atau null (tamu)
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d } catch (e) { return d } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true } catch (e) { return false } }
@@ -68,14 +68,14 @@ function loadLocal() {
     { id: 'p2', name: 'Tas Kanvas', variants: [] }
   ];
   reqs = store.get('pp_requests', []); records = store.get('pp_records', []); photos = store.get('pp_photos', {});
-  admins = Object.values(store.get('pp_admins', {})); downloads = store.get('pp_downloads', []);
+  admins = Object.values(store.get('pp_admins', {})); downloads = store.get('pp_downloads', []); hlog = store.get('pp_hlog', []);
 }
 // ops: [['koleksi','set',objek] | ['koleksi','del',id]]
 function commit(ops = []) {
   if (!db) {
-    const used = new Set(records.map(r => r.pid));
+    const used = new Set(records.map(r => r.pid).concat(...hlog.map(h => h.pids || [])));
     Object.keys(photos).forEach(k => { if (!used.has(k)) delete photos[k] });
-    const ok = store.set('pp_products', products) && store.set('pp_requests', reqs) && store.set('pp_records', records) && store.set('pp_photos', photos) && store.set('pp_downloads', downloads);
+    const ok = store.set('pp_products', products) && store.set('pp_requests', reqs) && store.set('pp_records', records) && store.set('pp_photos', photos) && store.set('pp_downloads', downloads) && store.set('pp_hlog', hlog);
     if (!ok) loadLocal();
     return ok;
   }
@@ -120,6 +120,7 @@ function refresh() {
   if ($('#pu').classList.contains('on')) renderTable();
   if ($('#dl').classList.contains('on')) renderDl();
   if ($('#ow').classList.contains('on')) renderOw();
+  if ($('#rw').classList.contains('on')) renderRw();
 }
 function startSync() {
   if (!FIREBASE_CONFIG || !window.firebase) { loadLocal(); setSync('loc'); refresh(); return }
@@ -132,11 +133,12 @@ function startSync() {
     on('photos', a => { photos = {}; a.forEach(p => photos[p.id] = p.d) });
     on('admins', a => admins = a);
     on('downloads', a => downloads = a.sort((x, y) => y.ts - x.ts));
+    on('hlog', a => hlog = a.sort((x, y) => y.ts - x.ts));
   } catch (e) { db = null; loadLocal(); setSync('err'); refresh() }
 }
 
 /* ---------- menu & hamburger ---------- */
-const TT = { pg: ['Pengajuan', 'Hari ini tampil di atas; hari sebelumnya masuk riwayat per bulan (ganti hari pukul 00.00 WIB)'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], ow: ['Dashboard Khusus', 'Kontrol admin & analisa pemasaran (khusus pemilik)'], dl: ['Download', 'Riwayat export Excel / PDF, bisa difilter dan diexport gabungan'], pr: ['Produk', 'Kelola database produk dan varian warna'] };
+const TT = { pg: ['Pengajuan', 'Hari ini tampil di atas; hari sebelumnya masuk riwayat per bulan (ganti hari pukul 00.00 WIB)'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], rw: ['Riwayat', 'Riwayat edit & hapus; data lama bisa dipulihkan'], ow: ['Dashboard Khusus', 'Kontrol admin & analisa pemasaran (khusus pemilik)'], dl: ['Download', 'Riwayat export Excel / PDF, bisa difilter dan diexport gabungan'], pr: ['Produk', 'Kelola database produk dan varian warna'] };
 function go(t) {
   $$('nav button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
   $$('.sec').forEach(s => s.classList.toggle('on', s.id === t));
@@ -144,6 +146,7 @@ function go(t) {
   if (t === 'pu') renderTable();
   if (t === 'dl') renderDl();
   if (t === 'ow') renderOw();
+  if (t === 'rw') renderRw();
   if (t === 'pg') renderReqs();
   if (t === 'in') refreshBlocks();
 }
@@ -154,7 +157,7 @@ $$('select[data-src]').forEach(s => {
   s.innerHTML = `<option value="">${s.dataset.src}</option>` + SRC.map(x => `<option>${x}</option>`).join('');
 });
 function fillAdm() { // daftar nama admin = akun terdaftar + nama yang sudah tercatat di data
-  const names = [...new Set(admins.map(a => a.name).concat(reqs.map(r => r.adm), records.map(r => r.adm), downloads.map(r => r.adm)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const names = [...new Set(admins.map(a => a.name).concat(reqs.map(r => r.adm), records.map(r => r.adm), downloads.map(r => r.adm), hlog.map(r => r.adm)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   $$('select[data-adm]').forEach(s => {
     const v = s.value;
     s.innerHTML = `<option value="">${s.dataset.adm}</option>` + names.map(x => `<option>${esc(x)}</option>`).join('');
@@ -330,9 +333,13 @@ $('#pgGrp').onclick = e => {
   const he = e.target.closest('[data-hedit]'); if (he) return openHEdit(he.dataset.hedit, +he.dataset.ts);
   const hd = e.target.closest('[data-hdel]'); if (hd) return delHEntry(hd.dataset.hdel, +hd.dataset.ts);
   if (e.target.dataset.redit) return openREdit(e.target.dataset.redit);
-  const id = e.target.dataset.del;
-  if (!id || !confirm('Hapus pengajuan ini?')) return;
-  reqs = reqs.filter(r => r.id !== id); commit([['requests', 'del', id]]); renderReqs();
+  const id = e.target.dataset.del; if (!id) return;
+  const r0 = reqs.find(r => r.id === id); if (!r0) return;
+  askYN('Yakin menghapus pengajuan ' + r0.prod + (r0.vn ? ' · ' + r0.vn : '') + ' (' + r0.min + ' pcs)?', () => {
+    const r = reqs.find(x => x.id === id); if (!r) return;
+    const lop = logH('PENGAJUAN', 'hapus', r.prod + (r.vn ? ' · ' + r.vn : '') + ' · ' + r.min + ' pcs · ' + r.src, [{ c: 'requests', b: cl(r), a: null }]);
+    reqs = reqs.filter(x => x.id !== id); commit([['requests', 'del', id], lop]); renderReqs();
+  });
 };
 
 /* ---------- edit pengajuan (popup) ---------- */
@@ -352,6 +359,9 @@ function openREdit(id) {
   fillRVar(r.prod, r.vn, r.vc);
   $('#rAda').value = r.ada; $('#rMin').value = r.min; $('#rSrc').value = r.src; $('#rAdm').value = r.adm || '';
   rAddNew = false; $('#rVarName').value = ''; $('#rVarCol').value = '#4a7bd0'; rNewUI();
+  const nh = reqHist(r).length;
+  $('#rD').value = ymd(r.ts); $('#rT').value = hm(r.ts); $('#rD').disabled = $('#rT').disabled = nh > 1; $('#rCode').value = '';
+  $('#rDTHint').textContent = nh > 1 ? 'Produk ini digabung dari ' + nh + ' input. Ubah tanggal / jam per input lewat tombol ' + nh + '× lalu Edit.' : 'Mengubah tanggal / jam wajib memasukkan kode 6 digit.';
   msg('#rMsg', ''); $('#rmdl').hidden = false;
 }
 function rNewUI() { // isian warna ketik <-> pilih dari daftar warna (produk baru / tanpa varian: wajib ketik warna)
@@ -382,6 +392,12 @@ $('#rSave').onclick = () => {
   if (!(m >= 1)) return msg('#rMsg', 'Isi jumlah diminta dengan angka.');
   if (m < r.ada) return msg('#rMsg', 'Jumlah diminta tidak boleh kurang dari barang yang sudah ada (' + r.ada + ').');
   if (!$('#rSrc').value) return msg('#rMsg', 'Pilih asal barang.');
+  const bR = cl(r), bRec = records.filter(x => x.rid === r.id).map(cl), rT = $('#rT').value.trim();
+  const dtCh = !$('#rD').disabled && ($('#rD').value !== ymd(r.ts) || rT !== hm(r.ts));
+  if (dtCh) {
+    if (!$('#rD').value || !T24.test(rT)) return msg('#rMsg', 'Isi tanggal dan jam (format 24 jam, mis. 14:30).');
+    if (!codeOk('#rCode')) return msg('#rMsg', 'Mengubah tanggal / jam wajib memakai kode 6 digit yang benar.');
+  }
   let p = rProdObj(), v = null, np = null;
   const ops = [];
   if (!p || !p.variants.length || rAddNew) { // warna diketik
@@ -396,8 +412,10 @@ $('#rSave').onclick = () => {
   }
   if (np) products.push(np);
   Object.assign(r, { pid: p.id, prod: p.name, vn: v.n, vc: v.c, min: m, src: $('#rSrc').value, adm: $('#rAdm').value });
+  if (dtCh) { r.ts = new Date($('#rD').value + 'T' + rT).getTime(); if (Array.isArray(r.hist) && r.hist.length === 1) r.hist = [{ ts: r.ts, n: r.min }] }
   ops.push(['requests', 'set', r]);
   records.filter(x => x.rid === r.id).forEach(x => { Object.assign(x, { prod: r.prod, vn: r.vn, vc: r.vc, min: r.min, src: r.src, adm: r.adm }); ops.push(['records', 'set', x]) });
+  ops.push(logH('PENGAJUAN', 'edit', bR.prod + (bR.vn ? ' · ' + bR.vn : ''), histDocs(bR, bRec, r)));
   if (!commit(ops)) return msg('#rMsg', 'Penyimpanan penuh.');
   closeREdit(); renderReqs(); renderProducts();
 };
@@ -423,7 +441,7 @@ function openHEdit(id, ts) {
   hRef = { id, ts };
   $('#hInfo').textContent = r.prod + (r.vn ? ' · ' + r.vn : '') + ' · asal ' + r.src;
   $('#hN').value = h.n; $('#hD').value = ymd(h.ts); $('#hT').value = hm(h.ts);
-  msg('#hMsg', ''); $('#hmdl').hidden = false;
+  $('#hCode').value = ''; msg('#hMsg', ''); $('#hmdl').hidden = false;
 }
 const closeH = () => { $('#hmdl').hidden = true; hRef = null };
 $('#hCancel').onclick = closeH;
@@ -433,16 +451,24 @@ $('#hSave').onclick = () => {
   const n = parseInt($('#hN').value, 10), d = $('#hD').value, t = $('#hT').value.trim();
   if (!(n >= 1)) return msg('#hMsg', 'Isi jumlah diajukan dengan angka.');
   if (!d || !T24.test(t)) return msg('#hMsg', 'Isi tanggal dan jam (format 24 jam, mis. 14:30).');
-  const res = histApply(r, hRef.ts, n, new Date(d + 'T' + t).getTime());
+  const hCh = d !== ymd(hRef.ts) || t !== hm(hRef.ts), nts = hCh ? new Date(d + 'T' + t).getTime() : hRef.ts;
+  if (hCh && !codeOk('#hCode')) return msg('#hMsg', 'Mengubah tanggal / jam wajib memakai kode 6 digit yang benar.');
+  const bR = cl(r), bRec = records.filter(x => x.rid === r.id).map(cl);
+  const res = histApply(r, hRef.ts, n, nts);
   if (res.err) return msg('#hMsg', res.err);
+  res.ops.push(logH('PENGAJUAN', 'edit', r.prod + (r.vn ? ' · ' + r.vn : '') + ' · input ' + tsFmt(hRef.ts), histDocs(bR, bRec, r)));
   if (!commit(res.ops)) return msg('#hMsg', 'Penyimpanan penuh.');
   closeH(); renderReqs();
 };
 function delHEntry(id, ts) {
   const r = reqs.find(x => x.id === id), h = r && reqEntries(r).find(x => x.ts === ts); if (!h) return;
-  if (!confirm('Hapus input ' + tsFmt(ts) + ' (' + h.n + ' pcs)? Total diminta berkurang ' + h.n + ' pcs.')) return;
-  const res = histApply(r, ts, null); if (res.err) return alert(res.err);
-  commit(res.ops); renderReqs();
+  askYN('Yakin menghapus input ' + tsFmt(ts) + ' (' + h.n + ' pcs)? Total diminta berkurang ' + h.n + ' pcs.', () => {
+    const r2 = reqs.find(x => x.id === id); if (!r2) return;
+    const bR = cl(r2), bRec = records.filter(x => x.rid === r2.id).map(cl);
+    const res = histApply(r2, ts, null); if (res.err) return alert(res.err);
+    res.ops.push(logH('PENGAJUAN', 'hapus', r2.prod + (r2.vn ? ' · ' + r2.vn : '') + ' · input ' + tsFmt(ts) + ' (' + h.n + ' pcs)', histDocs(bR, bRec, r2)));
+    commit(res.ops); renderReqs();
+  });
 }
 
 /* ---------- export pengajuan ---------- */
@@ -759,12 +785,16 @@ $('#reset').onclick = () => { FIL.forEach(s => $(s).value = ''); [$('#fqProd'), 
 $('#grp').onclick = e => {
   const t = e.target;
   if (t.dataset.edit) openEdit(t.dataset.edit);
-  if (t.dataset.del && confirm('Hapus data ini?')) {
-    const r = records.find(x => x.id === t.dataset.del); if (!r) return;
-    records = records.filter(x => x !== r);
-    const ops = [['records', 'del', r.id]];
-    if (r.pid && !records.some(x => x.pid === r.pid)) { ops.push(['photos', 'del', r.pid]); delete photos[r.pid] }
-    commit(ops); renderTable();
+  if (t.dataset.del) {
+    const id0 = t.dataset.del, r0 = records.find(x => x.id === id0); if (!r0) return;
+    askYN('Yakin menghapus data purchase ' + r0.prod + (r0.vn ? ' · ' + r0.vn : '') + ' (' + r0.ada + ' pcs)?', () => {
+      const r = records.find(x => x.id === id0); if (!r) return;
+      const lop = logH('PURCHASE', 'hapus', r.prod + (r.vn ? ' · ' + r.vn : '') + ' · ' + r.ada + ' / ' + r.min + ' pcs · ' + r.src + (r.sj ? ' · SJ ' + r.sj : ''), [{ c: 'records', b: cl(r), a: null }]);
+      records = records.filter(x => x !== r);
+      const ops = [['records', 'del', r.id], lop];
+      if (r.pid && !records.some(x => x.pid === r.pid) && !hKeep(r.pid)) { ops.push(['photos', 'del', r.pid]); delete photos[r.pid] }
+      commit(ops); renderTable();
+    });
   }
   if (t.classList.contains('thumb')) { $('#lb img').src = t.src; $('#lb').hidden = false }
 };
@@ -788,7 +818,7 @@ function openEdit(id) {
   fillEVar(r.prod, r.vn, r.vc);
   $('#eDate').value = ymd(r.ts); $('#eTime').value = hm(r.ts); $('#eAdm').value = r.adm || ''; $('#eSj').value = r.sj || ''; $('#eAda').value = r.ada; $('#eMin').value = r.min; $('#eSrc').value = r.src;
   ePF.set(photos[r.pid]);
-  msg('#eMsg', ''); $('#mdl').hidden = false;
+  $('#eCode').value = ''; msg('#eMsg', ''); $('#mdl').hidden = false;
 }
 $('#eProd').onchange = () => fillEVar($('#eProd').value, '', '');
 $('#eVar').onchange = eSwatch;
@@ -804,6 +834,8 @@ $('#eSave').onclick = () => {
   const r = records.find(x => x.id === eRec.id) || eRec, v = eList[$('#eVar').value], old = r.pid, ops = [];
   const sibs = records.filter(x => x.rid && x.rid === r.rid && x.id !== r.id), mx = Math.max(a, ...sibs.map(x => x.ada));
   if (r.rid && m < mx) return msg('#eMsg', 'Diminta tidak boleh kurang dari barang ada pada penerimaan terkait (' + mx + ').');
+  if ((d !== ymd(r.ts) || ($('#eTime').value.trim() || hm(r.ts)) !== hm(r.ts)) && !codeOk('#eCode')) return msg('#eMsg', 'Mengubah tanggal / jam wajib memakai kode 6 digit yang benar.');
+  const bRec = cl(r), bRq = cl(r.rid && reqs.find(x => x.id === r.rid)), bSib = sibs.map(cl);
   Object.assign(r, { ts: new Date(d + 'T' + ($('#eTime').value || hm(r.ts))).getTime(), sj: $('#eSj').value.trim(), prod: $('#eProd').value, vn: v ? v.n : '', vc: v ? v.c : '', ada: a, min: m, src: $('#eSrc').value, adm: $('#eAdm').value });
   const rq = r.rid && reqs.find(x => x.id === r.rid);
   if (rq) { // sinkron ke form Pengajuan
@@ -815,7 +847,9 @@ $('#eSave').onclick = () => {
     if (eFoto) { r.pid = uid(); photos[r.pid] = eFoto; ops.push(['photos', 'set', { id: r.pid, d: eFoto }]) } else r.pid = '';
   }
   ops.push(['records', 'set', r]);
-  if (old && old !== r.pid && !records.some(x => x.pid === old)) { ops.push(['photos', 'del', old]); delete photos[old] }
+  ops.push(logH('PURCHASE', 'edit', bRec.prod + (bRec.vn ? ' · ' + bRec.vn : '') + (bRec.sj ? ' · SJ ' + bRec.sj : ''),
+    [{ c: 'records', b: bRec, a: cl(r) }].concat(bRq ? [{ c: 'requests', b: bRq, a: cl(reqs.find(x => x.id === bRq.id)) }] : [], bSib.map(b => ({ c: 'records', b, a: cl(records.find(x => x.id === b.id)) })))));
+  if (old && old !== r.pid && !records.some(x => x.pid === old) && !hKeep(old)) { ops.push(['photos', 'del', old]); delete photos[old] }
   if (!commit(ops)) return msg('#eMsg', 'Penyimpanan penuh. Coba foto yang lebih kecil.');
   closeEdit(); renderTable(); renderReqs();
 };
@@ -875,7 +909,7 @@ function dlFiltered() { // dipakai oleh daftar di layar DAN export; terbaru di a
     && (!m || r.fmt === m) && (!fm || r.form === fm) && (!q || String(r.fname).toLowerCase().includes(q))).sort((x, y) => y.ts - x.ts);
 }
 const dlTbl = list => `<div class="tw"><table><thead><tr><th>No</th><th>Waktu Download</th><th>Nama File</th><th>Format</th><th>Admin</th><th>Asal</th><th></th></tr></thead><tbody>${list.map((r, i) => `<tr>
-    <td>${i + 1}</td><td>${fmt(r.ts)}${tm(r.ts)}</td><td>${esc(r.fname)}</td><td><span class="tag">${esc(r.fmt)}</span></td><td>${esc(r.adm || '-')}</td><td><span class="tag">${esc(r.src)}</span></td><td class="nw"><button class="btn ghost sm" data-dldel="${r.id}">Hapus</button></td></tr>`).join('')}</tbody></table></div>`;
+    <td>${i + 1}</td><td>${fmt(r.ts)}${tm(r.ts)}</td><td>${esc(r.fname)}</td><td><span class="tag">${esc(r.fmt)}</span></td><td>${esc(r.adm || '-')}</td><td><span class="tag">${esc(r.src)}</span></td><td class="nw"><button class="btn ghost sm" data-dledit="${r.id}">Edit</button> <button class="btn ghost sm" data-dldel="${r.id}">Hapus</button></td></tr>`).join('')}</tbody></table></div>`;
 function renderDl() { // hari ini di atas; hari sebelumnya masuk Riwayat per tahun > bulan > tanggal (tertutup)
   const all = dlFiltered(), today = dayWIB(Date.now()), filt = DLF.some(x => $(x).value);
   const tr = all.filter(r => dayWIB(r.ts) === today), hr = all.filter(r => dayWIB(r.ts) !== today), g = {};
@@ -899,6 +933,7 @@ const DL_CODE = '030201';
 let dDel = null;
 const closeD = () => { $('#dmdl').hidden = true; dDel = null };
 $('#dlGrp').addEventListener('click', e => {
+  const ed = e.target.closest('[data-dledit]'); if (ed) return openLEdit(ed.dataset.dledit);
   const b = e.target.closest('[data-dldel]'); if (!b) return;
   const r = downloads.find(x => x.id === b.dataset.dldel); if (!r) return;
   dDel = r.id; $('#dInfo').textContent = r.fname; $('#dCode').value = ''; msg('#dMsg', ''); $('#dmdl').hidden = false; $('#dCode').focus();
@@ -906,8 +941,10 @@ $('#dlGrp').addEventListener('click', e => {
 function doDelDl() {
   if (!dDel) return;
   if ($('#dCode').value.trim() !== DL_CODE) return msg('#dMsg', 'Kode verifikasi salah.');
-  const id = dDel; downloads = downloads.filter(x => x.id !== id);
-  commit([['downloads', 'del', id]]); closeD(); renderDl();
+  const id = dDel, r0 = downloads.find(x => x.id === id), ops = [['downloads', 'del', id]];
+  if (r0) ops.push(logH('DOWNLOAD', 'hapus', r0.fname + ' (' + r0.fmt + ')', [{ c: 'downloads', b: cl(r0), a: null }]));
+  downloads = downloads.filter(x => x.id !== id);
+  commit(ops); closeD(); renderDl();
 }
 $('#dOk').onclick = doDelDl; $('#dCancel').onclick = closeD;
 $('#dCode').addEventListener('keydown', e => { if (e.key === 'Enter') doDelDl() });
@@ -990,6 +1027,115 @@ $('#dlPdf').onclick = () => {
   });
   doc.save(fileName($('#dlSrc').value, $('#dlAdm').value, 'RIWAYAT DOWNLOAD', 'pdf'));
 };
+
+/* ---------- RIWAYAT (edit & hapus, bisa dipulihkan) ---------- */
+const EDIT_CODE = '030201';
+const codeOk = id => $(id).value.trim() === EDIT_CODE;
+const cl = o => o ? JSON.parse(JSON.stringify(o)) : null;
+const hKeep = pid => hlog.some(h => (h.pids || []).includes(pid)); // foto yang masih dipakai riwayat jangan dihapus
+const FLD = { ts: 'Waktu', prod: 'Produk', vn: 'Varian', min: 'Diminta', ada: 'Ada', src: 'Asal', adm: 'Admin', sj: 'No. SJ', pid: 'Foto', hist: 'Rincian input', fname: 'Nama file' };
+const fv = (k, v) => v == null || v === '' ? '-' : k === 'ts' ? tsFmt(v) : k === 'pid' ? 'ada' : typeof v === 'object' ? '' : String(v);
+function diffTxt(b, a) { // ringkasan perubahan: "Diminta: 10 → 15; Waktu: ... → ..."
+  const out = [];
+  Object.keys(FLD).forEach(k => { if (JSON.stringify(b[k]) !== JSON.stringify(a[k])) out.push(k === 'hist' ? 'Rincian input diubah' : FLD[k] + ': ' + fv(k, b[k]) + ' → ' + fv(k, a[k])) });
+  return out.join('; ');
+}
+// docs: [{c: koleksi, b: kondisi sebelum (atau null), a: kondisi sesudah (atau null jika dihapus)}]. Mengembalikan op untuk dimasukkan ke commit().
+function logH(menu, act, label, docs) {
+  docs = docs.filter(d => d && (d.b || d.a));
+  const m = docs[0], e = { id: uid(), ts: Date.now(), menu, act, adm: me ? me.name : '', label, diff: m && m.b && m.a ? diffTxt(m.b, m.a) : '', docs: JSON.stringify(docs), rest: 0,
+    pids: docs.filter(d => d.c === 'records' && d.b && d.b.pid).map(d => d.b.pid) };
+  hlog.unshift(e);
+  return ['hlog', 'set', e];
+}
+const histDocs = (bR, bRec, r) => [{ c: 'requests', b: bR, a: cl(r) }].concat(bRec.map(b => ({ c: 'records', b, a: cl(records.find(x => x.id === b.id)) })));
+// popup Yakin / Batal
+let yCb = null;
+function askYN(text, cb) { $('#yText').textContent = text; yCb = cb; $('#ymdl').hidden = false }
+$('#yYes').onclick = () => { $('#ymdl').hidden = true; const f = yCb; yCb = null; f && f() };
+$('#yNo').onclick = () => { $('#ymdl').hidden = true; yCb = null };
+$('#ymdl').addEventListener('mousedown', e => { if (e.target === $('#ymdl')) { $('#ymdl').hidden = true; yCb = null } });
+// popup kode 6 digit
+let kCb = null;
+function askCode(title, info, cb) { $('#kTitle').textContent = title; $('#kInfo').textContent = info; $('#kCode').value = ''; msg('#kMsg', ''); kCb = cb; $('#kmdl').hidden = false; $('#kCode').focus() }
+function kGo() { if (!codeOk('#kCode')) return msg('#kMsg', 'Kode salah.'); $('#kmdl').hidden = true; const f = kCb; kCb = null; f && f() }
+$('#kOk').onclick = kGo; $('#kCancel').onclick = () => { $('#kmdl').hidden = true; kCb = null };
+$('#kCode').addEventListener('keydown', e => { if (e.key === 'Enter') kGo() });
+// edit waktu download
+let lEd = null;
+function openLEdit(id) {
+  const r = downloads.find(x => x.id === id); if (!r) return;
+  lEd = id; $('#lInfo').textContent = r.fname; $('#lD').value = ymd(r.ts); $('#lT').value = hm(r.ts); $('#lCode').value = ''; msg('#lMsg', ''); $('#lmdl').hidden = false;
+}
+const closeL = () => { $('#lmdl').hidden = true; lEd = null };
+$('#lCancel').onclick = closeL; $('#lmdl').addEventListener('mousedown', e => { if (e.target === $('#lmdl')) closeL() });
+$('#lSave').onclick = () => {
+  const r = downloads.find(x => x.id === lEd); if (!r) return closeL();
+  const d = $('#lD').value, t = $('#lT').value.trim();
+  if (!d || !T24.test(t)) return msg('#lMsg', 'Isi tanggal dan jam (format 24 jam, mis. 14:30).');
+  if (d === ymd(r.ts) && t === hm(r.ts)) return closeL();
+  if (!codeOk('#lCode')) return msg('#lMsg', 'Mengubah tanggal / jam wajib memakai kode 6 digit yang benar.');
+  const b = cl(r); r.ts = new Date(d + 'T' + t).getTime();
+  commit([['downloads', 'set', r], logH('DOWNLOAD', 'edit', r.fname, [{ c: 'downloads', b, a: cl(r) }])]); closeL(); renderDl();
+};
+// halaman Riwayat
+const RWF = ['#rwFromD', '#rwFromT', '#rwToD', '#rwToT', '#rwMenu', '#rwAct', '#rwAdm', '#rwSt', '#rwQ'];
+function rwFiltered() {
+  const f = dtv(dtVal('#rwFrom')), t = dtv(dtVal('#rwTo', true), true), m = $('#rwMenu').value, a = $('#rwAct').value, ad = $('#rwAdm').value, st = $('#rwSt').value, q = $('#rwQ').value.trim().toLowerCase();
+  return hlog.filter(h => (f === null || h.ts >= f) && (t === null || h.ts <= t) && (!m || h.menu === m) && (!a || h.act === a) && (!ad || h.adm === ad)
+    && (!st || (st === 'pulih' ? !!h.rest : !h.rest)) && (!q || (h.label + ' ' + (h.diff || '')).toLowerCase().includes(q))).sort((x, y) => y.ts - x.ts);
+}
+const rwTbl = list => `<div class="tw"><table><thead><tr><th>No</th><th>Waktu</th><th>Menu</th><th>Aksi</th><th>Admin</th><th>Rincian</th><th>Status</th><th></th></tr></thead><tbody>${list.map((h, i) => `<tr>
+  <td>${i + 1}</td><td>${fmt(h.ts)}${tm(h.ts)}</td><td><span class="tag">${esc(h.menu)}</span></td><td><span class="tag ${h.act === 'hapus' ? 'del' : 'ed'}">${h.act === 'hapus' ? 'Dihapus' : 'Diedit'}</span></td><td>${esc(h.adm || '-')}</td>
+  <td><b>${esc(h.label)}</b>${h.diff ? '<div class="tm">' + esc(h.diff) + '</div>' : ''}</td><td>${h.rest ? '<span class="tag">Dipulihkan ' + fmt(h.rest) + '</span>' : '-'}</td>
+  <td class="nw">${h.rest ? '' : `<button class="btn ghost sm" data-rwrest="${h.id}">Pulihkan</button> `}<button class="btn ghost sm" data-rwdel="${h.id}">Hapus</button></td></tr>`).join('')}</tbody></table></div>`;
+function renderRw() {
+  const all = rwFiltered(), today = dayWIB(Date.now()), filt = RWF.some(x => $(x).value);
+  const tr = all.filter(r => dayWIB(r.ts) === today), hr = all.filter(r => dayWIB(r.ts) !== today), g = {};
+  hr.forEach(r => { const d = dayWIB(r.ts), y = d.slice(0, 4), m = d.slice(5, 7); ((g[y] = g[y] || {})[m] = g[y][m] || []).push(r) });
+  const isOpen = (k, dflt) => k in openState ? openState[k] : (filt || dflt);
+  let html = '<div class="dayh">Hari ini <span class="tag">' + tr.length + ' data</span></div>' + (tr.length ? rwTbl(tr) : '<div class="empty">Belum ada perubahan / penghapusan hari ini.</div>');
+  if (hr.length) {
+    html += '<div class="dayh" style="margin-top:24px">Riwayat <span class="tag">' + hr.length + ' data</span></div>' + Object.keys(g).sort().reverse().map(y => {
+      const ms = Object.keys(g[y]).sort().reverse(), cnt = ms.reduce((s, m) => s + g[y][m].length, 0), ky = 'wy' + y;
+      return `<details class="yr" data-k="${ky}" ${isOpen(ky, y === today.slice(0, 4)) ? 'open' : ''}><summary>${y} <span class="tag">${cnt} data</span></summary>` +
+        ms.map(m => { const km = 'wm' + y + m; return `<details class="mo" data-k="${km}" ${isOpen(km, false) ? 'open' : ''}><summary>${BLN[+m - 1]} ${y} <span class="tag">${g[y][m].length} data</span></summary>${dayBlocks(g[y][m], dayWIB, 'wd', isOpen, d => false, rwTbl)}</details>` }).join('') + '</details>';
+    }).join('');
+  }
+  $('#rwGrp').innerHTML = html;
+}
+function applyDocs(docs) { // kembalikan tiap dokumen ke kondisi "sebelum"
+  const ops = [];
+  docs.forEach(d => {
+    const arr = d.c === 'requests' ? reqs : d.c === 'records' ? records : d.c === 'downloads' ? downloads : null; if (!arr || !d.b) return;
+    const i = arr.findIndex(x => x.id === d.b.id), o = cl(d.b);
+    i >= 0 ? arr[i] = o : arr.push(o); ops.push([d.c, 'set', o]);
+  });
+  return ops;
+}
+function restoreH(id) {
+  const h = hlog.find(x => x.id === id); if (!h || h.rest) return;
+  let docs; try { docs = JSON.parse(h.docs) } catch (e) { return alert('Data riwayat rusak, tidak bisa dipulihkan.') }
+  const ops = applyDocs(docs); h.rest = Date.now(); ops.push(['hlog', 'set', h]);
+  commit(ops); renderRw(); renderReqs(); renderTable(); renderDl();
+}
+function purgeH(id) {
+  const h = hlog.find(x => x.id === id); if (!h) return;
+  hlog = hlog.filter(x => x.id !== id);
+  const ops = [['hlog', 'del', id]];
+  (h.pids || []).forEach(p => { if (photos[p] !== undefined && !records.some(x => x.pid === p) && !hKeep(p)) { ops.push(['photos', 'del', p]); delete photos[p] } });
+  commit(ops); renderRw();
+}
+$('#rwGrp').addEventListener('click', e => {
+  const s = e.target.closest('summary'); if (s) { const d = s.parentElement; openState[d.dataset.k] = !d.open; return }
+  const r = e.target.closest('[data-rwrest]'), d = e.target.closest('[data-rwdel]');
+  const h = hlog.find(x => x.id === (r ? r.dataset.rwrest : d && d.dataset.rwdel)); if (!h) return;
+  if (r) askCode('Pulihkan data', (h.act === 'hapus' ? 'Data yang dihapus akan dikembalikan: ' : 'Data dikembalikan ke kondisi sebelum diedit (perubahan setelahnya tertimpa): ') + h.label, () => restoreH(h.id));
+  if (d) askCode('Hapus riwayat', 'Riwayat ini dihapus permanen dan tidak bisa dipulihkan lagi: ' + h.label, () => purgeH(h.id));
+});
+RWF.forEach(x => { $(x).addEventListener('input', renderRw); $(x).addEventListener('change', renderRw) });
+$('#rwReset').onclick = () => { RWF.forEach(x => $(x).value = ''); $('#rwQ')._upd && $('#rwQ')._upd(); renderRw() };
+$$('[data-rwgo]').forEach(b => b.onclick = () => { RWF.forEach(x => $(x).value = ''); $('#rwMenu').value = b.dataset.rwgo; go('rw') });
 
 /* ---------- PRODUK ---------- */
 function addVRow(n = '', c = '#4a7bd0') {
@@ -1143,7 +1289,7 @@ $('#impFile').onchange = e => {
 };
 
 /* ---------- mulai ---------- */
-[$('#pSearch'), $('#fqProd'), $('#fqSj'), $('#xProd'), $('#dlFile')].forEach(addClear);
+[$('#pSearch'), $('#fqProd'), $('#fqSj'), $('#xProd'), $('#dlFile'), $('#rwQ')].forEach(addClear);
 $$('.tm24').forEach(time24);
 let curDay = dayWIB(Date.now());
 const dayCheck = () => {

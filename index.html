@@ -19,6 +19,7 @@
       <button data-t="in">Input</button>
       <button data-t="pu">Purchase</button>
       <button data-t="dl">Download</button>
+      <button data-t="rw">Riwayat</button>
       <button data-t="pr">Produk</button>
     </nav>
     <button id="burger" aria-label="Menu" hidden>☰</button>
@@ -69,7 +70,7 @@
         <div><label>Asal</label><select id="xSrc" data-src="Semua"></select></div>
         <div><label>Produk</label><input id="xProd" placeholder="Cari produk" autocomplete="off"></div>
         <div><label>Status</label><select id="xSt"><option value="">Semua</option><option value="Menunggu">Menunggu</option><option value="Sebagian">Sebagian</option><option value="Selesai">Selesai</option></select></div>
-        <div class="xb"><button class="btn ghost sm" id="xReset" type="button">Reset filter</button><button class="btn ghost sm" id="pgXls" type="button">Export Excel</button><button class="btn ghost sm" id="pgPdf" type="button">Export PDF</button></div>
+        <div class="xb"><button class="btn ghost sm" id="xReset" type="button">Reset filter</button><button class="btn ghost sm" data-rwgo="PENGAJUAN" type="button">Riwayat</button><button class="btn ghost sm" id="pgXls" type="button">Export Excel</button><button class="btn ghost sm" id="pgPdf" type="button">Export PDF</button></div>
       </div>
       <div id="pgGrp"></div>
     </div>
@@ -124,6 +125,7 @@
       <div class="ex">
         <button class="btn ghost sm" id="xXls">Export Excel</button>
         <button class="btn ghost sm" id="xPdf">Export PDF</button>
+        <button class="btn ghost sm" data-rwgo="PURCHASE" type="button">Riwayat</button>
       </div>
       <div id="grp"></div>
     </div>
@@ -142,7 +144,7 @@
         <div><label>Format</label><select id="dlFmt"><option value="">Semua</option><option value="Excel">Excel</option><option value="PDF">PDF</option></select></div>
         <div><label>Jenis</label><select id="dlForm"><option value="">Semua</option><option value="PENGAJUAN">Pengajuan</option><option value="PURCHASE">Purchase</option></select></div>
         <div><label>Nama file</label><input id="dlFile" placeholder="Cari nama file" autocomplete="off"></div>
-        <div class="xb"><button class="btn ghost sm" id="dlReset" type="button">Reset filter</button><button class="btn ghost sm" id="dlXls" type="button">Export Excel</button><button class="btn ghost sm" id="dlPdf" type="button">Export PDF</button></div>
+        <div class="xb"><button class="btn ghost sm" id="dlReset" type="button">Reset filter</button><button class="btn ghost sm" data-rwgo="DOWNLOAD" type="button">Riwayat</button><button class="btn ghost sm" id="dlXls" type="button">Export Excel</button><button class="btn ghost sm" id="dlPdf" type="button">Export PDF</button></div>
       </div>
       <div id="dlGrp"></div>
     </div>
@@ -161,6 +163,25 @@
       <div class="otabs"><button data-o="sum" class="on" type="button">Ringkasan</button><button data-o="prod" type="button">Produk</button><button data-o="adm" type="button">Admin &amp; Akses</button><button data-o="rec" type="button">Rekomendasi</button></div>
     </div>
     <div id="owBody"></div>
+  </section>
+
+  <!-- RIWAYAT -->
+  <section class="sec" id="rw">
+    <div class="card">
+      <h3>Riwayat Perubahan &amp; Penghapusan</h3>
+      <p class="hint">Setiap data Pengajuan, Purchase, dan Download yang diedit atau dihapus tercatat di sini. Data lama bisa <b>Dipulihkan</b> ke kondisi sebelum diedit / dihapus, atau riwayatnya dihapus permanen. Keduanya wajib memakai kode 6 digit.</p>
+      <div class="exf">
+        <div><label>Dari tanggal &amp; jam</label><div class="dt"><input type="date" id="rwFromD"><input class="tm24" id="rwFromT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
+        <div><label>Sampai tanggal &amp; jam</label><div class="dt"><input type="date" id="rwToD"><input class="tm24" id="rwToT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
+        <div><label>Menu</label><select id="rwMenu"><option value="">Semua</option><option value="PENGAJUAN">Pengajuan</option><option value="PURCHASE">Purchase</option><option value="DOWNLOAD">Download</option></select></div>
+        <div><label>Aksi</label><select id="rwAct"><option value="">Semua</option><option value="edit">Diedit</option><option value="hapus">Dihapus</option></select></div>
+        <div><label>Nama Admin</label><select id="rwAdm" data-adm="Semua"></select></div>
+        <div><label>Status</label><select id="rwSt"><option value="">Semua</option><option value="aktif">Belum dipulihkan</option><option value="pulih">Sudah dipulihkan</option></select></div>
+        <div><label>Cari</label><input id="rwQ" placeholder="Produk / file / perubahan" autocomplete="off"></div>
+        <div class="xb"><button class="btn ghost sm" id="rwReset" type="button">Reset filter</button></div>
+      </div>
+      <div id="rwGrp"></div>
+    </div>
   </section>
 
   <!-- PRODUK -->
@@ -231,6 +252,12 @@
   </div>
   <label>Asal</label><select id="rSrc" data-src="Pilih asal barang"></select>
   <label>Nama Admin</label><select id="rAdm" data-adm="Pilih nama admin"></select>
+  <div class="row">
+    <div><label>Tanggal</label><input type="date" id="rD"></div>
+    <div><label>Jam</label><input class="tm24" id="rT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div>
+  </div>
+  <div class="hint2" id="rDTHint"></div>
+  <label>Kode 6 digit <span style="font-weight:400">(wajib jika tanggal / jam diubah)</span></label><input id="rCode" type="password" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="••••••">
   <div class="msg" id="rMsg"></div>
   <div class="acts"><button class="btn ghost" id="rCancel" type="button">Batal</button><button class="btn" id="rSave" type="button">Simpan</button></div>
 </div></div>
@@ -244,6 +271,7 @@
     <div><label>Tanggal input</label><input type="date" id="hD"></div>
     <div><label>Jam</label><input class="tm24" id="hT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div>
   </div>
+  <label>Kode 6 digit <span style="font-weight:400">(wajib jika tanggal / jam diubah)</span></label><input id="hCode" type="password" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="••••••">
   <div class="msg" id="hMsg"></div>
   <div class="acts"><button class="btn ghost" id="hCancel" type="button">Batal</button><button class="btn" id="hSave" type="button">Simpan</button></div>
 </div></div>
@@ -276,6 +304,35 @@
   <label>Password baru</label><input id="rpPass" type="text" autocomplete="off" placeholder="Minimal 4 karakter">
   <div class="msg" id="rpMsg"></div>
   <div class="acts"><button class="btn ghost" id="rpCancel" type="button">Batal</button><button class="btn" id="rpOk" type="button">Simpan</button></div>
+</div></div>
+
+<!-- MODAL YAKIN / BATAL -->
+<div class="modal" id="ymdl" hidden><div class="box">
+  <h3>Hapus data?</h3>
+  <p style="margin:12px 0 0" id="yText"></p>
+  <div class="acts"><button class="btn ghost" id="yNo" type="button">Batal</button><button class="btn" id="yYes" type="button" style="background:var(--bad)">Yakin</button></div>
+</div></div>
+
+<!-- MODAL KODE (riwayat) -->
+<div class="modal" id="kmdl" hidden><div class="box">
+  <h3 id="kTitle"></h3>
+  <div class="hint2" id="kInfo"></div>
+  <label>Kode 6 digit</label><input id="kCode" type="password" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="••••••">
+  <div class="msg" id="kMsg"></div>
+  <div class="acts"><button class="btn ghost" id="kCancel" type="button">Batal</button><button class="btn" id="kOk" type="button">Lanjut</button></div>
+</div></div>
+
+<!-- MODAL EDIT WAKTU DOWNLOAD -->
+<div class="modal" id="lmdl" hidden><div class="box">
+  <h3>Edit Waktu Download</h3>
+  <div class="hint2" id="lInfo" style="word-break:break-all"></div>
+  <div class="row">
+    <div><label>Tanggal</label><input type="date" id="lD"></div>
+    <div><label>Jam</label><input class="tm24" id="lT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div>
+  </div>
+  <label>Kode 6 digit <span style="font-weight:400">(wajib jika tanggal / jam diubah)</span></label><input id="lCode" type="password" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="••••••">
+  <div class="msg" id="lMsg"></div>
+  <div class="acts"><button class="btn ghost" id="lCancel" type="button">Batal</button><button class="btn" id="lSave" type="button">Simpan</button></div>
 </div></div>
 
 <!-- MODAL HAPUS DOWNLOAD -->
@@ -314,6 +371,7 @@
       <input type="file" accept="image/*" class="fUp" hidden>
       <input type="file" accept="image/*" capture="environment" class="fCam" hidden>
       <img class="pv" alt="">
+  <label>Kode 6 digit <span style="font-weight:400">(wajib jika tanggal / jam diubah)</span></label><input id="eCode" type="password" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="••••••">
   <div class="msg" id="eMsg"></div>
   <div class="acts"><button class="btn ghost" id="eCancel">Batal</button><button class="btn" id="eSave">Simpan</button></div>
 </div></div>
@@ -332,6 +390,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
-<script src="script.js?v=41"></script>
+<script src="script.js?v=42"></script>
 </body>
 </html>
