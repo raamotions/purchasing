@@ -44,19 +44,34 @@ const msg = (id, t, ok) => { const m = $(id); m.textContent = t; m.className = '
 // Isi dengan config Firebase Anda agar data tersinkron di semua perangkat (HP, tablet, PC).
 // Biarkan null untuk mode lokal (data hanya tersimpan di browser ini).
 // Contoh: const FIREBASE_CONFIG = { apiKey: "...", authDomain: "...", projectId: "...", storageBucket: "...", messagingSenderId: "...", appId: "..." };
-const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyDvTTnOG_1OeyQom8F5omqY2RhkFHn5a0U",
-  authDomain: "purchase-eko-2.firebaseapp.com",
-  projectId: "purchase-eko-2",
-  storageBucket: "purchase-eko-2.firebasestorage.app",
-  messagingSenderId: "1040272792195",
-  appId: "1:1040272792195:web:eb29be8c86e0517f7299b6"
+const FIREBASE_PROJECTS = {
+  lama: {
+    apiKey: "AIzaSyCkY5k8tAa4a6s6Sh8zEzhiZU0GgQ4zFSM",
+    authDomain: "purchase-eko.firebaseapp.com",
+    projectId: "purchase-eko",
+    storageBucket: "purchase-eko.firebasestorage.app",
+    messagingSenderId: "306713086751",
+    appId: "1:306713086751:web:3aad1af4d0dbd89f727e2a"
+  },
+  baru: {
+    apiKey: "AIzaSyDvTTnOG_1OeyQom8F5omqY2RhkFHn5a0U",
+    authDomain: "purchase-eko-2.firebaseapp.com",
+    projectId: "purchase-eko-2",
+    storageBucket: "purchase-eko-2.firebasestorage.app",
+    messagingSenderId: "1040272792195",
+    appId: "1:1040272792195:web:eb29be8c86e0517f7299b6"
+  }
 };
+// project aktif disimpan per perangkat; bawaan: BARU
+const PROJ = (() => { try { const p = localStorage.getItem('pp_proj'); return FIREBASE_PROJECTS[p] ? p : 'baru' } catch (e) { return 'baru' } })();
+const FIREBASE_CONFIG = FIREBASE_PROJECTS[PROJ];
+const SESS = 'pp_session_' + PROJ; // sesi login dipisah per project
 
 let db = null, products = [], reqs = [], records = [], downloads = [], hlog = [], returns = [], photos = {}, admins = [], me = null; // me: {username, name} atau null (tamu)
+const sk = k => k === 'pp_session' ? SESS : k; // sesi login terpisah per project
 const store = {
-  get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d } catch (e) { return d } },
-  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true } catch (e) { return false } }
+  get(k, d) { try { const v = localStorage.getItem(sk(k)); return v ? JSON.parse(v) : d } catch (e) { return d } },
+  set(k, v) { try { localStorage.setItem(sk(k), JSON.stringify(v)); return true } catch (e) { return false } }
 };
 function setSync(s) {
   const e = $('#sync'); e.className = 'sync ' + s;
@@ -162,6 +177,14 @@ async function diagnose() {
   }
 }
 $('#sync').onclick = diagnose; $('#sync').title = 'Klik untuk tes koneksi Firebase';
+$('#projBtn').textContent = '🗄️ Data ' + (PROJ === 'lama' ? 'LAMA' : 'BARU');
+$('#projBtn').title = 'Klik untuk pindah ke data ' + (PROJ === 'lama' ? 'BARU' : 'LAMA');
+$('#projBtn').onclick = () => {
+  const to = PROJ === 'lama' ? 'baru' : 'lama';
+  if (!confirm('Pindah ke data ' + to.toUpperCase() + '? Halaman akan dimuat ulang. Data di kedua project tetap aman dan tidak ada yang dihapus.')) return;
+  try { localStorage.setItem('pp_proj', to) } catch (e) {}
+  location.reload();
+};
 function refresh() {
   fillAdm(); renderReqs(); renderProducts(); renderAuto();
   if ($('#pu').classList.contains('on')) renderTable();
