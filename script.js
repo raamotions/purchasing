@@ -103,13 +103,19 @@ function commit(ops = []) {
   return true;
 }
 let failShown = false;
+const isQuota = e => /resource-exhausted/.test((e && e.code) || '') || /quota/i.test((e && e.message) || '');
+const QUOTA_MSG = 'KUOTA GRATIS FIREBASE HABIS. Paket Spark hanya mengizinkan 50.000 pembacaan & 20.000 penulisan per hari. Selama kuota habis, data tidak bisa dibaca/disimpan di server. Kuota pulih otomatis tiap hari sekitar pukul 15.00 WIB. Agar tidak terulang: upgrade ke paket Blaze (tetap gratis selama di bawah kuota, tapi tidak terblokir) di Firebase Console > Usage and billing.';
 function failSync(e) {
   setSync('err');
   if (failShown) return; failShown = true; setTimeout(() => failShown = false, 20000);
-  alert('Data GAGAL tersimpan/terbaca di Firebase (' + (e && (e.code || e.message)) + ').\nPeriksa koneksi internet, pastikan Firestore Database sudah dibuat dan Rules sudah di-Publish (allow read, write: if true).');
+  if (isQuota(e)) return alert('Data GAGAL tersinkron.\n\n' + QUOTA_MSG);
+  const c = (e && e.code) || '';
+  if (c.includes('permission')) return alert('Data GAGAL tersimpan/terbaca di Firebase: Rules Firestore menolak.\nBuka Firestore Database > Rules, isi allow read, write: if true; lalu klik Publish.');
+  alert('Data GAGAL tersimpan/terbaca di Firebase (' + (e && (e.code || e.message)) + ').\nPeriksa koneksi internet dan Rules Firestore (allow read, write: if true).\n\nJika internet normal dan Rules sudah benar, kemungkinan besar kuota harian Firebase habis: cek Firebase Console > Firestore Database > Usage (batas gratis 50.000 baca/hari).');
 }
 const hint = e => {
   const c = (e && e.code) || '';
+  if (isQuota(e)) return QUOTA_MSG;
   if (c.includes('permission')) return 'Penyebab: Rules Firestore menolak. Buka Firestore Database > Rules, isi allow read, write: if true; lalu klik Publish.';
   return 'Penyebab paling umum: (1) Firestore Database belum dibuat, atau dibuat dengan Database ID selain "(default)", atau dengan edisi "Enterprise" (pilih edisi Standard); (2) koneksi ke Firebase diblokir ad-blocker/VPN/jaringan kantor; (3) Rules belum di-Publish.';
 };
@@ -139,13 +145,16 @@ function startSync() {
   if (!FIREBASE_CONFIG || !window.firebase) { loadLocal(); setSync('loc'); refresh(); return }
   try {
     firebase.initializeApp(FIREBASE_CONFIG); db = firebase.firestore(); db.settings({ experimentalAutoDetectLongPolling: true, merge: true }); setSync('wait');
+    // cache lokal (IndexedDB): saat halaman dibuka ulang, data yang tidak berubah dibaca dari perangkat, bukan dari server -> hemat kuota baca
+    try { db.enablePersistence({ synchronizeTabs: true }).catch(() => {}) } catch (e) {}
     const on = (c, fn) => db.collection(c).onSnapshot(s => { try { fn(s.docs.map(d => d.data()), s.metadata.fromCache) } catch (e) { console.error(c, e) } setSync(s.metadata.fromCache || s.metadata.hasPendingWrites ? 'wait' : 'ok'); refresh() }, e => failSync(e));
     on('products', a => products = a.sort((x, y) => String(x.name || '').localeCompare(String(y.name || ''))));
     on('requests', (a, fc) => reqs = fixAdm('requests', a, fc).sort((x, y) => y.ts - x.ts));
     on('records', (a, fc) => records = fixAdm('records', a, fc).sort((x, y) => y.ts - x.ts));
-    on('photos', a => { photos = {}; a.forEach(p => photos[p.id] = p.d) });
+    // foto TIDAK lagi dibaca semua sekaligus (satu dokumen foto besar & banyak); diambil satu per satu saat dilihat/diedit (lihat photoLoad)
     db.collection('admins').onSnapshot(sn => { // dokumen akun harus ber-ID username; salinan berID acak (sisa bug) dihapus otomatis
       try {
+        if (!sn.metadata.fromCache && me && me.username && !sn.docs.some(d => d.id === me.username)) forceLogout('Akses akun ini telah dihapus oleh pemilik.'); // akun yang dihapus langsung dikeluarkan
         const docs = sn.docs.map(d => ({ id: d.id, data: d.data() })), have = new Set(docs.map(x => x.id));
         const dup = docs.filter(x => x.data.username && x.id !== x.data.username && have.has(x.data.username));
         if (dup.length && !sn.metadata.fromCache) setTimeout(() => commit(dup.map(x => ['admins', 'del', x.id])), 0);
@@ -793,7 +802,7 @@ function renderTable() {
   const rowHtml = r => `<tr>
     <td>${seq[r.id]}</td><td>${fmt(r.ts)}${tm(r.ts)}</td><td>${esc(r.sj || '-')}</td><td>${esc(r.prod)}</td><td>${sw(r.vc, r.vn)}</td>
     <td>${r.ada} / ${r.min} pcs</td><td>${stat(r.ada, r.min)}</td><td><span class="tag">${esc(r.src)}</span></td><td>${esc(r.adm || '-')}</td>
-    <td>${photos[r.pid] ? `<img class="thumb" src="${photos[r.pid]}" alt="Surat jalan">` : '-'}</td>
+    <td>${!r.pid || photos[r.pid] === '' ? '-' : photos[r.pid] ? `<img class="thumb" src="${photos[r.pid]}" alt="Surat jalan">` : `<button class="btn ghost sm" data-photo="${esc(r.pid)}" type="button">📷 Lihat</button>`}</td>
     <td class="nw"><button class="btn ghost sm" data-edit="${r.id}">Edit</button> <button class="btn ghost sm" data-del="${r.id}">Hapus</button></td></tr>`;
   const tbl = list => `<div class="tw"><table><thead><tr><th>No</th><th>Tanggal</th><th>No. SJ</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Status</th><th>Asal</th><th>Admin</th><th>Foto</th><th></th></tr></thead><tbody>${list.slice().sort((a, b) => seq[a.id] - seq[b.id]).map(rowHtml).join('')}</tbody></table></div>`;
   const isOpen = (k, cur) => k in openState ? openState[k] : (filt || cur);
@@ -824,11 +833,25 @@ $('#grp').onclick = e => {
     });
   }
   if (t.classList.contains('thumb')) { $('#lb img').src = t.src; $('#lb').hidden = false }
+  const pb = t.closest && t.closest('[data-photo]');
+  if (pb) { // foto diambil dari server hanya saat diminta (hemat kuota baca)
+    const pid = pb.dataset.photo; pb.disabled = true; pb.textContent = 'Memuat...';
+    photoLoad(pid, d => { if (d) { $('#lb img').src = d; $('#lb').hidden = false; renderTable() } else { pb.disabled = false; pb.textContent = 'Foto tidak ditemukan' } });
+  }
 };
 $('#lb').onclick = () => $('#lb').hidden = true;
 
 /* ---------- edit (popup) ---------- */
 let eRec = null, eFoto, eList = [];
+const photoWait = {}; // foto satu per satu: photos[pid] === undefined (belum diambil), '' (tidak ada), atau data gambar
+function photoLoad(pid, cb) {
+  if (!pid) return cb('');
+  if (photos[pid] !== undefined) return cb(photos[pid]);
+  if (!db) return cb('');
+  (photoWait[pid] = photoWait[pid] || []).push(cb); if (photoWait[pid].length > 1) return;
+  db.collection('photos').doc(pid).get().then(s => s.exists ? s.data().d || '' : '').catch(e => { failSync(e); return null })
+    .then(d => { const q = photoWait[pid]; delete photoWait[pid]; if (d !== null) photos[pid] = d; q.forEach(f => f(d || '')) });
+}
 const eSwatch = () => { const v = eList[$('#eVar').value]; $('#eSw').style.background = v ? v.c : 'transparent' };
 function fillEVar(name, vn, vc) {
   const p = products.find(x => x.name === name);
@@ -845,6 +868,7 @@ function openEdit(id) {
   fillEVar(r.prod, r.vn, r.vc);
   $('#eDate').value = ymd(r.ts); $('#eTime').value = hm(r.ts); $('#eAdm').value = r.adm || ''; $('#eSj').value = r.sj || ''; $('#eAda').value = r.ada; $('#eMin').value = r.min; $('#eSrc').value = r.src;
   ePF.set(photos[r.pid]);
+  if (r.pid && photos[r.pid] === undefined) photoLoad(r.pid, d => { if (eRec === r && eFoto === undefined && !$('#mdl').hidden) ePF.set(d) });
   $('#eCode').value = ''; msg('#eMsg', ''); $('#mdl').hidden = false;
 }
 $('#eProd').onchange = () => fillEVar($('#eProd').value, '', '');
@@ -1150,7 +1174,7 @@ function purgeH(id) {
   const h = hlog.find(x => x.id === id); if (!h) return;
   hlog = hlog.filter(x => x.id !== id);
   const ops = [['hlog', 'del', id]];
-  (h.pids || []).forEach(p => { if (photos[p] !== undefined && !records.some(x => x.pid === p) && !hKeep(p)) { ops.push(['photos', 'del', p]); delete photos[p] } });
+  (h.pids || []).forEach(p => { if (p && !records.some(x => x.pid === p) && !hKeep(p)) { ops.push(['photos', 'del', p]); delete photos[p] } });
   commit(ops); renderRw();
 }
 $('#rwGrp').addEventListener('click', e => {
@@ -1809,11 +1833,8 @@ async function doReset() {
 $('#rpOk').onclick = doReset; $('#rpCancel').onclick = () => $('#rpmdl').hidden = true;
 $('#rpPass').addEventListener('keydown', e => { if (e.key === 'Enter') doReset() });
 // akun yang aksesnya dihapus langsung dikeluarkan di perangkat mana pun
-function watchAdmins() {
-  if (!db) return;
-  db.collection('admins').onSnapshot(s => { if (!s.metadata.fromCache && me && !s.docs.some(d => d.id === me.username)) forceLogout('Akses akun ini telah dihapus oleh pemilik.') });
-}
+// (pengecekan ini sudah digabung ke listener admins di startSync, agar koleksi admins tidak dibaca dua kali)
 
-pgVarUI(); addBlock(); startSync(); watchAdmins();
+pgVarUI(); addBlock(); startSync();
 if (!db && admFixN) { commit(); store.set('pp_admins', Object.fromEntries(admins.map(a => [a.username, a]))) } // simpan nama admin yang sudah dikapitalkan (mode lokal)
 applyRole();
