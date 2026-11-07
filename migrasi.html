@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pindah Data Firebase</title>
+<style>
+body{margin:0;background:#d4eafa;color:#1c3550;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px}
+main{max-width:760px;margin:0 auto;padding:24px 16px 48px}
+.card{background:#f4faff;border:1px solid #bcd9ef;border-radius:16px;padding:24px;box-shadow:0 6px 22px rgba(50,110,170,.14)}
+h1{margin:0 0 6px;font-size:20px}
+p{line-height:1.55;margin:8px 0}
+label{display:block;font-size:13px;font-weight:600;color:#5a7692;margin:16px 0 6px}
+textarea{width:100%;box-sizing:border-box;padding:11px 12px;border:1px solid #bcd9ef;border-radius:10px;font:13px ui-monospace,Consolas,monospace;background:#fff;color:#1c3550}
+button{background:#4a7bd0;color:#fff;border:0;padding:12px 22px;border-radius:10px;cursor:pointer;font:inherit;font-weight:600;margin:16px 8px 0 0}
+button.g{background:#d9ebf9;color:#3a66b4}
+button:disabled{opacity:.5;cursor:wait}
+pre{background:#fff;border:1px solid #bcd9ef;border-radius:10px;padding:12px;min-height:120px;max-height:340px;overflow:auto;white-space:pre-wrap;font-size:13px;margin-top:16px}
+.w{background:#fff4d6;border-radius:10px;padding:10px 14px;font-size:13px}
+</style>
+</head>
+<body>
+<main><div class="card">
+<h1>Pindah Data: Project Lama → Project Baru</h1>
+<p>Menyalin semua data (pengajuan, purchase, foto, akun admin, retur, riwayat, dst.) dari project Firebase lama ke project baru.</p>
+<p class="w">Jalankan setelah <b>kuota project lama pulih</b> (reset harian sekitar pukul 15.00 WIB) dan saat <b>tidak ada yang memakai aplikasi lama</b>, supaya kuota baca cukup. Jika berhenti di tengah jalan, klik "Mulai salin" lagi besok: dokumen yang sudah tersalin dilewati. Hapus file ini dari GitHub setelah selesai.</p>
+<label>Config project LAMA (sudah terisi)</label>
+<textarea id="cOld" rows="7">apiKey: "AIzaSyCkY5k8tAa4a6s6Sh8zEzhiZU0GgQ4zFSM",
+authDomain: "purchase-eko.firebaseapp.com",
+projectId: "purchase-eko",
+storageBucket: "purchase-eko.firebasestorage.app",
+messagingSenderId: "306713086751",
+appId: "1:306713086751:web:3aad1af4d0dbd89f727e2a"</textarea>
+<label>Config project BARU (sudah terisi)</label>
+<textarea id="cNew" rows="7" placeholder='apiKey: "...",&#10;authDomain: "...",&#10;projectId: "...",&#10;storageBucket: "...",&#10;messagingSenderId: "...",&#10;appId: "..."'>apiKey: "AIzaSyDvTTnOG_1OeyQom8F5omqY2RhkFHn5a0U",
+authDomain: "purchase-eko-2.firebaseapp.com",
+projectId: "purchase-eko-2",
+storageBucket: "purchase-eko-2.firebasestorage.app",
+messagingSenderId: "1040272792195",
+appId: "1:1040272792195:web:eb29be8c86e0517f7299b6"</textarea>
+<button id="go" type="button">Mulai salin</button><button id="reset" class="g" type="button">Hapus catatan progres</button>
+<pre id="log">Menunggu...</pre>
+</div></main>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+const COLS = ['products', 'requests', 'records', 'photos', 'admins', 'returns', 'settings', 'downloads', 'hlog'];
+const $ = s => document.querySelector(s);
+const log = t => { const l = $('#log'); l.textContent += t + '\n'; l.scrollTop = l.scrollHeight };
+const TO = (p, ms, msg) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(msg)), ms))]);
+function parseCfg(t) {
+  const o = {};
+  ['apiKey', 'authDomain', 'projectId', 'storageBucket', 'messagingSenderId', 'appId'].forEach(k => {
+    const m = t.match(new RegExp(k + '["\']?\\s*:\\s*["\']([^"\']+)["\']')); if (m) o[k] = m[1];
+  });
+  return o;
+}
+const app = (cfg, name) => (firebase.apps.find(a => a.name === name) || firebase.initializeApp(cfg, name)).firestore();
+$('#reset').onclick = () => { Object.keys(localStorage).filter(k => k.startsWith('mig_')).forEach(k => localStorage.removeItem(k)); log('Catatan progres dihapus.') };
+$('#go').onclick = async () => {
+  $('#log').textContent = '';
+  const a = parseCfg($('#cOld').value), b = parseCfg($('#cNew').value);
+  if (!a.projectId || !a.apiKey) return log('Config LAMA tidak terbaca.');
+  if (!b.projectId || !b.apiKey) return log('Config BARU belum diisi / tidak terbaca (butuh apiKey dan projectId).');
+  if (a.projectId === b.projectId) return log('Config lama dan baru sama. Isi config project BARU.');
+  $('#go').disabled = true;
+  let reads = 0, writes = 0;
+  try {
+    const A = app(a, 'old'), B = app(b, 'new'), doneKey = 'mig_' + a.projectId + '_' + b.projectId;
+    let done = {}; try { done = JSON.parse(localStorage.getItem(doneKey) || '{}') } catch (e) {}
+    for (const c of COLS) {
+      log('Membaca "' + c + '" dari project lama...');
+      const snap = await TO(A.collection(c).get({ source: 'server' }), 120000, 'tidak ada respon dari project LAMA (kuota bacanya kemungkinan masih habis)');
+      reads += snap.size;
+      const seen = done[c] = done[c] || {}, todo = snap.docs.filter(d => !seen[d.id]);
+      log('  ' + snap.size + ' dokumen, ' + todo.length + ' belum tersalin');
+      let batch = B.batch(), n = 0, bytes = 0, ids = [];
+      const flush = async () => {
+        if (!n) return;
+        await TO(batch.commit(), 90000, 'tidak ada respon dari project BARU (kuota tulisnya kemungkinan habis; lanjutkan besok)');
+        ids.forEach(id => seen[id] = 1); localStorage.setItem(doneKey, JSON.stringify(done));
+        writes += n; log('  tersalin: ' + writes + ' dokumen'); batch = B.batch(); n = 0; bytes = 0; ids = [];
+      };
+      for (const d of todo) {
+        const data = d.data(), sz = JSON.stringify(data).length;
+        if (n >= 400 || bytes + sz > 3000000) await flush();
+        batch.set(B.collection(c).doc(d.id), data); n++; bytes += sz; ids.push(d.id);
+      }
+      await flush();
+    }
+    log('\nSELESAI. Dibaca dari project lama: ' + reads + ' dokumen. Ditulis ke project baru: ' + writes + ' dokumen.');
+  } catch (e) {
+    log('\nBERHENTI: ' + (e.message || e.code || e) + '\nProgres tersimpan. Klik "Mulai salin" lagi nanti, dokumen yang sudah tersalin dilewati.\n(Baca: ' + reads + ', tulis: ' + writes + ')');
+  }
+  $('#go').disabled = false;
+};
+</script>
+</body>
+</html>

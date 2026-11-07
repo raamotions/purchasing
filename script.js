@@ -45,12 +45,12 @@ const msg = (id, t, ok) => { const m = $(id); m.textContent = t; m.className = '
 // Biarkan null untuk mode lokal (data hanya tersimpan di browser ini).
 // Contoh: const FIREBASE_CONFIG = { apiKey: "...", authDomain: "...", projectId: "...", storageBucket: "...", messagingSenderId: "...", appId: "..." };
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyCkY5k8tAa4a6s6Sh8zEzhiZU0GgQ4zFSM",
-  authDomain: "purchase-eko.firebaseapp.com",
-  projectId: "purchase-eko",
-  storageBucket: "purchase-eko.firebasestorage.app",
-  messagingSenderId: "306713086751",
-  appId: "1:306713086751:web:3aad1af4d0dbd89f727e2a"
+  apiKey: "AIzaSyDvTTnOG_1OeyQom8F5omqY2RhkFHn5a0U",
+  authDomain: "purchase-eko-2.firebaseapp.com",
+  projectId: "purchase-eko-2",
+  storageBucket: "purchase-eko-2.firebasestorage.app",
+  messagingSenderId: "1040272792195",
+  appId: "1:1040272792195:web:eb29be8c86e0517f7299b6"
 };
 
 let db = null, products = [], reqs = [], records = [], downloads = [], hlog = [], returns = [], photos = {}, admins = [], me = null; // me: {username, name} atau null (tamu)
