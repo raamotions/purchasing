@@ -105,13 +105,39 @@ function commit(ops = []) {
 let failShown = false;
 const isQuota = e => /resource-exhausted/.test((e && e.code) || '') || /quota/i.test((e && e.message) || '');
 const QUOTA_MSG = 'KUOTA GRATIS FIREBASE HABIS. Paket Spark hanya mengizinkan 50.000 pembacaan & 20.000 penulisan per hari. Selama kuota habis, data tidak bisa dibaca/disimpan di server. Kuota pulih otomatis tiap hari sekitar pukul 15.00 WIB. Agar tidak terulang: upgrade ke paket Blaze (tetap gratis selama di bawah kuota, tapi tidak terblokir) di Firebase Console > Usage and billing.';
-function failSync(e) {
+let persistOK = false; // true jika cache lokal Firestore aktif: data yang belum terkirim tetap aman di perangkat
+// Cek langsung ke server Firestore lewat REST (tanpa SDK). SDK Firebase diam-diam mengulang koneksi saat kuota habis / jaringan bermasalah,
+// jadi tanpa cek ini penyebab sebenarnya tidak pernah terlihat.
+async function probeServer() {
+  const c = FIREBASE_CONFIG; if (!c) return { k: 'none' };
+  try {
+    const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 10000);
+    const r = await fetch('https://firestore.googleapis.com/v1/projects/' + c.projectId + '/databases/(default)/documents/_diag/ping?key=' + encodeURIComponent(c.apiKey), { signal: ctl.signal });
+    clearTimeout(tm);
+    if (r.ok) return { k: 'ok' };
+    const j = await r.json().catch(() => ({})), er = j.error || {}, st = String(er.status || r.status), m = er.message || '';
+    if (st === 'NOT_FOUND' && /^document/i.test(m)) return { k: 'ok' }; // "Document ... not found" = dokumen tes belum ada, berarti server terjangkau; "The database ... does not exist" = database belum dibuat
+    return { k: st, m };
+  } catch (x) { return { k: 'net' } }
+}
+function whyText(p) {
+  const k = p.k, m = p.m ? '\n(Pesan server: ' + p.m + ')' : '';
+  if (k === 'RESOURCE_EXHAUSTED' || k === '429') return 'PENYEBAB: ' + QUOTA_MSG;
+  if (k === 'PERMISSION_DENIED' || k === '403') return 'PENYEBAB: Firebase menolak akses. Buka Firestore Database > Rules, isi allow read, write: if true; lalu klik Publish. Jika Rules sudah benar, cek pembatasan API key di Google Cloud Console.' + m;
+  if (k === 'NOT_FOUND' || k === '404') return 'PENYEBAB: Firestore Database belum dibuat atau Database ID bukan "(default)". Buat database di Firebase Console > Firestore Database.' + m;
+  if (k === 'net') return 'PENYEBAB: perangkat ini tidak bisa menjangkau server Firebase. Periksa internet, VPN, ad-blocker, atau jaringan kantor yang memblokir firestore.googleapis.com.';
+  if (k === 'ok') return 'Server Firebase dapat dijangkau dan kuota masih normal, tetapi koneksi realtime tertahan (jaringan lambat/diblokir). Tunggu beberapa detik; jika status tidak berubah jadi "Tersinkron", coba ganti jaringan (Wi-Fi/data seluler) atau nonaktifkan ad-blocker, lalu refresh.';
+  return 'Status server: ' + k + m;
+}
+async function failSync(e) {
   setSync('err');
   if (failShown) return; failShown = true; setTimeout(() => failShown = false, 20000);
-  if (isQuota(e)) return alert('Data GAGAL tersinkron.\n\n' + QUOTA_MSG);
   const c = (e && e.code) || '';
-  if (c.includes('permission')) return alert('Data GAGAL tersimpan/terbaca di Firebase: Rules Firestore menolak.\nBuka Firestore Database > Rules, isi allow read, write: if true; lalu klik Publish.');
-  alert('Data GAGAL tersimpan/terbaca di Firebase (' + (e && (e.code || e.message)) + ').\nPeriksa koneksi internet dan Rules Firestore (allow read, write: if true).\n\nJika internet normal dan Rules sudah benar, kemungkinan besar kuota harian Firebase habis: cek Firebase Console > Firestore Database > Usage (batas gratis 50.000 baca/hari).');
+  let why;
+  if (isQuota(e)) why = 'PENYEBAB: ' + QUOTA_MSG;
+  else if (c.includes('permission')) why = whyText({ k: 'PERMISSION_DENIED' });
+  else why = whyText(await probeServer());
+  alert('Data GAGAL tersinkron.\n\n' + why + (persistOK ? '\n\nData yang sudah Anda input tetap tersimpan di perangkat ini dan akan terkirim otomatis begitu server bisa dihubungi.' : ''));
 }
 const hint = e => {
   const c = (e && e.code) || '';
@@ -126,11 +152,14 @@ async function diagnose() {
     const ref = db.collection('_diag').doc('ping');
     await Promise.race([ref.set({ t: Date.now() }), new Promise((_, no) => setTimeout(() => no({ code: 'timeout', message: 'server tidak merespon dalam 10 detik' }), 10000))]);
     await ref.get({ source: 'server' });
-    const n = {};
-    for (const c of ['products', 'requests', 'records']) n[c] = (await db.collection(c).get({ source: 'server' })).size;
+    // (tidak lagi membaca seluruh koleksi dari server: itu memakai ribuan kuota baca setiap kali tombol ini diklik)
     setSync('ok');
-    alert('BERHASIL: koneksi ke server Firebase normal.\n\nIsi di SERVER saat ini:\n- Produk: ' + n.products + '\n- Pengajuan: ' + n.requests + '\n- Purchase: ' + n.records + '\n\nDi layar aplikasi:\n- Produk: ' + products.length + '\n- Pengajuan: ' + reqs.length + '\n- Purchase: ' + records.length);
-  } catch (e) { setSync('err'); alert('GAGAL (' + (e.code || '-') + '): ' + (e.message || e) + '\n\n' + hint(e)) }
+    alert('BERHASIL: koneksi ke server Firebase normal.\n\nData di layar aplikasi:\n- Produk: ' + products.length + '\n- Pengajuan: ' + reqs.length + '\n- Purchase: ' + records.length);
+  } catch (e) {
+    setSync('err');
+    const why = isQuota(e) || (e.code || '').includes('permission') ? hint(e) : whyText(await probeServer());
+    alert('GAGAL' + (e.code && e.code !== 'timeout' ? ' (' + e.code + ')' : '') + ': ' + (e.message || e) + '\n\n' + why);
+  }
 }
 $('#sync').onclick = diagnose; $('#sync').title = 'Klik untuk tes koneksi Firebase';
 function refresh() {
@@ -146,7 +175,7 @@ function startSync() {
   try {
     firebase.initializeApp(FIREBASE_CONFIG); db = firebase.firestore(); db.settings({ experimentalAutoDetectLongPolling: true, merge: true }); setSync('wait');
     // cache lokal (IndexedDB): saat halaman dibuka ulang, data yang tidak berubah dibaca dari perangkat, bukan dari server -> hemat kuota baca
-    try { db.enablePersistence({ synchronizeTabs: true }).catch(() => {}) } catch (e) {}
+    try { db.enablePersistence({ synchronizeTabs: true }).then(() => persistOK = true).catch(() => {}) } catch (e) {}
     const on = (c, fn) => db.collection(c).onSnapshot(s => { try { fn(s.docs.map(d => d.data()), s.metadata.fromCache) } catch (e) { console.error(c, e) } setSync(s.metadata.fromCache || s.metadata.hasPendingWrites ? 'wait' : 'ok'); refresh() }, e => failSync(e));
     on('products', a => products = a.sort((x, y) => String(x.name || '').localeCompare(String(y.name || ''))));
     on('requests', (a, fc) => reqs = fixAdm('requests', a, fc).sort((x, y) => y.ts - x.ts));
