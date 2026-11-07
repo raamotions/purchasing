@@ -20,6 +20,7 @@
       <button data-t="pu">Purchase</button>
       <button data-t="dl">Download</button>
       <button data-t="rw">Riwayat</button>
+      <div class="ng" id="ngRetur"><button type="button" id="ngBtn" aria-haspopup="true">Retur ▾</button><div class="sub"><button data-t="rt">Input Retur</button><button data-t="bd">Laporan Retur</button></div></div>
       <button data-t="pr">Produk</button>
     </nav>
     <button id="burger" aria-label="Menu" hidden>☰</button>
@@ -142,7 +143,7 @@
         <div><label>Nama Admin (yang download)</label><select id="dlAdm" data-adm="Semua"></select></div>
         <div><label>Asal Barang</label><select id="dlSrc" data-src="Semua"></select></div>
         <div><label>Format</label><select id="dlFmt"><option value="">Semua</option><option value="Excel">Excel</option><option value="PDF">PDF</option></select></div>
-        <div><label>Jenis</label><select id="dlForm"><option value="">Semua</option><option value="PENGAJUAN">Pengajuan</option><option value="PURCHASE">Purchase</option></select></div>
+        <div><label>Jenis</label><select id="dlForm"><option value="">Semua</option><option value="PENGAJUAN">Pengajuan</option><option value="PURCHASE">Purchase</option><option value="BANDING">Laporan Retur</option></select></div>
         <div><label>Nama file</label><input id="dlFile" placeholder="Cari nama file" autocomplete="off"></div>
         <div class="xb"><button class="btn ghost sm" id="dlReset" type="button">Reset filter</button><button class="btn ghost sm" data-rwgo="DOWNLOAD" type="button">Riwayat</button><button class="btn ghost sm" id="dlXls" type="button">Export Excel</button><button class="btn ghost sm" id="dlPdf" type="button">Export PDF</button></div>
       </div>
@@ -160,7 +161,7 @@
         <div id="owToW" hidden><label>Sampai tanggal</label><input type="date" id="owTo"></div>
         <div><label>Asal Barang</label><select id="owSrc" data-src="Semua"></select></div>
       </div>
-      <div class="otabs"><button data-o="sum" class="on" type="button">Ringkasan</button><button data-o="prod" type="button">Produk</button><button data-o="adm" type="button">Admin &amp; Akses</button><button data-o="rec" type="button">Rekomendasi</button></div>
+      <div class="otabs"><button data-o="sum" class="on" type="button">Ringkasan</button><button data-o="prod" type="button">Produk</button><button data-o="adm" type="button">Admin &amp; Akses</button><button data-o="rec" type="button">Rekomendasi</button><button data-o="role" type="button">Role &amp; Akses</button></div>
     </div>
     <div id="owBody"></div>
   </section>
@@ -173,7 +174,7 @@
       <div class="exf">
         <div><label>Dari tanggal &amp; jam</label><div class="dt"><input type="date" id="rwFromD"><input class="tm24" id="rwFromT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
         <div><label>Sampai tanggal &amp; jam</label><div class="dt"><input type="date" id="rwToD"><input class="tm24" id="rwToT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
-        <div><label>Menu</label><select id="rwMenu"><option value="">Semua</option><option value="PENGAJUAN">Pengajuan</option><option value="PURCHASE">Purchase</option><option value="DOWNLOAD">Download</option></select></div>
+        <div><label>Menu</label><select id="rwMenu"><option value="">Semua</option><option value="PENGAJUAN">Pengajuan</option><option value="PURCHASE">Purchase</option><option value="DOWNLOAD">Download</option><option value="RETUR">Retur</option></select></div>
         <div><label>Aksi</label><select id="rwAct"><option value="">Semua</option><option value="edit">Diedit</option><option value="hapus">Dihapus</option></select></div>
         <div><label>Nama Admin</label><select id="rwAdm" data-adm="Semua"></select></div>
         <div><label>Status</label><select id="rwSt"><option value="">Semua</option><option value="aktif">Belum dipulihkan</option><option value="pulih">Sudah dipulihkan</option></select></div>
@@ -181,6 +182,48 @@
         <div class="xb"><button class="btn ghost sm" id="rwReset" type="button">Reset filter</button></div>
       </div>
       <div id="rwGrp"></div>
+    </div>
+  </section>
+
+  <!-- RETUR (form) -->
+  <section class="sec" id="rt">
+    <div class="card">
+      <h3>Input Form Retur</h3>
+      <p class="hint">Isi data pengembalian lalu tekan Submit. Data langsung masuk ke menu <b>Laporan Retur</b> dan tetap bisa diedit di sana. Isian bertanda <b>*</b> wajib diisi.</p>
+      <div class="rg">
+        <div><label>Resi Pengembalian *</label><input id="tResi" autocomplete="off" placeholder="Nomor resi pengembalian" style="text-transform:uppercase"></div>
+        <div><label>ID Pesanan *</label><input id="tOid" autocomplete="off" placeholder="ID pesanan marketplace" style="text-transform:uppercase"></div>
+        <div><label>No Tiket Pelaporan <span style="font-weight:400">(bila ada)</span></label><input id="tTiket" autocomplete="off" placeholder="Kosongkan jika tidak ada" style="text-transform:uppercase"></div>
+        <div><label>Marketplace</label><select id="tMp"><option value="">Pilih marketplace</option><option>Shopee</option><option>Tiktokshop</option><option>Lazada</option></select></div>
+        <div><label>Due Date</label><select id="tDueT"><option>Cek Berkala</option><option>Tanggal</option></select>
+          <div id="tDueW" hidden style="margin-top:8px"><input type="date" id="tDue"></div></div>
+        <div><label>Status</label><select id="tStatus"><option>On Progress</option><option>Failed</option><option>Done</option><option>Review</option></select></div>
+        <div><label>Nama Toko</label><input id="tToko" autocomplete="off" maxlength="60" placeholder="Nama toko"></div>
+        <div></div>
+        <div class="full"><label>Deskripsi</label><textarea id="tDesk" rows="2" placeholder="Deskripsi singkat masalah"></textarea></div>
+        <div class="full"><label>Keterangan</label><textarea id="tKet" rows="4" placeholder="Keterangan lengkap / catatan tambahan"></textarea></div>
+      </div>
+      <div class="foot"><p class="msg" id="tMsg"></p><button class="btn" id="tSubmit" type="button">Submit</button></div>
+    </div>
+  </section>
+
+  <!-- LAPORAN BANDING -->
+  <section class="sec" id="bd">
+    <div class="card">
+      <h3>Laporan Retur</h3>
+      <p class="hint">Semua data dari form Retur. Hari ini tampil di atas; hari sebelumnya masuk Riwayat per tahun &amp; bulan &amp; tanggal. Klik Edit untuk mengubah data; mengubah tanggal / jam input wajib memakai kode 6 digit.</p>
+      <div class="exf">
+        <div><label>Dari tanggal &amp; jam input</label><div class="dt"><input type="date" id="bdFromD"><input class="tm24" id="bdFromT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
+        <div><label>Sampai tanggal &amp; jam input</label><div class="dt"><input type="date" id="bdToD"><input class="tm24" id="bdToT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
+        <div><label>Status</label><select id="bdSt"><option value="">Semua</option><option>On Progress</option><option>Failed</option><option>Done</option><option>Review</option></select></div>
+        <div><label>Marketplace</label><select id="bdMp"><option value="">Semua</option><option>Shopee</option><option>Tiktokshop</option><option>Lazada</option></select></div>
+        <div><label>Due Date</label><select id="bdDue"><option value="">Semua</option><option>Cek Berkala</option><option>Tanggal</option></select></div>
+        <div><label>Nama Admin</label><select id="bdAdm" data-adm="Semua"></select></div>
+        <div><label>Nama toko</label><input id="bdToko" placeholder="Cari nama toko" autocomplete="off"></div>
+        <div><label>Cari</label><input id="bdQ" placeholder="Resi / ID pesanan / tiket / deskripsi" autocomplete="off"></div>
+        <div class="xb"><button class="btn ghost sm" id="bdReset" type="button">Reset filter</button><button class="btn ghost sm" id="bdXls" type="button">Export Excel</button><button class="btn ghost sm" id="bdPdf" type="button">Export PDF</button><button class="btn ghost sm" data-rwgo="RETUR" type="button">Riwayat</button></div>
+      </div>
+      <div id="bdGrp"></div>
     </div>
   </section>
 
@@ -225,7 +268,7 @@
     <button class="btn" type="submit" style="width:100%;margin-top:18px">Masuk</button>
   </form>
   <form id="fSignup" autocomplete="on" hidden>
-    <label>Nama</label><input id="sName" autocomplete="name" placeholder="Nama lengkap / nama panggilan">
+    <label>Nama</label><input id="sName" autocomplete="name" placeholder="NAMA LENGKAP / NAMA PANGGILAN">
     <label>Username (untuk login)</label><input id="sUser" autocomplete="username" autocapitalize="none" placeholder="huruf kecil, angka, . _ -">
     <label>Password</label><input id="sPass" type="password" autocomplete="new-password" placeholder="minimal 4 karakter">
     <button class="btn" type="submit" style="width:100%;margin-top:18px">Daftar &amp; Masuk</button>
@@ -335,6 +378,28 @@
   <div class="acts"><button class="btn ghost" id="lCancel" type="button">Batal</button><button class="btn" id="lSave" type="button">Simpan</button></div>
 </div></div>
 
+<!-- MODAL EDIT LAPORAN BANDING -->
+<div class="modal" id="tmdl" hidden><div class="box">
+  <h3>Edit Laporan Retur</h3>
+  <div class="row">
+    <div><label>Tanggal input</label><input type="date" id="tmD"></div>
+    <div><label>Jam</label><input class="tm24" id="tmT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div>
+  </div>
+  <label>Kode 6 digit <span style="font-weight:400">(wajib jika tanggal / jam diubah)</span></label><input id="tmCode" type="password" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="••••••">
+  <label>Resi Pengembalian *</label><input id="tmResi" autocomplete="off" style="text-transform:uppercase">
+  <label>ID Pesanan *</label><input id="tmOid" autocomplete="off" style="text-transform:uppercase">
+  <label>No Tiket Pelaporan</label><input id="tmTiket" autocomplete="off" style="text-transform:uppercase">
+  <label>Deskripsi</label><textarea id="tmDesk" rows="2"></textarea>
+  <label>Due Date</label><select id="tmDueT"><option>Cek Berkala</option><option>Tanggal</option></select>
+  <div id="tmDueW" hidden style="margin-top:8px"><input type="date" id="tmDue"></div>
+  <label>Status</label><select id="tmSt"><option>On Progress</option><option>Failed</option><option>Done</option><option>Review</option></select>
+  <label>Nama Toko</label><input id="tmToko" autocomplete="off" maxlength="60">
+  <label>Marketplace</label><select id="tmMp"><option value="">Pilih marketplace</option><option>Shopee</option><option>Tiktokshop</option><option>Lazada</option></select>
+  <label>Keterangan</label><textarea id="tmKet" rows="4"></textarea>
+  <div class="msg" id="tmMsg"></div>
+  <div class="acts"><button class="btn ghost" id="tmCancel" type="button">Batal</button><button class="btn" id="tmSave" type="button">Simpan</button></div>
+</div></div>
+
 <!-- MODAL HAPUS DOWNLOAD -->
 <div class="modal" id="dmdl" hidden><div class="box">
   <h3>Hapus Riwayat Download</h3>
@@ -390,6 +455,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
-<script src="script.js?v=42"></script>
+<script src="script.js?v=44"></script>
 </body>
 </html>

@@ -258,3 +258,26 @@ details .tw{margin:0 8px 8px}
 .tag.ed{background:#fff4d6;color:#a06a00}
 #ymdl,#kmdl{z-index:70}
 #lmdl{z-index:45}
+
+/* role, retur & laporan banding */
+textarea{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--inp);color:var(--ink);font:inherit;resize:vertical;min-height:44px}
+textarea:focus{outline:2px solid var(--soft);border-color:var(--pri)}
+input[type=checkbox]{width:18px;height:18px;padding:0;accent-color:var(--pri);cursor:pointer}
+#sName{text-transform:uppercase}
+#rt .card{max-width:860px}
+.rg{display:grid;grid-template-columns:1fr 1fr;gap:0 20px}
+.rg .full{grid-column:1/-1}
+.sb{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;white-space:nowrap}
+.sb.prog{background:#d9ebf9;color:#2a5aa8}.sb.fail{background:#fde8e8;color:var(--bad)}.sb.done{background:#e1f4ea;color:var(--ok)}.sb.rev{background:#fff4d6;color:#a06a00}
+.wrapc{max-width:240px;white-space:pre-wrap;word-break:break-word}
+.late{color:var(--bad);font-weight:700}
+#tmdl{z-index:45}
+@media(max-width:700px){.rg{grid-template-columns:1fr}}
+/* submenu Retur */
+.ng{position:relative}
+.ng .sub{display:none;position:absolute;top:calc(100% + 6px);left:0;min-width:190px;flex-direction:column;gap:2px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px;box-shadow:0 12px 30px rgba(0,0,0,.25);z-index:30}
+.ng.open .sub{display:flex}
+.ng .sub button{background:none;color:var(--ink);text-align:left;padding:10px 14px;white-space:nowrap}
+.ng .sub button:hover{background:var(--soft)}
+.ng .sub button.on{background:var(--soft);color:var(--pri2)}
+@media(max-width:1024px){.ng>button{width:100%;text-align:left}.ng .sub{position:static;box-shadow:none;border:0;background:none;padding:0 0 0 16px;min-width:0}}

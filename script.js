@@ -53,7 +53,7 @@ const FIREBASE_CONFIG = {
   appId: "1:306713086751:web:3aad1af4d0dbd89f727e2a"
 };
 
-let db = null, products = [], reqs = [], records = [], downloads = [], hlog = [], photos = {}, admins = [], me = null; // me: {username, name} atau null (tamu)
+let db = null, products = [], reqs = [], records = [], downloads = [], hlog = [], returns = [], photos = {}, admins = [], me = null; // me: {username, name} atau null (tamu)
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d } catch (e) { return d } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true } catch (e) { return false } }
@@ -68,21 +68,33 @@ function loadLocal() {
     { id: 'p2', name: 'Tas Kanvas', variants: [] }
   ];
   reqs = store.get('pp_requests', []); records = store.get('pp_records', []); photos = store.get('pp_photos', {});
-  admins = Object.values(store.get('pp_admins', {})); downloads = store.get('pp_downloads', []); hlog = store.get('pp_hlog', []);
+  admins = Object.values(store.get('pp_admins', {})); downloads = store.get('pp_downloads', []); hlog = store.get('pp_hlog', []); returns = store.get('pp_returns', []); rolesCfg = store.get('pp_roles', null);
+  [['requests', reqs], ['records', records], ['downloads', downloads], ['hlog', hlog], ['returns', returns], ['admins', admins]].forEach(([c, a]) => fixAdm(c, a, true));
+}
+// ---- nama admin diseragamkan: HURUF KAPITAL
+const UN = t => String(t == null ? '' : t).trim().replace(/\s+/g, ' ').toUpperCase();
+const UC = t => String(t == null ? '' : t).trim().toUpperCase();
+let admFixN = 0; const fixSent = new Set();
+function fixAdm(c, arr, cache) { // data lama berhuruf kecil ikut dikapitalkan; ditulis balik ke server hanya jika data bukan dari cache
+  const key = c === 'admins' ? 'name' : 'adm', ch = [];
+  arr.forEach(d => { if (d[key] && d[key] !== UN(d[key])) { d[key] = UN(d[key]); const k = c + ':' + (d.id || d.username); if (!fixSent.has(k)) { fixSent.add(k); ch.push([c, 'set', d]) } } });
+  admFixN += ch.length;
+  if (ch.length && db && !cache) setTimeout(() => commit(ch), 0);
+  return arr;
 }
 // ops: [['koleksi','set',objek] | ['koleksi','del',id]]
 function commit(ops = []) {
   if (!db) {
     const used = new Set(records.map(r => r.pid).concat(...hlog.map(h => h.pids || [])));
     Object.keys(photos).forEach(k => { if (!used.has(k)) delete photos[k] });
-    const ok = store.set('pp_products', products) && store.set('pp_requests', reqs) && store.set('pp_records', records) && store.set('pp_photos', photos) && store.set('pp_downloads', downloads) && store.set('pp_hlog', hlog);
+    const ok = store.set('pp_products', products) && store.set('pp_requests', reqs) && store.set('pp_records', records) && store.set('pp_photos', photos) && store.set('pp_downloads', downloads) && store.set('pp_hlog', hlog) && store.set('pp_returns', returns) && store.set('pp_roles', rolesCfg);
     if (!ok) loadLocal();
     return ok;
   }
   for (let i = 0; i < ops.length; i += 300) {
     const b = db.batch();
     ops.slice(i, i + 300).forEach(([c, k, v]) => {
-      const ref = db.collection(c).doc(k === 'del' ? v : v.id);
+      const ref = db.collection(c).doc(k === 'del' ? v : v[c === 'admins' ? 'username' : 'id']);
       k === 'del' ? b.delete(ref) : b.set(ref, v);
     });
     const t = setTimeout(() => failSync({ message: 'tidak ada respon dari server, data belum terkirim' }), 12000);
@@ -119,45 +131,60 @@ function refresh() {
   fillAdm(); renderReqs(); renderProducts(); renderAuto();
   if ($('#pu').classList.contains('on')) renderTable();
   if ($('#dl').classList.contains('on')) renderDl();
-  if ($('#ow').classList.contains('on')) renderOw();
+  if ($('#ow').classList.contains('on') && !(owTab === 'role' && roleDirty)) renderOw();
   if ($('#rw').classList.contains('on')) renderRw();
+  if ($('#bd').classList.contains('on')) renderBd();
 }
 function startSync() {
   if (!FIREBASE_CONFIG || !window.firebase) { loadLocal(); setSync('loc'); refresh(); return }
   try {
     firebase.initializeApp(FIREBASE_CONFIG); db = firebase.firestore(); db.settings({ experimentalAutoDetectLongPolling: true, merge: true }); setSync('wait');
-    const on = (c, fn) => db.collection(c).onSnapshot(s => { try { fn(s.docs.map(d => d.data())) } catch (e) { console.error(c, e) } setSync(s.metadata.fromCache || s.metadata.hasPendingWrites ? 'wait' : 'ok'); refresh() }, e => failSync(e));
+    const on = (c, fn) => db.collection(c).onSnapshot(s => { try { fn(s.docs.map(d => d.data()), s.metadata.fromCache) } catch (e) { console.error(c, e) } setSync(s.metadata.fromCache || s.metadata.hasPendingWrites ? 'wait' : 'ok'); refresh() }, e => failSync(e));
     on('products', a => products = a.sort((x, y) => String(x.name || '').localeCompare(String(y.name || ''))));
-    on('requests', a => reqs = a.sort((x, y) => y.ts - x.ts));
-    on('records', a => records = a.sort((x, y) => y.ts - x.ts));
+    on('requests', (a, fc) => reqs = fixAdm('requests', a, fc).sort((x, y) => y.ts - x.ts));
+    on('records', (a, fc) => records = fixAdm('records', a, fc).sort((x, y) => y.ts - x.ts));
     on('photos', a => { photos = {}; a.forEach(p => photos[p.id] = p.d) });
-    on('admins', a => admins = a);
-    on('downloads', a => downloads = a.sort((x, y) => y.ts - x.ts));
-    on('hlog', a => hlog = a.sort((x, y) => y.ts - x.ts));
+    db.collection('admins').onSnapshot(sn => { // dokumen akun harus ber-ID username; salinan berID acak (sisa bug) dihapus otomatis
+      try {
+        const docs = sn.docs.map(d => ({ id: d.id, data: d.data() })), have = new Set(docs.map(x => x.id));
+        const dup = docs.filter(x => x.data.username && x.id !== x.data.username && have.has(x.data.username));
+        if (dup.length && !sn.metadata.fromCache) setTimeout(() => commit(dup.map(x => ['admins', 'del', x.id])), 0);
+        admins = fixAdm('admins', docs.filter(x => !dup.includes(x)).map(x => x.data), sn.metadata.fromCache); syncMe();
+      } catch (e) { console.error('admins', e) }
+      setSync(sn.metadata.fromCache || sn.metadata.hasPendingWrites ? 'wait' : 'ok'); refresh();
+    }, e => failSync(e));
+    on('returns', (a, fc) => returns = fixAdm('returns', a, fc).sort((x, y) => y.ts - x.ts));
+    on('settings', a => { rolesCfg = a.find(x => x.id === 'roles') || null; applyRole() });
+    on('downloads', (a, fc) => downloads = fixAdm('downloads', a, fc).sort((x, y) => y.ts - x.ts));
+    on('hlog', (a, fc) => hlog = fixAdm('hlog', a, fc).sort((x, y) => y.ts - x.ts));
   } catch (e) { db = null; loadLocal(); setSync('err'); refresh() }
 }
 
 /* ---------- menu & hamburger ---------- */
-const TT = { pg: ['Pengajuan', 'Hari ini tampil di atas; hari sebelumnya masuk riwayat per bulan (ganti hari pukul 00.00 WIB)'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], rw: ['Riwayat', 'Riwayat edit & hapus; data lama bisa dipulihkan'], ow: ['Dashboard Khusus', 'Kontrol admin & analisa pemasaran (khusus pemilik)'], dl: ['Download', 'Riwayat export Excel / PDF, bisa difilter dan diexport gabungan'], pr: ['Produk', 'Kelola database produk dan varian warna'] };
+const TT = { pg: ['Pengajuan', 'Hari ini tampil di atas; hari sebelumnya masuk riwayat per bulan (ganti hari pukul 00.00 WIB)'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], rt: ['Input Retur', 'Form retur / pengembalian barang'], bd: ['Laporan Retur', 'Hasil input retur marketplace, bisa diedit'], rw: ['Riwayat', 'Riwayat edit & hapus; data lama bisa dipulihkan'], ow: ['Dashboard Khusus', 'Kontrol admin & analisa pemasaran (khusus pemilik)'], dl: ['Download', 'Riwayat export Excel / PDF, bisa difilter dan diexport gabungan'], pr: ['Produk', 'Kelola database produk dan varian warna'] };
 function go(t) {
-  $$('nav button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  if (!can(t)) { t = firstPage(); if (!t) return }
+  $$('nav button[data-t]').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  $('#ngBtn').classList.toggle('on', t === 'rt' || t === 'bd'); $('#ngRetur').classList.remove('open');
   $$('.sec').forEach(s => s.classList.toggle('on', s.id === t));
   $('#nav').classList.remove('open'); $('#pt').textContent = TT[t][0]; $('#ps').textContent = TT[t][1];
   if (t === 'pu') renderTable();
   if (t === 'dl') renderDl();
   if (t === 'ow') renderOw();
   if (t === 'rw') renderRw();
+  if (t === 'bd') renderBd();
   if (t === 'pg') renderReqs();
   if (t === 'in') refreshBlocks();
 }
-$$('nav button').forEach(b => b.onclick = () => go(b.dataset.t));
+$$('nav button[data-t]').forEach(b => b.onclick = () => go(b.dataset.t));
+$('#ngBtn').onclick = e => { e.stopPropagation(); $('#ngRetur').classList.toggle('open') };
 $('#burger').onclick = e => { e.stopPropagation(); $('#nav').classList.toggle('open') };
-document.addEventListener('click', e => { if (!e.target.closest('#nav')) $('#nav').classList.remove('open') });
+document.addEventListener('click', e => { if (!e.target.closest('#nav')) $('#nav').classList.remove('open'); if (!e.target.closest('.ng')) $('#ngRetur').classList.remove('open') });
 $$('select[data-src]').forEach(s => {
   s.innerHTML = `<option value="">${s.dataset.src}</option>` + SRC.map(x => `<option>${x}</option>`).join('');
 });
 function fillAdm() { // daftar nama admin = akun terdaftar + nama yang sudah tercatat di data
-  const names = [...new Set(admins.map(a => a.name).concat(reqs.map(r => r.adm), records.map(r => r.adm), downloads.map(r => r.adm), hlog.map(r => r.adm)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const names = [...new Set(admins.map(a => a.name).concat(reqs.map(r => r.adm), records.map(r => r.adm), downloads.map(r => r.adm), hlog.map(r => r.adm), returns.map(r => r.adm)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   $$('select[data-adm]').forEach(s => {
     const v = s.value;
     s.innerHTML = `<option value="">${s.dataset.adm}</option>` + names.map(x => `<option>${esc(x)}</option>`).join('');
@@ -1033,7 +1060,7 @@ const EDIT_CODE = '030201';
 const codeOk = id => $(id).value.trim() === EDIT_CODE;
 const cl = o => o ? JSON.parse(JSON.stringify(o)) : null;
 const hKeep = pid => hlog.some(h => (h.pids || []).includes(pid)); // foto yang masih dipakai riwayat jangan dihapus
-const FLD = { ts: 'Waktu', prod: 'Produk', vn: 'Varian', min: 'Diminta', ada: 'Ada', src: 'Asal', adm: 'Admin', sj: 'No. SJ', pid: 'Foto', hist: 'Rincian input', fname: 'Nama file' };
+const FLD = { ts: 'Waktu', prod: 'Produk', vn: 'Varian', min: 'Diminta', ada: 'Ada', src: 'Asal', adm: 'Admin', sj: 'No. SJ', pid: 'Foto', hist: 'Rincian input', fname: 'Nama file', resi: 'Resi', oid: 'ID Pesanan', tiket: 'No Tiket', desk: 'Deskripsi', dueT: 'Tipe due', due: 'Due Date', status: 'Status', toko: 'Toko', mp: 'Marketplace', ket: 'Keterangan' };
 const fv = (k, v) => v == null || v === '' ? '-' : k === 'ts' ? tsFmt(v) : k === 'pid' ? 'ada' : typeof v === 'object' ? '' : String(v);
 function diffTxt(b, a) { // ringkasan perubahan: "Diminta: 10 → 15; Waktu: ... → ..."
   const out = [];
@@ -1107,7 +1134,7 @@ function renderRw() {
 function applyDocs(docs) { // kembalikan tiap dokumen ke kondisi "sebelum"
   const ops = [];
   docs.forEach(d => {
-    const arr = d.c === 'requests' ? reqs : d.c === 'records' ? records : d.c === 'downloads' ? downloads : null; if (!arr || !d.b) return;
+    const arr = d.c === 'requests' ? reqs : d.c === 'records' ? records : d.c === 'downloads' ? downloads : d.c === 'returns' ? returns : null; if (!arr || !d.b) return;
     const i = arr.findIndex(x => x.id === d.b.id), o = cl(d.b);
     i >= 0 ? arr[i] = o : arr.push(o); ops.push([d.c, 'set', o]);
   });
@@ -1117,7 +1144,7 @@ function restoreH(id) {
   const h = hlog.find(x => x.id === id); if (!h || h.rest) return;
   let docs; try { docs = JSON.parse(h.docs) } catch (e) { return alert('Data riwayat rusak, tidak bisa dipulihkan.') }
   const ops = applyDocs(docs); h.rest = Date.now(); ops.push(['hlog', 'set', h]);
-  commit(ops); renderRw(); renderReqs(); renderTable(); renderDl();
+  commit(ops); renderRw(); renderReqs(); renderTable(); renderDl(); renderBd();
 }
 function purgeH(id) {
   const h = hlog.find(x => x.id === id); if (!h) return;
@@ -1136,6 +1163,129 @@ $('#rwGrp').addEventListener('click', e => {
 RWF.forEach(x => { $(x).addEventListener('input', renderRw); $(x).addEventListener('change', renderRw) });
 $('#rwReset').onclick = () => { RWF.forEach(x => $(x).value = ''); $('#rwQ')._upd && $('#rwQ')._upd(); renderRw() };
 $$('[data-rwgo]').forEach(b => b.onclick = () => { RWF.forEach(x => $(x).value = ''); $('#rwMenu').value = b.dataset.rwgo; go('rw') });
+
+/* ---------- RETUR (form) & LAPORAN RETUR ---------- */
+const stCls = t => ({ 'On Progress': 'prog', Failed: 'fail', Done: 'done', Review: 'rev' }[t] || 'prog');
+const dueTxt = r => r.dueT === 'Tanggal' && r.due ? r.due.split('-').reverse().join('-') : 'Cek Berkala';
+const dueLate = r => r.dueT === 'Tanggal' && r.due && r.due < dayWIB(Date.now()) && r.status !== 'Done' && r.status !== 'Failed';
+const showDue = (sel, wrap, inp, focus) => { const on = $(sel).value === 'Tanggal'; $(wrap).hidden = !on; if (!on) $(inp).value = ''; else if (focus) { $(inp).focus(); try { $(inp).showPicker() } catch (e) { } } };
+$('#tDueT').onchange = () => showDue('#tDueT', '#tDueW', '#tDue', true);
+$('#tmDueT').onchange = () => showDue('#tmDueT', '#tmDueW', '#tmDue', true);
+$('#tSubmit').onclick = () => {
+  const resi = UC($('#tResi').value), oid = UC($('#tOid').value), dueT = $('#tDueT').value, due = $('#tDue').value;
+  if (!resi) return msg('#tMsg', 'RESI PENGEMBALIAN wajib diisi.');
+  if (!oid) return msg('#tMsg', 'ID PESANAN wajib diisi.');
+  if (dueT === 'Tanggal' && !due) return msg('#tMsg', 'Pilih tanggal due date.');
+  if (returns.some(x => x.resi === resi && x.oid === oid)) return msg('#tMsg', 'Resi dan ID pesanan ini sudah pernah diinput (lihat Laporan Retur).');
+  const rec = { id: uid(), ts: Date.now(), resi, oid, tiket: UC($('#tTiket').value), desk: $('#tDesk').value.trim(), dueT, due: dueT === 'Tanggal' ? due : '',
+    status: $('#tStatus').value, toko: $('#tToko').value.trim(), mp: $('#tMp').value, ket: $('#tKet').value.trim(), adm: me ? me.name : '' };
+  returns.unshift(rec);
+  if (!commit([['returns', 'set', rec]])) return msg('#tMsg', 'Penyimpanan penuh.');
+  ['#tResi', '#tOid', '#tTiket', '#tDesk', '#tToko', '#tKet', '#tDue'].forEach(x => $(x).value = '');
+  $('#tDueT').value = 'Cek Berkala'; $('#tStatus').value = 'On Progress'; $('#tMp').value = ''; showDue('#tDueT', '#tDueW', '#tDue');
+  msg('#tMsg', 'Tersimpan: ' + resi + ' sudah masuk ke menu Laporan Retur.', true); renderBd();
+};
+// Laporan Retur
+const BDF = ['#bdFromD', '#bdFromT', '#bdToD', '#bdToT', '#bdSt', '#bdMp', '#bdDue', '#bdAdm', '#bdToko', '#bdQ'];
+function bdFiltered() {
+  const f = dtv(dtVal('#bdFrom')), t = dtv(dtVal('#bdTo', true), true), st = $('#bdSt').value, mp = $('#bdMp').value, du = $('#bdDue').value, ad = $('#bdAdm').value,
+    tk = $('#bdToko').value.trim().toLowerCase(), q = $('#bdQ').value.trim().toLowerCase();
+  return returns.filter(r => (f === null || r.ts >= f) && (t === null || r.ts <= t) && (!st || r.status === st) && (!mp || r.mp === mp) && (!du || r.dueT === du) && (!ad || r.adm === ad)
+    && (!tk || (r.toko || '').toLowerCase().includes(tk)) && (!q || [r.resi, r.oid, r.tiket, r.desk, r.ket].join(' ').toLowerCase().includes(q))).sort((x, y) => y.ts - x.ts);
+}
+const bdTbl = list => `<div class="tw"><table style="min-width:1300px"><thead><tr><th>No</th><th>Tanggal Input</th><th>Resi Pengembalian</th><th>ID Pesanan</th><th>No Tiket</th><th>Deskripsi</th><th>Due Date</th><th>Status</th><th>Nama Toko</th><th>Marketplace</th><th>Keterangan</th><th>Admin</th><th></th></tr></thead><tbody>${list.map((r, i) => `<tr>
+  <td>${i + 1}</td><td class="nw">${fmt(r.ts)}${tm(r.ts)}</td><td><b>${esc(r.resi)}</b></td><td>${esc(r.oid)}</td><td>${esc(r.tiket || '-')}</td><td><div class="wrapc">${esc(r.desk || '-')}</div></td>
+  <td class="nw${dueLate(r) ? ' late' : ''}">${esc(dueTxt(r))}${dueLate(r) ? '<div class="tm late">lewat jatuh tempo</div>' : ''}</td><td><span class="sb ${stCls(r.status)}">${esc(r.status)}</span></td><td>${esc(r.toko || '-')}</td>
+  <td>${r.mp ? '<span class="tag">' + esc(r.mp) + '</span>' : '-'}</td><td><div class="wrapc">${esc(r.ket || '-')}</div></td><td>${esc(r.adm || '-')}</td>
+  <td class="nw"><button class="btn ghost sm" data-bdedit="${r.id}">Edit</button> <button class="btn ghost sm" data-bddel="${r.id}">Hapus</button></td></tr>`).join('')}</tbody></table></div>`;
+function renderBd() {
+  const all = bdFiltered(), today = dayWIB(Date.now()), filt = BDF.some(x => $(x).value);
+  const tr = all.filter(r => dayWIB(r.ts) === today), hr = all.filter(r => dayWIB(r.ts) !== today), g = {};
+  hr.forEach(r => { const d = dayWIB(r.ts), y = d.slice(0, 4), m = d.slice(5, 7); ((g[y] = g[y] || {})[m] = g[y][m] || []).push(r) });
+  const isOpen = (k, dflt) => k in openState ? openState[k] : (filt || dflt);
+  let html = '<div class="dayh">Hari ini <span class="tag">' + tr.length + ' data</span></div>' + (tr.length ? bdTbl(tr) : '<div class="empty">Belum ada retur yang diinput hari ini.</div>');
+  if (hr.length) {
+    html += '<div class="dayh" style="margin-top:24px">Riwayat <span class="tag">' + hr.length + ' data</span></div>' + Object.keys(g).sort().reverse().map(y => {
+      const ms = Object.keys(g[y]).sort().reverse(), cnt = ms.reduce((s, m) => s + g[y][m].length, 0), ky = 'by' + y;
+      return `<details class="yr" data-k="${ky}" ${isOpen(ky, y === today.slice(0, 4)) ? 'open' : ''}><summary>${y} <span class="tag">${cnt} data</span></summary>` +
+        ms.map(m => { const km = 'bm' + y + m; return `<details class="mo" data-k="${km}" ${isOpen(km, false) ? 'open' : ''}><summary>${BLN[+m - 1]} ${y} <span class="tag">${g[y][m].length} data</span></summary>${dayBlocks(g[y][m], dayWIB, 'bk', isOpen, d => false, bdTbl)}</details>` }).join('') + '</details>';
+    }).join('');
+  }
+  $('#bdGrp').innerHTML = html;
+}
+BDF.forEach(x => { $(x).addEventListener('input', renderBd); $(x).addEventListener('change', renderBd) });
+$('#bdReset').onclick = () => { BDF.forEach(x => $(x).value = ''); [$('#bdQ'), $('#bdToko')].forEach(i => i._upd && i._upd()); renderBd() };
+// edit & hapus
+let tEd = null;
+function openTEdit(id) {
+  const r = returns.find(x => x.id === id); if (!r) return; tEd = id;
+  $('#tmD').value = ymd(r.ts); $('#tmT').value = hm(r.ts); $('#tmCode').value = ''; $('#tmResi').value = r.resi; $('#tmOid').value = r.oid; $('#tmTiket').value = r.tiket || '';
+  $('#tmDesk').value = r.desk || ''; $('#tmDueT').value = r.dueT || 'Cek Berkala'; $('#tmDue').value = r.due || ''; showDue('#tmDueT', '#tmDueW', '#tmDue');
+  $('#tmSt').value = r.status; $('#tmToko').value = r.toko || ''; $('#tmMp').value = r.mp || ''; $('#tmKet').value = r.ket || ''; msg('#tmMsg', ''); $('#tmdl').hidden = false;
+}
+const closeT = () => { $('#tmdl').hidden = true; tEd = null };
+$('#tmCancel').onclick = closeT; $('#tmdl').addEventListener('mousedown', e => { if (e.target === $('#tmdl')) closeT() });
+$('#tmSave').onclick = () => {
+  const r = returns.find(x => x.id === tEd); if (!r) return closeT();
+  const resi = UC($('#tmResi').value), oid = UC($('#tmOid').value), dueT = $('#tmDueT').value, due = $('#tmDue').value, d = $('#tmD').value, t = $('#tmT').value.trim();
+  if (!resi) return msg('#tmMsg', 'RESI PENGEMBALIAN wajib diisi.');
+  if (!oid) return msg('#tmMsg', 'ID PESANAN wajib diisi.');
+  if (dueT === 'Tanggal' && !due) return msg('#tmMsg', 'Pilih tanggal due date.');
+  if (!d || !T24.test(t)) return msg('#tmMsg', 'Isi tanggal dan jam (format 24 jam, mis. 14:30).');
+  if (returns.some(x => x.id !== r.id && x.resi === resi && x.oid === oid)) return msg('#tmMsg', 'Resi dan ID pesanan yang sama sudah ada.');
+  const dtCh = d !== ymd(r.ts) || t !== hm(r.ts);
+  if (dtCh && !codeOk('#tmCode')) return msg('#tmMsg', 'Mengubah tanggal / jam wajib memakai kode 6 digit yang benar.');
+  const b = cl(r);
+  Object.assign(r, { resi, oid, tiket: UC($('#tmTiket').value), desk: $('#tmDesk').value.trim(), dueT, due: dueT === 'Tanggal' ? due : '', status: $('#tmSt').value, toko: $('#tmToko').value.trim(), mp: $('#tmMp').value, ket: $('#tmKet').value.trim() });
+  if (dtCh) r.ts = new Date(d + 'T' + t).getTime();
+  if (!commit([['returns', 'set', r], logH('RETUR', 'edit', b.resi + ' · ' + b.oid, [{ c: 'returns', b, a: cl(r) }])])) return msg('#tmMsg', 'Penyimpanan penuh.');
+  closeT(); renderBd();
+};
+$('#bdGrp').addEventListener('click', e => {
+  const s = e.target.closest('summary'); if (s) { const d = s.parentElement; openState[d.dataset.k] = !d.open; return }
+  const ed = e.target.closest('[data-bdedit]'), dl = e.target.closest('[data-bddel]');
+  if (ed) return openTEdit(ed.dataset.bdedit);
+  if (dl) {
+    const id = dl.dataset.bddel, r0 = returns.find(x => x.id === id); if (!r0) return;
+    askYN('Yakin menghapus retur ' + r0.resi + ' (ID pesanan ' + r0.oid + ')?', () => {
+      const r = returns.find(x => x.id === id); if (!r) return;
+      const lop = logH('RETUR', 'hapus', r.resi + ' · ' + r.oid + (r.toko ? ' · ' + r.toko : ''), [{ c: 'returns', b: cl(r), a: null }]);
+      returns = returns.filter(x => x.id !== id); commit([['returns', 'del', id], lop]); renderBd();
+    });
+  }
+});
+// export Laporan Retur
+function bdHead(rows) {
+  const f = dtVal('#bdFrom'), t = dtVal('#bdTo', true);
+  const tgl = !f && !t ? 'Semua tanggal' : f && t ? fDT(f) + ' s/d ' + fDT(t) : f ? 'Mulai ' + fDT(f) : 'Sampai ' + fDT(t);
+  return { title: 'Laporan Retur', tgl: 'Tanggal & Jam Input: ' + tgl, asal: 'Marketplace: ' + ($('#bdMp').value || 'Semua'), adm: 'Nama Admin: ' + admHead('#bdAdm', rows || []) };
+}
+const bdAsc = () => bdFiltered().sort((a, b) => a.ts - b.ts);
+$('#bdXls').onclick = () => {
+  if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
+  const rows = bdAsc(); if (!rows.length) return alert('Tidak ada data untuk diexport.');
+  const H = bdHead(rows);
+  const aoa = [[H.title], [H.tgl], [H.asal], [H.adm], [], ['No', 'Tanggal', 'Jam', 'Resi Pengembalian', 'ID Pesanan', 'No Tiket', 'Deskripsi', 'Due Date', 'Status', 'Nama Toko', 'Marketplace', 'Keterangan', 'Admin']]
+    .concat(rows.map((r, i) => [i + 1, ymd(r.ts), hm(r.ts), r.resi, r.oid, r.tiket || '', r.desk || '', dueTxt(r), r.status, r.toko || '', r.mp || '', r.ket || '', r.adm || '']));
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges'] = [0, 1, 2, 3].map(r => ({ s: { r, c: 0 }, e: { r, c: 12 } }));
+  ws['!cols'] = [5, 12, 8, 20, 20, 16, 30, 14, 12, 18, 13, 36, 14].map(w => ({ wch: w }));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Laporan Retur');
+  const fn = fileName($('#bdMp').value, admFile('#bdAdm', rows), 'LAPORAN RETUR', 'xlsx'); XLSX.writeFile(wb, fn);
+  logDl({ form: 'BANDING', fmt: 'Excel', fname: fn, src: $('#bdMp').value, title: H.title, tgl: H.tgl, cols: aoa[5], rows: aoa.slice(6) });
+};
+$('#bdPdf').onclick = () => {
+  if (!window.jspdf) return alert('Library PDF gagal dimuat. Pastikan terhubung ke internet.');
+  const rows = bdAsc(); if (!rows.length) return alert('Tidak ada data untuk diexport.');
+  const H = bdHead(rows), doc = new jspdf.jsPDF({ orientation: 'landscape' });
+  const cols = ['No', 'Tanggal', 'Resi', 'ID Pesanan', 'No Tiket', 'Deskripsi', 'Due Date', 'Status', 'Toko', 'Marketplace', 'Keterangan', 'Admin'];
+  const body = rows.map((r, i) => [i + 1, tsFmt(r.ts), r.resi, r.oid, r.tiket || '-', r.desk || '-', dueTxt(r), r.status, r.toko || '-', r.mp || '-', r.ket || '-', r.adm || '-']);
+  doc.setFontSize(16); doc.text(H.title, 14, 15);
+  doc.setFontSize(10); doc.text(H.tgl, 14, 22); doc.text(H.asal + '     ' + H.adm, 14, 28);
+  doc.autoTable({ startY: 33, styles: { fontSize: 7 }, headStyles: { fillColor: [74, 123, 208] }, head: [cols], body });
+  const fn = fileName($('#bdMp').value, admFile('#bdAdm', rows), 'LAPORAN RETUR', 'pdf'); doc.save(fn);
+  logDl({ form: 'BANDING', fmt: 'PDF', fname: fn, src: $('#bdMp').value, title: H.title, tgl: H.tgl, cols, rows: body });
+};
 
 /* ---------- PRODUK ---------- */
 function addVRow(n = '', c = '#4a7bd0') {
@@ -1289,7 +1439,7 @@ $('#impFile').onchange = e => {
 };
 
 /* ---------- mulai ---------- */
-[$('#pSearch'), $('#fqProd'), $('#fqSj'), $('#xProd'), $('#dlFile'), $('#rwQ')].forEach(addClear);
+[$('#pSearch'), $('#fqProd'), $('#fqSj'), $('#xProd'), $('#dlFile'), $('#rwQ'), $('#bdQ'), $('#bdToko')].forEach(addClear);
 $$('.tm24').forEach(time24);
 let curDay = dayWIB(Date.now());
 const dayCheck = () => {
@@ -1336,6 +1486,47 @@ async function adminCreate(rec) {
     a[rec.username] = rec; store.set('pp_admins', a); admins.push(rec);
   }
 }
+/* ---------- ROLE & HAK AKSES ---------- */
+const ROLES = ['Admin', 'Gudang', 'Picker', 'Packing', 'Owner', 'Retur', 'Tamu']; // Tamu = masuk tanpa akun
+const PAGES = { pg: 'Pengajuan', in: 'Input Barang Masuk', pu: 'Purchase', dl: 'Download', rw: 'Riwayat', pr: 'Produk', rt: 'Input Retur', bd: 'Laporan Retur', ow: 'Dashboard Khusus (gembok)' };
+const DEF_PERMS = {
+  Admin: ['pg', 'in', 'pu', 'dl', 'rw', 'pr', 'rt', 'bd', 'ow'],
+  Gudang: ['in', 'pu', 'pr'],
+  Picker: ['pg'],
+  Packing: ['pu'],
+  Owner: ['pg', 'in', 'pu', 'dl', 'rw', 'pr', 'rt', 'bd', 'ow'],
+  Retur: ['rt', 'bd'],
+  Tamu: ['pg', 'in', 'pu', 'dl', 'rw', 'pr']
+};
+const DEF_DESC = {
+  Admin: 'Mengelola seluruh data: pengajuan, input barang masuk, purchase, download, riwayat, dan produk.',
+  Gudang: 'Menerima barang masuk dan mencatat purchase; mengelola daftar produk.',
+  Picker: 'Mengambil barang sesuai pengajuan; hanya melihat dan menginput pengajuan.',
+  Packing: 'Mengecek hasil penerimaan barang (purchase) sebelum dikemas.',
+  Owner: 'Pemilik: akses penuh termasuk Dashboard Khusus (kontrol admin, role, dan analisa).',
+  Retur: 'Menginput retur / pengembalian dan memantau Laporan Retur marketplace.',
+  Tamu: 'Masuk tanpa akun; nama admin tidak tercatat.'
+};
+let rolesCfg = null, roleDirty = false; // pengaturan role yang disimpan pemilik (menimpa default)
+const permsOf = r => (rolesCfg && rolesCfg.perms && rolesCfg.perms[r]) || DEF_PERMS[r] || [];
+const descOf = r => (rolesCfg && rolesCfg.desc && rolesCfg.desc[r]) || DEF_DESC[r] || '';
+const defRole = () => (rolesCfg && rolesCfg.defRole) || 'Admin';
+const roleName = () => { if (!me) return 'Tamu'; const a = admins.find(x => x.username === me.username); return (a && a.role) || me.role || 'Admin' };
+const can = k => permsOf(roleName()).includes(k) || (k === 'ow' && roleName() === 'Owner');
+const firstPage = () => ['pg', 'in', 'pu', 'rt', 'bd', 'dl', 'rw', 'pr'].find(can);
+function syncMe() { // data akun berubah (mis. role diganti pemilik) -> ikut diperbarui di perangkat ini
+  if (me) { const a = admins.find(x => x.username === me.username); if (a) { me.name = UN(a.name); me.role = a.role || 'Admin' } }
+  applyRole();
+}
+function applyRole() {
+  $$('nav button[data-t]').forEach(b => b.style.display = can(b.dataset.t) ? '' : 'none');
+  $('#ngRetur').style.display = can('rt') || can('bd') ? '' : 'none';
+  $('#lockBtn').style.display = can('ow') ? '' : 'none';
+  renderWho();
+  const cur = ($('.sec.on') || {}).id;
+  if (!cur || !can(cur)) { const f = firstPage(); if (f) go(f); else { $$('.sec').forEach(x => x.classList.remove('on')); $('#pt').textContent = 'Tidak ada akses'; $('#ps').textContent = 'Role kamu belum diberi halaman. Hubungi pemilik.' } }
+}
+
 const authMsg = (t, ok) => msg('#aMsg', t, ok);
 function authErr(e, base) { // tampilkan penyebab sebenarnya, bukan selalu "periksa internet"
   const c = (e && e.code) || '';
@@ -1350,10 +1541,10 @@ function authTab(t) {
 }
 function showAuth(t) { $('#auth').hidden = false; authTab(t || 'in') }
 function renderWho() {
-  $('#who').textContent = me ? '👤 ' + me.name : '👤 Tamu';
-  $('#who').title = me ? 'Klik untuk keluar' : 'Klik untuk masuk / daftar';
+  $('#who').textContent = me ? '👤 ' + me.name + ' · ' + roleName() : '👤 Tamu';
+  $('#who').title = (me ? 'Role ' + roleName() + ': ' : 'Tamu: ') + descOf(roleName()) + (me ? ' (klik untuk keluar)' : ' (klik untuk masuk / daftar)');
 }
-function setMe(m) { me = m; store.set('pp_session', m ? { username: m.username, name: m.name } : { guest: true }); $('#auth').hidden = true; renderWho() }
+function setMe(m) { me = m; store.set('pp_session', m ? { username: m.username, name: m.name, role: m.role } : { guest: true }); $('#auth').hidden = true; renderWho(); applyRole() }
 $$('.atabs button').forEach(b => b.onclick = () => authTab(b.dataset.a));
 $('#who').onclick = () => {
   if (!me) return showAuth('in');
@@ -1368,25 +1559,26 @@ $('#fLogin').onsubmit = async e => {
   try {
     const a = await adminGet(u);
     if (!a || a.pass !== pwHash(u, p)) return authMsg('Username atau password salah.');
-    $('#lPass').value = ''; setMe({ username: a.username, name: a.name });
+    $('#lPass').value = ''; setMe({ username: a.username, name: UN(a.name), role: a.role || 'Admin' });
   } catch (err) { console.error('login', err); authMsg(authErr(err, 'Tidak bisa terhubung ke server.')) }
 };
 $('#fSignup').onsubmit = async e => {
   e.preventDefault();
-  const name = $('#sName').value.trim().replace(/\s+/g, ' '), u = $('#sUser').value.trim().toLowerCase(), p = $('#sPass').value;
+  const name = UN($('#sName').value), u = $('#sUser').value.trim().toLowerCase(), p = $('#sPass').value;
   if (!name) return authMsg('Isi nama.');
   if (!/^[a-z0-9._-]{3,20}$/.test(u)) return authMsg('Username 3-20 karakter: huruf kecil, angka, titik, strip, atau garis bawah.');
   if (p.length < 4) return authMsg('Password minimal 4 karakter.');
   try {
-    await adminCreate({ username: u, name, pass: pwHash(u, p), ts: Date.now() });
-    $('#sPass').value = ''; setMe({ username: u, name });
+    const role = defRole();
+    await adminCreate({ username: u, name, pass: pwHash(u, p), ts: Date.now(), role });
+    $('#sPass').value = ''; setMe({ username: u, name, role });
   } catch (err) {
     console.error('signup', err);
     authMsg(err && err.message === 'exists' ? 'Username sudah dipakai, pilih yang lain.' : authErr(err, 'Gagal mendaftar.'));
   }
 };
 { const s = store.get('pp_session', null);
-  if (s && s.username) me = { username: s.username, name: s.name };
+  if (s && s.username) me = { username: s.username, name: UN(s.name), role: s.role };
   renderWho(); if (!s) showAuth('in'); }
 
 /* ---------- DASHBOARD KHUSUS PEMILIK (ikon gembok) ---------- */
@@ -1496,7 +1688,36 @@ function tabAdm(D) {
   R.forEach(r => { const o = get(r.adm || NO_ADM); o.req++; o.pcs += r.min; o.ada += r.ada });
   const L = Object.values(A).sort((a, b) => (!!b.acc - !!a.acc) || b.pcs - a.pcs || a.name.localeCompare(b.name));
   return `<div class="card"><h3>Kontrol Admin</h3><p class="hint">Semua admin yang terdaftar beserta aktivitasnya pada periode terpilih. <b>Hapus akses</b> membuat akun tidak bisa login lagi (data yang pernah diinput tetap tersimpan). <b>Reset password</b> mengganti password admin dengan yang baru.</p>
-  <div class="tw"><table class="ot" style="min-width:900px"><thead><tr><th>Admin</th><th>Terdaftar</th><th>Pengajuan</th><th>Pcs diajukan</th><th>% Terpenuhi</th><th>Input purchase</th><th>Download</th><th>Aktivitas terakhir</th><th></th></tr></thead><tbody>${L.map(o => `<tr><td><b>${esc(o.name)}</b>${o.acc ? '<div class="tm">@' + esc(o.acc.username) + '</div>' : '<div class="tm">tanpa akun</div>'}</td><td>${o.acc && o.acc.ts ? fmt(o.acc.ts) : '-'}</td><td>${nf(o.req)}</td><td>${nf(o.pcs)}</td><td>${o.pcs ? pc(o.ada, o.pcs) + '%' + pbar(pc(o.ada, o.pcs)) : '-'}</td><td>${nf(o.rec)}</td><td>${nf(o.dl)}</td><td>${o.last ? fmt(o.last) + tm(o.last) : '-'}</td><td class="nw">${o.acc ? `<button class="btn ghost sm" data-owreset="${esc(o.acc.username)}">Reset password</button> <button class="btn sm" style="background:var(--bad)" data-owdel="${esc(o.acc.username)}">Hapus akses</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">Belum ada admin.</td></tr>'}</tbody></table></div></div>`;
+  <div class="tw"><table class="ot" style="min-width:900px"><thead><tr><th>Admin</th><th>Role</th><th>Terdaftar</th><th>Pengajuan</th><th>Pcs diajukan</th><th>% Terpenuhi</th><th>Input purchase</th><th>Download</th><th>Aktivitas terakhir</th><th></th></tr></thead><tbody>${L.map(o => `<tr><td><b>${esc(o.name)}</b>${o.acc ? '<div class="tm">@' + esc(o.acc.username) + '</div>' : '<div class="tm">tanpa akun</div>'}</td><td>${o.acc ? roleSel(o.acc) : '-'}</td><td>${o.acc && o.acc.ts ? fmt(o.acc.ts) : '-'}</td><td>${nf(o.req)}</td><td>${nf(o.pcs)}</td><td>${o.pcs ? pc(o.ada, o.pcs) + '%' + pbar(pc(o.ada, o.pcs)) : '-'}</td><td>${nf(o.rec)}</td><td>${nf(o.dl)}</td><td>${o.last ? fmt(o.last) + tm(o.last) : '-'}</td><td class="nw">${o.acc ? `<button class="btn ghost sm" data-owreset="${esc(o.acc.username)}">Reset password</button> <button class="btn sm" style="background:var(--bad)" data-owdel="${esc(o.acc.username)}">Hapus akses</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="10" class="empty">Belum ada admin.</td></tr>'}</tbody></table></div></div>`;
+}
+const roleSel = a => `<select data-owrole="${esc(a.username)}" style="width:auto;padding:7px 10px">${ROLES.filter(r => r !== 'Tamu').map(r => `<option${(a.role || 'Admin') === r ? ' selected' : ''}>${r}</option>`).join('')}</select>`;
+async function setRole(u, role) {
+  const a = admins.find(x => x.username === u); if (!a) return;
+  const rec = Object.assign({}, a, { role });
+  try {
+    if (db) await withTimeout(db.collection('admins').doc(u).set(rec));
+    else { const o = store.get('pp_admins', {}); o[u] = rec; store.set('pp_admins', o) }
+    admins = admins.map(x => x.username === u ? rec : x); syncMe(); renderOw();
+  } catch (err) { console.error(err); alert('Gagal mengganti role: ' + authErr(err, '')); renderOw() }
+}
+function tabRole() {
+  const cnt = r => r === 'Tamu' ? 'tanpa akun' : admins.filter(a => (a.role || 'Admin') === r).length + ' akun';
+  return `<div class="card"><h3>Role &amp; Hak Akses</h3><p class="hint">Centang halaman yang boleh dibuka tiap role. Role tiap akun diatur di tab <b>Admin &amp; Akses</b>. Owner selalu bisa membuka Dashboard Khusus. Tamu = masuk tanpa akun. Pembatasan ini berlaku di tampilan aplikasi.</p>
+  <div class="tw"><table class="ot" style="min-width:820px"><thead><tr><th>Halaman</th>${ROLES.map(r => `<th style="text-align:center">${r}<div class="tm">${cnt(r)}</div></th>`).join('')}</tr></thead><tbody>${Object.keys(PAGES).map(k => `<tr><td><b>${PAGES[k]}</b></td>${ROLES.map(r => { const on = permsOf(r).includes(k) || (r === 'Owner' && k === 'ow'); return `<td style="text-align:center"><input type="checkbox" data-rp="${r}|${k}"${on ? ' checked' : ''}${r === 'Owner' && k === 'ow' ? ' disabled' : ''}></td>` }).join('')}</tr>`).join('')}</tbody></table></div></div>
+  <div class="card"><h3>Tugas tiap role</h3><p class="hint">Teks ini tampil sebagai keterangan saat nama akun di pojok atas diarahkan kursor.</p>${ROLES.map(r => `<label>${r}</label><textarea data-rdesc="${r}" rows="2">${esc(descOf(r))}</textarea>`).join('')}
+  <label>Role default untuk akun yang baru mendaftar</label><select id="owDef">${ROLES.filter(r => r !== 'Tamu').map(r => `<option${defRole() === r ? ' selected' : ''}>${r}</option>`).join('')}</select>
+  <div class="foot"><button class="btn ghost" data-rolereset type="button">Kembalikan default</button><button class="btn" data-rolesave type="button">Simpan role &amp; akses</button></div></div>`;
+}
+function saveRoles() {
+  const perms = {}, desc = {}; ROLES.forEach(r => perms[r] = []);
+  $$('#owBody [data-rp]').forEach(c => { const [r, k] = c.dataset.rp.split('|'); if (c.checked || (r === 'Owner' && k === 'ow')) perms[r].push(k) });
+  $$('#owBody [data-rdesc]').forEach(t => desc[t.dataset.rdesc] = t.value.trim());
+  rolesCfg = { id: 'roles', perms, desc, defRole: $('#owDef').value || 'Admin', upd: Date.now() };
+  commit([['settings', 'set', rolesCfg]]); roleDirty = false; applyRole(); renderOw(); alert('Role & hak akses tersimpan.');
+}
+function resetRoles() {
+  if (!confirm('Kembalikan semua role ke pengaturan default?')) return;
+  rolesCfg = null; commit([['settings', 'del', 'roles']]); roleDirty = false; applyRole(); renderOw();
 }
 function owReco(D) {
   const { R, E, lead } = D, out = [], add = (t, h, x) => out.push({ t, h, x });
@@ -1534,7 +1755,7 @@ function renderOw() {
   if (!owOk) return;
   $$('.otabs button').forEach(b => b.classList.toggle('on', b.dataset.o === owTab));
   const D = owData();
-  $('#owBody').innerHTML = { sum: tabSum, prod: tabProd, adm: tabAdm, rec: tabReco }[owTab](D);
+  $('#owBody').innerHTML = { sum: tabSum, prod: tabProd, adm: tabAdm, rec: tabReco, role: tabRole }[owTab](D);
 }
 // ---- gerbang kode & kontrol akses ----
 function openOw() { if (owOk) return go('ow'); $('#gCode').value = ''; msg('#gMsg', ''); $('#gmdl').hidden = false; $('#gCode').focus() }
@@ -1546,9 +1767,9 @@ function lockOw() { owOk = false; $('#owBody').innerHTML = ''; go('pg') }
 $('#lockBtn').onclick = openOw; $('#gOk').onclick = tryOw; $('#gCancel').onclick = () => $('#gmdl').hidden = true;
 $('#gCode').addEventListener('keydown', e => { if (e.key === 'Enter') tryOw() });
 $('#owLock').onclick = lockOw;
-$$('.otabs button').forEach(b => b.onclick = () => { owTab = b.dataset.o; renderOw() });
+$$('.otabs button').forEach(b => b.onclick = () => { owTab = b.dataset.o; roleDirty = false; renderOw() });
 ['#owPer', '#owFrom', '#owTo', '#owSrc'].forEach(x => { $(x).addEventListener('input', renderOw); $(x).addEventListener('change', renderOw) });
-function forceLogout(note) { store.set('pp_session', null); me = null; renderWho(); showAuth('in'); authMsg(note || '') }
+function forceLogout(note) { store.set('pp_session', null); me = null; renderWho(); applyRole(); showAuth('in'); authMsg(note || '') }
 let rpUser = null;
 $('#owBody').addEventListener('click', e => {
   const m = e.target.closest('[data-owmore]'), r = e.target.closest('[data-owreset]'), d = e.target.closest('[data-owdel]');
@@ -1556,7 +1777,13 @@ $('#owBody').addEventListener('click', e => {
   if (r) { rpUser = r.dataset.owreset; $('#rpInfo').textContent = '@' + rpUser; $('#rpPass').value = ''; msg('#rpMsg', ''); $('#rpmdl').hidden = false; $('#rpPass').focus() }
   if (d) delAccess(d.dataset.owdel);
 });
-$('#owBody').addEventListener('change', e => { const s = e.target.closest('[data-owsort]'); if (s) { owSort = s.value; renderOw() } });
+$('#owBody').addEventListener('change', e => {
+  const s = e.target.closest('[data-owsort]'); if (s) { owSort = s.value; renderOw() }
+  const rs = e.target.closest('[data-owrole]'); if (rs) setRole(rs.dataset.owrole, rs.value);
+  if (e.target.closest('[data-rp],[data-rdesc],#owDef')) roleDirty = true;
+});
+$('#owBody').addEventListener('input', e => { if (e.target.closest('[data-rdesc]')) roleDirty = true });
+$('#owBody').addEventListener('click', e => { if (e.target.closest('[data-rolesave]')) saveRoles(); if (e.target.closest('[data-rolereset]')) resetRoles() });
 async function delAccess(u) {
   const a = admins.find(x => x.username === u); if (!a) return;
   if (!confirm('Hapus akses admin "' + a.name + '" (@' + u + ')?\nAkun ini tidak bisa login lagi. Data yang pernah diinput tetap tersimpan.')) return;
@@ -1588,3 +1815,5 @@ function watchAdmins() {
 }
 
 pgVarUI(); addBlock(); startSync(); watchAdmins();
+if (!db && admFixN) { commit(); store.set('pp_admins', Object.fromEntries(admins.map(a => [a.username, a]))) } // simpan nama admin yang sudah dikapitalkan (mode lokal)
+applyRole();
