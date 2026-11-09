@@ -1271,60 +1271,98 @@ $('#tTpl').onclick = () => {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' })); a.download = 'template-retur.csv'; a.click();
 };
-const impKey = (o, ...names) => { for (const n of names) if (o[n] !== undefined && String(o[n]).trim() !== '') return o[n]; return '' };
+const MPS = ['Shopee', 'Tiktokshop', 'Lazada'], STS = ['On Progress', 'Failed', 'Done', 'Review'];
+const MON = { jan: 1, januari: 1, january: 1, feb: 2, februari: 2, february: 2, mar: 3, maret: 3, march: 3, apr: 4, april: 4, mei: 5, may: 5, jun: 6, juni: 6, june: 6, jul: 7, juli: 7, july: 7, agu: 8, agt: 8, agustus: 8, aug: 8, august: 8, sep: 9, sept: 9, september: 9, okt: 10, oktober: 10, oct: 10, october: 10, nov: 11, november: 11, des: 12, desember: 12, dec: 12, december: 12 };
 const impStr = v => v instanceof Date ? ymd(v.getTime() + 12 * 36e5) : String(v == null ? '' : v).trim();
+const impClean = v => { const s = impStr(v); return /^[-–—]+$/.test(s) ? '' : s }; // "-" dianggap kosong
 function impDue(v) { // -> {dueT, due} atau null bila format tidak dikenali
+  const mk = (y, mo, d) => { const t = new Date(Date.UTC(y, mo - 1, d)); return t.getUTCFullYear() === y && t.getUTCMonth() === mo - 1 && t.getUTCDate() === d ? { dueT: 'Tanggal', due: y + '-' + p2(mo) + '-' + p2(d) } : null };
   if (v instanceof Date) return { dueT: 'Tanggal', due: ymd(v.getTime() + 12 * 36e5) };
-  if (typeof v === 'number') { const d = new Date(Math.round((v - 25569) * 864e5)); return { dueT: 'Tanggal', due: d.toISOString().slice(0, 10) } } // nomor seri Excel
+  if (typeof v === 'number') return { dueT: 'Tanggal', due: new Date(Math.round((v - 25569) * 864e5)).toISOString().slice(0, 10) }; // nomor seri Excel
   const s = String(v == null ? '' : v).trim();
-  if (!s || /^cek\s*berkala$/i.test(s)) return { dueT: 'Cek Berkala', due: '' };
-  let m = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
-  if (!m) { const k = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/); if (k) m = [0, k[3], k[2], k[1]] }
-  if (!m) return null;
-  const y = +m[1], mo = +m[2], d = +m[3], t = new Date(Date.UTC(y, mo - 1, d));
-  if (t.getUTCFullYear() !== y || t.getUTCMonth() !== mo - 1 || t.getUTCDate() !== d) return null;
-  return { dueT: 'Tanggal', due: y + '-' + p2(mo) + '-' + p2(d) };
+  if (!s || /^[-–—]+$/.test(s) || /cek\s*berkala/i.test(s)) return { dueT: 'Cek Berkala', due: '' };
+  let m = s.match(/(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/); if (m) return mk(+m[1], +m[2], +m[3]);
+  m = s.match(/(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/); if (m) return mk(+m[3], +m[2], +m[1]);
+  m = s.match(/(\d{1,2})\s+([A-Za-z]+)\.?,?\s+(\d{4})/); // mis. "Monday, 09 November 2026" / "9 Nov 2026"
+  if (m && MON[m[2].toLowerCase()]) return mk(+m[3], MON[m[2].toLowerCase()], +m[1]);
+  return null;
+}
+function impStatus(v) { // kotak centang Excel: dicentang (TRUE) = Done, kosong (FALSE) = On Progress
+  if (v === true) return 'Done'; if (v === false) return 'On Progress';
+  const s = impStr(v).toLowerCase().replace(/\s+/g, ' ');
+  if (!s || s === 'false') return 'On Progress';
+  if (s === 'true' || s === 'v' || s === '✓' || s === 'selesai') return 'Done';
+  return STS.find(x => x.toLowerCase() === s) || null;
+}
+function impCols(hdr) { // judul kolom dicocokkan longgar (huruf besar/kecil & variasi nama tidak masalah)
+  const idx = {};
+  hdr.forEach((h, i) => {
+    const n = String(h == null ? '' : h).trim().toLowerCase().replace(/\s+/g, ' '); if (!n) return;
+    const set = k => { if (idx[k] === undefined) idx[k] = i };
+    if (/resi/.test(n)) set('resi');
+    else if (/id\s*pesanan|order\s*id|id\s*order|^oid$/.test(n)) set('oid');
+    else if (/tiket/.test(n)) set('tiket');
+    else if (/marketplace/.test(n)) set('mp');
+    else if (/due/.test(n)) set('due');
+    else if (/status/.test(n)) set('st');
+    else if (/toko/.test(n)) set('toko');
+    else if (/deskripsi/.test(n)) set('desk');
+    else if (/keterangan/.test(n)) set('ket');
+  });
+  return idx;
 }
 $('#tImpFile').onchange = e => {
-  const f = e.target.files[0]; if (!f) return;
-  if (!window.XLSX) { e.target.value = ''; return msg('#tImpMsg', 'Library Excel gagal dimuat. Pastikan terhubung ke internet.') }
+  const inp = e.target, f = inp.files[0]; if (!f) return;
+  if (!window.XLSX) { inp.value = ''; return msg('#tImpMsg', 'Library Excel gagal dimuat. Pastikan terhubung ke internet.') }
+  msg('#tImpMsg', 'Membaca file...', true);
   const rd = new FileReader();
+  rd.onerror = () => { inp.value = ''; msg('#tImpMsg', 'File tidak bisa dibuka oleh browser.') };
   rd.onload = () => {
     try {
       const wb = XLSX.read(rd.result, { type: 'array', cellDates: true });
-      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+      const all = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '', blankrows: false });
+      let hi = -1, idx = {};
+      for (let i = 0; i < Math.min(all.length, 15); i++) { const c = impCols(all[i]); if (c.resi !== undefined && c.oid !== undefined) { hi = i; idx = c; break } }
+      if (hi < 0) throw new Error('Judul kolom "Resi" dan "ID Pesanan" tidak ditemukan di 15 baris pertama sheet pertama');
+      const body = all.slice(hi + 1);
+      let tokoNote = '';
+      if (idx.toko === undefined) { // kolom tanpa judul yang berisi nama toko (kolom "SEND" diabaikan)
+        const used = new Set(Object.values(idx)), cand = [];
+        for (let c = 0; c < all[hi].length; c++) {
+          if (used.has(c)) continue;
+          const vals = body.map(r => impStr(r[c])).filter(Boolean); if (!vals.length) continue;
+          if (vals.filter(v => /^send$/i.test(v)).length >= vals.length * .8) continue;
+          cand.push([c, vals.length]);
+        }
+        if (cand.length) { cand.sort((a, b) => b[1] - a[1]); idx.toko = cand[0][0]; tokoNote = ' Kolom tanpa judul dipakai sebagai Nama Toko.' }
+      }
+      const defMp = $('#tImpMp').value, g = (r, k) => idx[k] === undefined ? '' : r[idx[k]];
       const have = new Set(returns.map(x => x.resi + '|' + x.oid)), now = Date.now(), recs = [], bad = [];
-      let dup = 0, empty = 0;
-      rows.forEach((row, i) => {
-        const k = {}; Object.keys(row).forEach(x => k[x.trim().toLowerCase()] = row[x]);
-        const resi = UC(impStr(impKey(k, 'resi', 'resi pengembalian', 'resi pengiriman'))), oid = UC(impStr(impKey(k, 'id pesanan', 'oid', 'order id', 'id order')));
-        const tiket = UC(impStr(impKey(k, 'no tiket', 'no tiket pelaporan', 'tiket')));
-        const mpRaw = impStr(impKey(k, 'marketplace')), stRaw = impStr(impKey(k, 'status'));
-        const dd = impDue(impKey(k, 'due date', 'due', 'duedate'));
-        const toko = impStr(impKey(k, 'nama toko', 'toko')).slice(0, 60), desk = impStr(impKey(k, 'deskripsi')), ket = impStr(impKey(k, 'keterangan'));
-        if (!resi && !oid && !tiket && !desk && !ket && !toko) { empty++; return } // baris kosong
-        const ln = 'baris ' + (i + 2);
+      let dup = 0;
+      body.forEach((r, i) => {
+        const resi = UC(impClean(g(r, 'resi'))), oid = UC(impClean(g(r, 'oid'))), tiket = UC(impClean(g(r, 'tiket')));
+        const toko = impClean(g(r, 'toko')).slice(0, 60), desk = impClean(g(r, 'desk')), ket = impClean(g(r, 'ket'));
+        if (!resi && !oid && !tiket && !desk && !ket && !toko) return; // baris kosong
+        const ln = 'baris ' + (hi + i + 2);
         if (!resi || !oid) return bad.push(ln + ': Resi / ID Pesanan kosong');
-        const mp = mpRaw ? MPS.find(x => x.toLowerCase() === mpRaw.toLowerCase().replace(/\s+/g, '')) : '';
+        const mpRaw = impClean(g(r, 'mp')), mp = mpRaw ? MPS.find(x => x.toLowerCase() === mpRaw.toLowerCase().replace(/\s+/g, '')) : defMp;
         if (mpRaw && !mp) return bad.push(ln + ': marketplace "' + mpRaw + '" tidak dikenal');
-        const st = stRaw ? STS.find(x => x.toLowerCase() === stRaw.toLowerCase().replace(/\s+/g, ' ')) : 'On Progress';
-        if (!st) return bad.push(ln + ': status "' + stRaw + '" tidak dikenal');
-        if (!dd) return bad.push(ln + ': due date tidak terbaca (pakai YYYY-MM-DD atau DD-MM-YYYY)');
+        const st = impStatus(g(r, 'st')); if (!st) return bad.push(ln + ': status "' + impStr(g(r, 'st')) + '" tidak dikenal');
+        const dd = impDue(g(r, 'due')); if (!dd) return bad.push(ln + ': due date "' + impStr(g(r, 'due')) + '" tidak terbaca');
         const key = resi + '|' + oid; if (have.has(key)) { dup++; return } have.add(key);
         recs.push({ id: uid(), ts: now + recs.length, resi, oid, tiket, desk, dueT: dd.dueT, due: dd.due, status: st, toko, mp: mp || '', ket, adm: me ? me.name : '' });
       });
-      if (!recs.length && !rows.length) msg('#tImpMsg', 'File kosong atau kolom tidak terbaca. Gunakan template CSV.');
-      else {
-        if (recs.length) { // mode lokal menyimpan array `returns`, jadi perbarui dulu baru commit
-          returns = recs.slice().reverse().concat(returns);
-          if (!commit(recs.map(r => ['returns', 'set', r]))) { e.target.value = ''; return msg('#tImpMsg', 'Penyimpanan penuh.') }
-          renderBd();
-        }
-        const extra = (dup ? ', ' + dup + ' dilewati (resi + ID pesanan sudah ada)' : '') + (bad.length ? ', ' + bad.length + ' baris ditolak' : '');
-        msg('#tImpMsg', recs.length + ' retur berhasil diimpor ke Laporan Retur' + extra + '.' + (bad.length ? ' ' + bad.slice(0, 4).join('; ') + (bad.length > 4 ? '; dst.' : '') : ''), recs.length > 0 && !bad.length);
-      }
-    } catch (err) { console.error(err); msg('#tImpMsg', 'File tidak bisa dibaca. Gunakan format .xlsx atau .csv.') }
-    e.target.value = '';
+      const extra = (dup ? ', ' + dup + ' dilewati (resi + ID pesanan sudah ada)' : '') + (bad.length ? ', ' + bad.length + ' baris ditolak' : '');
+      const badTxt = bad.length ? ' ' + bad.slice(0, 4).join('; ') + (bad.length > 4 ? '; dst.' : '') : '';
+      if (!recs.length) { inp.value = ''; return msg('#tImpMsg', 'Tidak ada data baru yang bisa diimpor' + extra + '.' + badTxt + tokoNote) }
+      const nDone = recs.filter(x => x.status === 'Done').length;
+      if (!confirm('Impor ' + recs.length + ' retur ke Laporan Retur?\n\n' + nDone + ' berstatus Done, ' + (recs.length - nDone) + ' On Progress' + (defMp ? '\nMarketplace diisi: ' + defMp : '') + (dup ? '\n' + dup + ' dilewati (sudah ada)' : '') + (bad.length ? '\n' + bad.length + ' baris ditolak' : ''))) { inp.value = ''; return msg('#tImpMsg', 'Impor dibatalkan.') }
+      returns = recs.slice().reverse().concat(returns); // mode lokal menyimpan array `returns`, jadi perbarui dulu baru commit
+      if (!commit(recs.map(x => ['returns', 'set', x]))) { inp.value = ''; return msg('#tImpMsg', 'Penyimpanan penuh.') }
+      renderBd();
+      msg('#tImpMsg', recs.length + ' retur berhasil diimpor ke Laporan Retur' + extra + '.' + badTxt + tokoNote, !bad.length);
+    } catch (err) { console.error(err); msg('#tImpMsg', 'Gagal memproses file: ' + (err && err.message || err)) }
+    inp.value = '';
   };
   rd.readAsArrayBuffer(f);
 };

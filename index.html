@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Purchasing Barang</title>
-<link rel="stylesheet" href="style.css?v=35">
+<link rel="stylesheet" href="style.css?v=36">
 </head>
 <body>
 
@@ -210,10 +210,19 @@
     </div>
     <div class="card">
       <h3>Input Massal Retur (Excel / CSV)</h3>
-      <p class="hint">Kolom: <code>Resi</code>, <code>ID Pesanan</code>, <code>No Tiket</code>, <code>Marketplace</code>, <code>Due Date</code>, <code>Status</code>, <code>Nama Toko</code>, <code>Deskripsi</code>, <code>Keterangan</code>. Satu baris per retur. <b>Resi</b> dan <b>ID Pesanan</b> wajib; kolom lain boleh kosong. <b>Due Date</b>: isi tanggal (mis. 2026-11-20 atau 20-11-2026) atau kosongkan / tulis <code>Cek Berkala</code>. <b>Status</b>: On Progress, Failed, Done, atau Review (kosong = On Progress). <b>Marketplace</b>: Shopee, Tiktokshop, atau Lazada. Baris yang resi + ID pesanannya sudah ada akan dilewati.</p>
-      <button class="btn ghost sm" id="tTpl" type="button">Unduh Template CSV</button>
+      <p class="hint">Upload file Excel Anda apa adanya. Judul kolom yang dikenali: <code>Resi Pengembalian</code>, <code>ID Pesanan</code>, <code>No Tiket Pelaporan</code>, <code>Deskripsi</code>, <code>Due Date</code>, <code>Status</code>, <code>Nama Toko</code>, <code>Keterangan</code>, dan <code>Marketplace</code> (opsional). Kolom lain (mis. SEND) diabaikan, dan baris judul boleh tidak di baris pertama.</p>
+      <ul class="hint" style="margin:0 0 12px;padding-left:20px">
+        <li><b>Resi</b> dan <b>ID Pesanan</b> wajib; baris yang kosong salah satunya ditolak.</li>
+        <li><b>Due Date</b>: tanggal Excel, teks seperti "Monday, 09 November 2026", atau 20-11-2026 / 2026-11-20. Kosong atau "Cek Berkala" = Cek Berkala.</li>
+        <li><b>Status</b>: kotak centang dicentang = Done, tidak dicentang = On Progress. Teks On Progress / Failed / Done / Review juga bisa.</li>
+        <li>Kolom tanpa judul yang berisi nama toko otomatis dibaca sebagai Nama Toko.</li>
+        <li>Baris yang resi + ID pesanannya sudah ada dilewati; sebelum disimpan akan ada konfirmasi jumlah data.</li>
+      </ul>
+      <label>Marketplace untuk baris yang tidak punya kolom Marketplace</label>
+      <select id="tImpMp"><option value="">Kosongkan</option><option>Shopee</option><option>Tiktokshop</option><option>Lazada</option></select>
       <label>Pilih file</label>
       <input type="file" id="tImpFile" accept=".xlsx,.xls,.csv">
+      <button class="lnk" id="tTpl" type="button">Unduh contoh template CSV</button>
       <div class="msg" id="tImpMsg" style="margin-top:12px"></div>
     </div>
   </section>
@@ -492,6 +501,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
-<script src="script.js?v=54"></script>
+<script src="script.js?v=55"></script>
 </body>
 </html>
