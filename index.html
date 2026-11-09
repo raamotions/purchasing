@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Purchasing Barang</title>
-<link rel="stylesheet" href="style.css?v=34">
+<link rel="stylesheet" href="style.css?v=35">
 </head>
 <body>
 
@@ -30,6 +30,9 @@
       <div class="hr"><button class="who" id="projBtn" type="button"></button><button class="who" id="lockBtn" type="button" title="Dashboard khusus pemilik">🔒</button><button class="who" id="who" type="button">👤 Tamu</button><div class="sync loc" id="sync"><i></i><span>Mode lokal</span></div></div>
     </div>
 </header>
+
+<!-- NOTIFIKASI DUE DATE (role Retur & Owner) -->
+<div class="notif" id="notif"></div>
 
 <main>
 
@@ -390,7 +393,18 @@
 <div class="modal" id="tdmdl" hidden><div class="box dbox">
   <h3>Detail Retur</h3>
   <div id="tdBody"></div>
-  <div class="acts"><button class="btn ghost" id="tdClose" type="button">Keluar</button><button class="btn" id="tdEdit" type="button">Edit</button></div>
+  <div class="acts"><button class="btn ghost" id="tdClose" type="button">Keluar</button><button class="btn wa" id="tdWa" type="button" hidden>Reminder WhatsApp</button><button class="btn" id="tdEdit" type="button">Edit</button></div>
+</div></div>
+
+<!-- MODAL NOMOR WHATSAPP (reminder, khusus Owner) -->
+<div class="modal" id="wamdl" hidden><div class="box">
+  <h3>Reminder WhatsApp</h3>
+  <div class="hint2">Masukkan nomor WhatsApp tujuan. Pesan reminder akan dibuka di WhatsApp dan tinggal dikirim.</div>
+  <label>Nomor WhatsApp</label><input id="waNum" type="tel" inputmode="tel" list="waList" autocomplete="off" placeholder="Contoh: 0812xxxxxxxx atau +62812xxxxxxxx">
+  <datalist id="waList"></datalist>
+  <div id="waChips"></div>
+  <div class="msg" id="waMsg"></div>
+  <div class="acts"><button class="btn ghost" id="waCancel" type="button">Batal</button><button class="btn wa" id="waOk" type="button">Kirim ke WhatsApp</button></div>
 </div></div>
 
 <!-- MODAL EDIT LAPORAN BANDING -->
@@ -478,6 +492,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
-<script src="script.js?v=53"></script>
+<script src="script.js?v=54"></script>
 </body>
 </html>

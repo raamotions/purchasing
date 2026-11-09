@@ -273,6 +273,23 @@ input[type=checkbox]{width:18px;height:18px;padding:0;accent-color:var(--pri);cu
 .late{color:var(--bad);font-weight:700}
 #tmdl{z-index:45}
 #tdmdl{z-index:44}
+#wamdl{z-index:46}
+.btn.wa{background:#25a244}
+/* notifikasi due date mengambang */
+.notif{position:fixed;top:10px;left:50%;transform:translateX(-50%);width:min(580px,calc(100% - 24px));z-index:35;display:flex;flex-direction:column;gap:8px;max-height:45vh;overflow:auto;pointer-events:none}
+.notif:empty{display:none}
+.nt{pointer-events:auto;display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;cursor:pointer;box-shadow:0 8px 22px rgba(0,0,0,.28);font-size:13px;line-height:1.4;border:1px solid}
+.nt .ntt{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;word-break:break-word}
+.nt b{font-size:13px}
+.nt.y{background:#fff0a8;color:#5e4500;border-color:#e0b21c}
+.nt.r{background:#ffc9c9;color:#9a1414;border-color:#e46a6a}
+.nt.rr{background:#b0101b;color:#fff;border-color:#7a0810}
+.ntx{flex:none;width:26px;height:26px;border:0;border-radius:50%;background:rgba(0,0,0,.12);color:inherit;font-size:18px;line-height:1;cursor:pointer;padding:0}
+.ntx:hover{background:rgba(0,0,0,.25)}
+.wch{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.wc{display:inline-flex;align-items:center;background:var(--soft);border-radius:20px;overflow:hidden}
+.wc button{border:0;background:none;color:var(--pri2);font:inherit;font-size:13px;font-weight:600;cursor:pointer;padding:6px 10px}
+.wc .wcx{padding:6px 10px 6px 2px;color:var(--mute)}
 /* popup welcome */
 .wlc{position:fixed;inset:0;z-index:90;background:rgba(10,20,40,.6);display:flex;align-items:center;justify-content:center;padding:16px;cursor:pointer}
 .wlc[hidden]{display:none}

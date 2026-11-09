@@ -192,6 +192,7 @@ function refresh() {
   if ($('#ow').classList.contains('on') && !(owTab === 'role' && roleDirty)) renderOw();
   if ($('#rw').classList.contains('on')) renderRw();
   if ($('#bd').classList.contains('on')) renderBd();
+  renderNotif();
 }
 function startSync() {
   if (!FIREBASE_CONFIG || !window.firebase) { loadLocal(); setSync('loc'); refresh(); return }
@@ -216,7 +217,7 @@ function startSync() {
       setSync(sn.metadata.fromCache || sn.metadata.hasPendingWrites ? 'wait' : 'ok'); refresh();
     }, e => failSync(e));
     on('returns', (a, fc) => returns = fixAdm('returns', a, fc).sort((x, y) => y.ts - x.ts));
-    on('settings', a => { rolesCfg = a.find(x => x.id === 'roles') || null; applyRole() });
+    on('settings', a => { rolesCfg = a.find(x => x.id === 'roles') || null; const w = a.find(x => x.id === 'wa'); if (w && Array.isArray(w.nums)) { waNums = w.nums; store.set('pp_wa', waNums) } applyRole() });
     on('downloads', (a, fc) => downloads = fixAdm('downloads', a, fc).sort((x, y) => y.ts - x.ts));
     on('hlog', (a, fc) => hlog = fixAdm('hlog', a, fc).sort((x, y) => y.ts - x.ts));
   } catch (e) { db = null; loadLocal(); setSync('err'); refresh() }
@@ -1354,6 +1355,7 @@ function renderBd() {
     }).join('');
   }
   $('#bdGrp').innerHTML = html;
+  renderNotif();
 }
 BDF.forEach(x => { $(x).addEventListener('input', renderBd); $(x).addEventListener('change', renderBd) });
 $('#bdReset').onclick = () => { BDF.forEach(x => $(x).value = ''); [$('#bdQ'), $('#bdToko')].forEach(i => i._upd && i._upd()); renderBd() };
@@ -1411,12 +1413,69 @@ function openTDetail(id) {
     ['Deskripsi', esc(r.desk || '-')], ['Keterangan', esc(r.ket || '-')], ['Admin', esc(r.adm || '-')]
   ];
   $('#tdBody').innerHTML = '<div class="dl2">' + rows.map(([k, v]) => '<div class="k">' + k + '</div><div class="v">' + v + '</div>').join('') + '</div>';
+  $('#tdWa').hidden = roleName() !== 'Owner'; // tombol reminder WhatsApp hanya untuk Owner
   $('#tdmdl').hidden = false;
 }
 const closeTD = () => { $('#tdmdl').hidden = true; tdId = null };
 $('#tdClose').onclick = closeTD;
 $('#tdmdl').addEventListener('mousedown', e => { if (e.target === $('#tdmdl')) closeTD() });
 $('#tdEdit').onclick = () => { const id = tdId; closeTD(); if (id) openTEdit(id) };
+
+/* ---------- notifikasi due date (khusus role Retur & Owner) ---------- */
+// H-2 kuning, H-1 merah, hari H merah pekat. Retur yang sudah Done / Failed tidak diingatkan. Klik notifikasi -> popup detail retur tersebut.
+const ntHide = new Set(); // notifikasi yang ditutup (silang) sampai halaman dimuat ulang
+const dueDiff = r => { // selisih hari (WIB) antara due date dan hari ini; null bila bukan due date bertanggal
+  if (r.dueT !== 'Tanggal' || !r.due) return null;
+  const t = dayWIB(Date.now());
+  return Math.round((Date.UTC(+r.due.slice(0, 4), +r.due.slice(5, 7) - 1, +r.due.slice(8, 10)) - Date.UTC(+t.slice(0, 4), +t.slice(5, 7) - 1, +t.slice(8, 10))) / 864e5);
+};
+function renderNotif() {
+  const box = $('#notif'); if (!box) return;
+  const rl = roleName();
+  if (rl !== 'Retur' && rl !== 'Owner') { box.innerHTML = ''; return }
+  const L = returns.filter(r => r.status !== 'Done' && r.status !== 'Failed').map(r => ({ r, d: dueDiff(r) }))
+    .filter(x => x.d !== null && x.d >= 0 && x.d <= 2 && !ntHide.has(x.r.id + ':' + x.d)).sort((a, b) => a.d - b.d || a.r.ts - b.r.ts);
+  box.innerHTML = L.map(({ r, d }) => `<div class="nt ${d === 2 ? 'y' : d === 1 ? 'r' : 'rr'}" data-nt="${r.id}"><div class="ntt"><b>${d === 0 ? 'HARI H · Deadline hari ini' : 'H-' + d + ' · Deadline ' + (d === 1 ? 'besok' : '2 hari lagi')}</b><span>${esc(r.toko || '-')} · Resi ${esc(r.resi)} · ID ${esc(r.oid)} · ${esc(dueTxt(r))}</span></div><button class="ntx" data-ntx="${r.id}:${d}" type="button" aria-label="Tutup notifikasi">×</button></div>`).join('');
+}
+$('#notif').addEventListener('click', e => {
+  const x = e.target.closest('[data-ntx]'); if (x) { ntHide.add(x.dataset.ntx); return renderNotif() }
+  const n = e.target.closest('[data-nt]'); if (n) openTDetail(n.dataset.nt);
+});
+
+/* ---------- reminder WhatsApp (khusus Owner) ---------- */
+let waNums = store.get('pp_wa', []); // nomor yang pernah dipakai, terbaru di depan; tersinkron lewat dokumen settings/wa bila memakai Firebase
+let waId = null;
+const waNorm = s => { let d = String(s || '').replace(/\D/g, ''); if (d.startsWith('00')) d = d.slice(2); if (d.startsWith('0')) d = '62' + d.slice(1); else if (d.startsWith('8')) d = '62' + d; return d };
+function waSave(list) { waNums = list.slice(0, 10); store.set('pp_wa', waNums); if (db) commit([['settings', 'set', { id: 'wa', nums: waNums, upd: Date.now() }]]) }
+function waChips() {
+  $('#waChips').innerHTML = waNums.length ? '<div class="hint2">Nomor yang pernah dipakai (klik untuk memakai):</div><div class="wch">' + waNums.map(n => `<span class="wc"><button type="button" data-wan="${n}">+${n}</button><button type="button" class="wcx" data-wadel="${n}" aria-label="Hapus nomor">×</button></span>`).join('') + '</div>' : '';
+  $('#waList').innerHTML = waNums.map(n => `<option value="+${n}">`).join('');
+}
+const waText = r => ['Reminder Banding', '', 'Nama Toko : ' + (r.toko || '-'), 'ID Pesanan : ' + r.oid, 'No. Tiket Pelaporan : ' + (r.tiket || '-'), 'No Resi : ' + r.resi, 'Deskripsi : ' + (r.desk || '-'), 'Deadline : ' + dueTxt(r)].join('\n');
+$('#tdWa').onclick = () => {
+  if (roleName() !== 'Owner') return;
+  const r = returns.find(x => x.id === tdId); if (!r) return;
+  waId = r.id; $('#waNum').value = ''; msg('#waMsg', ''); waChips(); $('#wamdl').hidden = false; $('#waNum').focus();
+};
+const closeWa = () => { $('#wamdl').hidden = true; waId = null };
+$('#waCancel').onclick = closeWa;
+$('#wamdl').addEventListener('mousedown', e => { if (e.target === $('#wamdl')) closeWa() });
+$('#waChips').addEventListener('click', e => {
+  const n = e.target.closest('[data-wan]'), d = e.target.closest('[data-wadel]');
+  if (n) $('#waNum').value = '+' + n.dataset.wan;
+  if (d) { waSave(waNums.filter(x => x !== d.dataset.wadel)); waChips() }
+});
+function waGo() {
+  if (roleName() !== 'Owner') return;
+  const r = returns.find(x => x.id === waId); if (!r) return closeWa();
+  const n = waNorm($('#waNum').value);
+  if (!/^\d{9,15}$/.test(n)) return msg('#waMsg', 'Masukkan nomor WhatsApp yang benar, mis. 0812xxxxxxxx atau +62812xxxxxxxx.');
+  waSave([n].concat(waNums.filter(x => x !== n)));
+  window.open('https://wa.me/' + n + '?text=' + encodeURIComponent(waText(r)), '_blank');
+  closeWa();
+}
+$('#waOk').onclick = waGo;
+$('#waNum').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); waGo() } });
 // export Laporan Retur
 function bdHead(rows) {
   const f = dtVal('#bdFrom'), t = dtVal('#bdTo', true);
@@ -1610,7 +1669,7 @@ const dayCheck = () => {
   if (d !== curDay) { // ganti hari: filter tanggal yang masih di "hari kemarin" ikut pindah ke hari baru
     if ($('#xFromD').value === curDay) $('#xFromD').value = d;
     if ($('#xToD').value === curDay) $('#xToD').value = d;
-    curDay = d; renderReqs(); refreshBlocks(); if ($('#dl').classList.contains('on')) renderDl();
+    curDay = d; renderReqs(); refreshBlocks(); renderNotif(); if ($('#dl').classList.contains('on')) renderDl();
   }
 };
 setInterval(dayCheck, 30000); document.addEventListener('visibilitychange', dayCheck);
@@ -1709,7 +1768,7 @@ function applyRole() {
   $$('nav button[data-t]').forEach(b => b.style.display = can(b.dataset.t) ? '' : 'none');
   $('#ngRetur').style.display = can('rt') || can('bd') ? '' : 'none';
   $('#lockBtn').style.display = can('ow') ? '' : 'none';
-  renderWho();
+  renderWho(); renderNotif();
   const cur = ($('.sec.on') || {}).id;
   if (!cur || !can(cur)) { const f = firstPage(); if (f) go(f); else { $$('.sec').forEach(x => x.classList.remove('on')); $('#pt').textContent = 'Tidak ada akses'; $('#ps').textContent = 'Role kamu belum diberi halaman. Hubungi pemilik.' } }
 }
