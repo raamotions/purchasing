@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Purchasing Barang</title>
-<link rel="stylesheet" href="style.css?v=31">
+<link rel="stylesheet" href="style.css?v=34">
 </head>
 <body>
 
@@ -205,13 +205,21 @@
       </div>
       <div class="foot"><p class="msg" id="tMsg"></p><button class="btn" id="tSubmit" type="button">Submit</button></div>
     </div>
+    <div class="card">
+      <h3>Input Massal Retur (Excel / CSV)</h3>
+      <p class="hint">Kolom: <code>Resi</code>, <code>ID Pesanan</code>, <code>No Tiket</code>, <code>Marketplace</code>, <code>Due Date</code>, <code>Status</code>, <code>Nama Toko</code>, <code>Deskripsi</code>, <code>Keterangan</code>. Satu baris per retur. <b>Resi</b> dan <b>ID Pesanan</b> wajib; kolom lain boleh kosong. <b>Due Date</b>: isi tanggal (mis. 2026-11-20 atau 20-11-2026) atau kosongkan / tulis <code>Cek Berkala</code>. <b>Status</b>: On Progress, Failed, Done, atau Review (kosong = On Progress). <b>Marketplace</b>: Shopee, Tiktokshop, atau Lazada. Baris yang resi + ID pesanannya sudah ada akan dilewati.</p>
+      <button class="btn ghost sm" id="tTpl" type="button">Unduh Template CSV</button>
+      <label>Pilih file</label>
+      <input type="file" id="tImpFile" accept=".xlsx,.xls,.csv">
+      <div class="msg" id="tImpMsg" style="margin-top:12px"></div>
+    </div>
   </section>
 
   <!-- LAPORAN BANDING -->
   <section class="sec" id="bd">
     <div class="card">
       <h3>Laporan Retur</h3>
-      <p class="hint">Semua data dari form Retur. Hari ini tampil di atas; hari sebelumnya masuk Riwayat per tahun &amp; bulan &amp; tanggal. Klik Edit untuk mengubah data; mengubah tanggal / jam input wajib memakai kode 6 digit.</p>
+      <p class="hint">Semua data dari form Retur. Hari ini tampil di atas; hari sebelumnya masuk Riwayat per tahun &amp; bulan &amp; tanggal. Klik salah satu baris untuk melihat detail lengkapnya (pilih Edit atau Keluar), atau langsung klik tombol Edit di baris; mengubah tanggal / jam input wajib memakai kode 6 digit.</p>
       <div class="exf">
         <div><label>Dari tanggal &amp; jam input</label><div class="dt"><input type="date" id="bdFromD"><input class="tm24" id="bdFromT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
         <div><label>Sampai tanggal &amp; jam input</label><div class="dt"><input type="date" id="bdToD"><input class="tm24" id="bdToT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
@@ -378,6 +386,13 @@
   <div class="acts"><button class="btn ghost" id="lCancel" type="button">Batal</button><button class="btn" id="lSave" type="button">Simpan</button></div>
 </div></div>
 
+<!-- MODAL DETAIL LAPORAN RETUR -->
+<div class="modal" id="tdmdl" hidden><div class="box dbox">
+  <h3>Detail Retur</h3>
+  <div id="tdBody"></div>
+  <div class="acts"><button class="btn ghost" id="tdClose" type="button">Keluar</button><button class="btn" id="tdEdit" type="button">Edit</button></div>
+</div></div>
+
 <!-- MODAL EDIT LAPORAN BANDING -->
 <div class="modal" id="tmdl" hidden><div class="box">
   <h3>Edit Laporan Retur</h3>
@@ -449,12 +464,20 @@
 
 <div id="lb" hidden><img alt=""></div>
 
+<!-- POPUP WELCOME (muncul saat web dibuka; klik di mana saja / tanda silang untuk menutup) -->
+<div class="wlc" id="wlc" role="dialog" aria-label="Welcome"><div class="wbox">
+  <button class="wx" id="wlcX" type="button" aria-label="Tutup">×</button>
+  <h2>Welcome</h2>
+  <p>Dimohon untuk sering merefresh web<br>agar update terbaru selalu terbaca</p>
+  <p class="wt">Terimakasih ~ Online</p>
+</div></div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
-<script src="script.js?v=50"></script>
+<script src="script.js?v=53"></script>
 </body>
 </html>

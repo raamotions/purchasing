@@ -1262,6 +1262,71 @@ $('#tSubmit').onclick = () => {
   $('#tDueT').value = 'Cek Berkala'; $('#tStatus').value = 'On Progress'; $('#tMp').value = ''; showDue('#tDueT', '#tDueW', '#tDue');
   msg('#tMsg', 'Tersimpan: ' + resi + ' sudah masuk ke menu Laporan Retur.', true); renderBd();
 };
+/* ---------- input massal retur (Excel / CSV) ---------- */
+$('#tTpl').onclick = () => {
+  const csv = 'Resi,ID Pesanan,No Tiket,Marketplace,Due Date,Status,Nama Toko,Deskripsi,Keterangan\n'
+    + 'SPXID0001,2611ABCDE1,,Shopee,2026-11-20,On Progress,Toko Contoh,Barang rusak,Menunggu konfirmasi seller\n'
+    + 'JNT0002,2611ABCDE2,TKT-123,Tiktokshop,Cek Berkala,Review,Toko Contoh,,\n';
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' })); a.download = 'template-retur.csv'; a.click();
+};
+const impKey = (o, ...names) => { for (const n of names) if (o[n] !== undefined && String(o[n]).trim() !== '') return o[n]; return '' };
+const impStr = v => v instanceof Date ? ymd(v.getTime() + 12 * 36e5) : String(v == null ? '' : v).trim();
+function impDue(v) { // -> {dueT, due} atau null bila format tidak dikenali
+  if (v instanceof Date) return { dueT: 'Tanggal', due: ymd(v.getTime() + 12 * 36e5) };
+  if (typeof v === 'number') { const d = new Date(Math.round((v - 25569) * 864e5)); return { dueT: 'Tanggal', due: d.toISOString().slice(0, 10) } } // nomor seri Excel
+  const s = String(v == null ? '' : v).trim();
+  if (!s || /^cek\s*berkala$/i.test(s)) return { dueT: 'Cek Berkala', due: '' };
+  let m = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+  if (!m) { const k = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/); if (k) m = [0, k[3], k[2], k[1]] }
+  if (!m) return null;
+  const y = +m[1], mo = +m[2], d = +m[3], t = new Date(Date.UTC(y, mo - 1, d));
+  if (t.getUTCFullYear() !== y || t.getUTCMonth() !== mo - 1 || t.getUTCDate() !== d) return null;
+  return { dueT: 'Tanggal', due: y + '-' + p2(mo) + '-' + p2(d) };
+}
+$('#tImpFile').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  if (!window.XLSX) { e.target.value = ''; return msg('#tImpMsg', 'Library Excel gagal dimuat. Pastikan terhubung ke internet.') }
+  const rd = new FileReader();
+  rd.onload = () => {
+    try {
+      const wb = XLSX.read(rd.result, { type: 'array', cellDates: true });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+      const have = new Set(returns.map(x => x.resi + '|' + x.oid)), now = Date.now(), recs = [], bad = [];
+      let dup = 0, empty = 0;
+      rows.forEach((row, i) => {
+        const k = {}; Object.keys(row).forEach(x => k[x.trim().toLowerCase()] = row[x]);
+        const resi = UC(impStr(impKey(k, 'resi', 'resi pengembalian', 'resi pengiriman'))), oid = UC(impStr(impKey(k, 'id pesanan', 'oid', 'order id', 'id order')));
+        const tiket = UC(impStr(impKey(k, 'no tiket', 'no tiket pelaporan', 'tiket')));
+        const mpRaw = impStr(impKey(k, 'marketplace')), stRaw = impStr(impKey(k, 'status'));
+        const dd = impDue(impKey(k, 'due date', 'due', 'duedate'));
+        const toko = impStr(impKey(k, 'nama toko', 'toko')).slice(0, 60), desk = impStr(impKey(k, 'deskripsi')), ket = impStr(impKey(k, 'keterangan'));
+        if (!resi && !oid && !tiket && !desk && !ket && !toko) { empty++; return } // baris kosong
+        const ln = 'baris ' + (i + 2);
+        if (!resi || !oid) return bad.push(ln + ': Resi / ID Pesanan kosong');
+        const mp = mpRaw ? MPS.find(x => x.toLowerCase() === mpRaw.toLowerCase().replace(/\s+/g, '')) : '';
+        if (mpRaw && !mp) return bad.push(ln + ': marketplace "' + mpRaw + '" tidak dikenal');
+        const st = stRaw ? STS.find(x => x.toLowerCase() === stRaw.toLowerCase().replace(/\s+/g, ' ')) : 'On Progress';
+        if (!st) return bad.push(ln + ': status "' + stRaw + '" tidak dikenal');
+        if (!dd) return bad.push(ln + ': due date tidak terbaca (pakai YYYY-MM-DD atau DD-MM-YYYY)');
+        const key = resi + '|' + oid; if (have.has(key)) { dup++; return } have.add(key);
+        recs.push({ id: uid(), ts: now + recs.length, resi, oid, tiket, desk, dueT: dd.dueT, due: dd.due, status: st, toko, mp: mp || '', ket, adm: me ? me.name : '' });
+      });
+      if (!recs.length && !rows.length) msg('#tImpMsg', 'File kosong atau kolom tidak terbaca. Gunakan template CSV.');
+      else {
+        if (recs.length) { // mode lokal menyimpan array `returns`, jadi perbarui dulu baru commit
+          returns = recs.slice().reverse().concat(returns);
+          if (!commit(recs.map(r => ['returns', 'set', r]))) { e.target.value = ''; return msg('#tImpMsg', 'Penyimpanan penuh.') }
+          renderBd();
+        }
+        const extra = (dup ? ', ' + dup + ' dilewati (resi + ID pesanan sudah ada)' : '') + (bad.length ? ', ' + bad.length + ' baris ditolak' : '');
+        msg('#tImpMsg', recs.length + ' retur berhasil diimpor ke Laporan Retur' + extra + '.' + (bad.length ? ' ' + bad.slice(0, 4).join('; ') + (bad.length > 4 ? '; dst.' : '') : ''), recs.length > 0 && !bad.length);
+      }
+    } catch (err) { console.error(err); msg('#tImpMsg', 'File tidak bisa dibaca. Gunakan format .xlsx atau .csv.') }
+    e.target.value = '';
+  };
+  rd.readAsArrayBuffer(f);
+};
 // Laporan Retur
 const BDF = ['#bdFromD', '#bdFromT', '#bdToD', '#bdToT', '#bdSt', '#bdMp', '#bdDue', '#bdAdm', '#bdToko', '#bdQ'];
 function bdFiltered() {
@@ -1270,7 +1335,7 @@ function bdFiltered() {
   return returns.filter(r => (f === null || r.ts >= f) && (t === null || r.ts <= t) && (!st || r.status === st) && (!mp || r.mp === mp) && (!du || r.dueT === du) && (!ad || r.adm === ad)
     && (!tk || (r.toko || '').toLowerCase().includes(tk)) && (!q || [r.resi, r.oid, r.tiket, r.desk, r.ket].join(' ').toLowerCase().includes(q))).sort((x, y) => y.ts - x.ts);
 }
-const bdTbl = list => `<div class="tw"><table style="min-width:1300px"><thead><tr><th>No</th><th>Tanggal Input</th><th>Resi Pengembalian</th><th>ID Pesanan</th><th>No Tiket</th><th>Deskripsi</th><th>Due Date</th><th>Status</th><th>Nama Toko</th><th>Marketplace</th><th>Keterangan</th><th>Admin</th><th></th></tr></thead><tbody>${list.map((r, i) => `<tr>
+const bdTbl = list => `<div class="tw"><table style="min-width:1300px"><thead><tr><th>No</th><th>Tanggal Input</th><th>Resi Pengembalian</th><th>ID Pesanan</th><th>No Tiket</th><th>Deskripsi</th><th>Due Date</th><th>Status</th><th>Nama Toko</th><th>Marketplace</th><th>Keterangan</th><th>Admin</th><th></th></tr></thead><tbody>${list.map((r, i) => `<tr data-bdrow="${r.id}" title="Klik untuk melihat detail">
   <td>${i + 1}</td><td class="nw">${fmt(r.ts)}${tm(r.ts)}</td><td><b>${esc(r.resi)}</b></td><td>${esc(r.oid)}</td><td>${esc(r.tiket || '-')}</td><td><div class="wrapc">${esc(r.desk || '-')}</div></td>
   <td class="nw${dueLate(r) ? ' late' : ''}">${esc(dueTxt(r))}${dueLate(r) ? '<div class="tm late">lewat jatuh tempo</div>' : ''}</td><td><span class="sb ${stCls(r.status)}">${esc(r.status)}</span></td><td>${esc(r.toko || '-')}</td>
   <td>${r.mp ? '<span class="tag">' + esc(r.mp) + '</span>' : '-'}</td><td><div class="wrapc">${esc(r.ket || '-')}</div></td><td>${esc(r.adm || '-')}</td>
@@ -1330,7 +1395,28 @@ $('#bdGrp').addEventListener('click', e => {
       returns = returns.filter(x => x.id !== id); commit([['returns', 'del', id], lop]); renderBd();
     });
   }
+  const row = e.target.closest('tr[data-bdrow]'); // klik baris (di luar tombol) -> popup detail
+  if (row && !e.target.closest('button')) openTDetail(row.dataset.bdrow);
 });
+// popup detail retur: tampilan detail semua kolom, pilihan Edit atau Keluar
+let tdId = null;
+function openTDetail(id) {
+  const r = returns.find(x => x.id === id); if (!r) return; tdId = id;
+  const late = dueLate(r);
+  const rows = [
+    ['Tanggal Input', esc(tsFmt(r.ts))], ['Resi Pengembalian', '<b>' + esc(r.resi) + '</b>'], ['ID Pesanan', esc(r.oid)], ['No Tiket', esc(r.tiket || '-')],
+    ['Marketplace', r.mp ? '<span class="tag">' + esc(r.mp) + '</span>' : '-'], ['Nama Toko', esc(r.toko || '-')],
+    ['Due Date', '<span class="' + (late ? 'late' : '') + '">' + esc(dueTxt(r)) + (late ? ' (lewat jatuh tempo)' : '') + '</span>'],
+    ['Status', '<span class="sb ' + stCls(r.status) + '">' + esc(r.status) + '</span>'],
+    ['Deskripsi', esc(r.desk || '-')], ['Keterangan', esc(r.ket || '-')], ['Admin', esc(r.adm || '-')]
+  ];
+  $('#tdBody').innerHTML = '<div class="dl2">' + rows.map(([k, v]) => '<div class="k">' + k + '</div><div class="v">' + v + '</div>').join('') + '</div>';
+  $('#tdmdl').hidden = false;
+}
+const closeTD = () => { $('#tdmdl').hidden = true; tdId = null };
+$('#tdClose').onclick = closeTD;
+$('#tdmdl').addEventListener('mousedown', e => { if (e.target === $('#tdmdl')) closeTD() });
+$('#tdEdit').onclick = () => { const id = tdId; closeTD(); if (id) openTEdit(id) };
 // export Laporan Retur
 function bdHead(rows) {
   const f = dtVal('#bdFrom'), t = dtVal('#bdTo', true);
@@ -1924,3 +2010,5 @@ pgVarUI(); addBlock(); startSync();
 if (!db) ensureSuper(); // mode lokal
 if (!db && admFixN) { commit(); store.set('pp_admins', Object.fromEntries(admins.map(a => [a.username, a]))) } // simpan nama admin yang sudah dikapitalkan (mode lokal)
 applyRole();
+/* popup welcome: tampil saat web dibuka; klik di mana saja (atau tanda silang) untuk menutup */
+$('#wlc').addEventListener('click', () => { $('#wlc').hidden = true });
