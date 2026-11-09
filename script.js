@@ -1367,11 +1367,11 @@ $('#tImpFile').onchange = e => {
   rd.readAsArrayBuffer(f);
 };
 // Laporan Retur
-const BDF = ['#bdFromD', '#bdFromT', '#bdToD', '#bdToT', '#bdSt', '#bdMp', '#bdDue', '#bdAdm', '#bdToko', '#bdQ'];
+const BDF = ['#bdFromD', '#bdFromT', '#bdToD', '#bdToT', '#bdSt', '#bdMp', '#bdDue', '#bdDueFrom', '#bdDueTo', '#bdAdm', '#bdToko', '#bdQ'];
 function bdFiltered() {
-  const f = dtv(dtVal('#bdFrom')), t = dtv(dtVal('#bdTo', true), true), st = $('#bdSt').value, mp = $('#bdMp').value, du = $('#bdDue').value, ad = $('#bdAdm').value,
+  const f = dtv(dtVal('#bdFrom')), t = dtv(dtVal('#bdTo', true), true), st = $('#bdSt').value, mp = $('#bdMp').value, du = $('#bdDue').value, df = $('#bdDueFrom').value, dto = $('#bdDueTo').value, ad = $('#bdAdm').value,
     tk = $('#bdToko').value.trim().toLowerCase(), q = $('#bdQ').value.trim().toLowerCase();
-  return returns.filter(r => (f === null || r.ts >= f) && (t === null || r.ts <= t) && (!st || r.status === st) && (!mp || r.mp === mp) && (!du || r.dueT === du) && (!ad || r.adm === ad)
+  return returns.filter(r => (f === null || r.ts >= f) && (t === null || r.ts <= t) && (!st || r.status === st) && (!mp || r.mp === mp) && (!du || r.dueT === du) && ((!df && !dto) || (r.dueT === 'Tanggal' && r.due && (!df || r.due >= df) && (!dto || r.due <= dto))) && (!ad || r.adm === ad)
     && (!tk || (r.toko || '').toLowerCase().includes(tk)) && (!q || [r.resi, r.oid, r.tiket, r.desk, r.ket].join(' ').toLowerCase().includes(q))).sort((x, y) => y.ts - x.ts);
 }
 const bdTbl = list => `<div class="tw"><table style="min-width:1300px"><thead><tr><th>No</th><th>Tanggal Input</th><th>Resi Pengembalian</th><th>ID Pesanan</th><th>No Tiket</th><th>Deskripsi</th><th>Due Date</th><th>Status</th><th>Nama Toko</th><th>Marketplace</th><th>Keterangan</th><th>Admin</th><th></th></tr></thead><tbody>${list.map((r, i) => `<tr data-bdrow="${r.id}" title="Klik untuk melihat detail">
@@ -1397,6 +1397,37 @@ function renderBd() {
 }
 BDF.forEach(x => { $(x).addEventListener('input', renderBd); $(x).addEventListener('change', renderBd) });
 $('#bdReset').onclick = () => { BDF.forEach(x => $(x).value = ''); [$('#bdQ'), $('#bdToko')].forEach(i => i._upd && i._upd()); renderBd() };
+/* saran ketikan: pencarian (resi / ID pesanan / tiket / deskripsi / keterangan) dan nama toko */
+function bdSuggest(inp, items) { // items(q) -> [{l: label, t: teks}]
+  const l = document.createElement('div'); l.className = 'list sug'; inp.parentNode.appendChild(l);
+  let cur = [];
+  const show = () => {
+    cur = items(inp.value.trim().toLowerCase());
+    l.innerHTML = cur.map((x, i) => `<div data-i="${i}">${x.l ? '<span class="tag sl">' + esc(x.l) + '</span>' : ''}${esc(x.t.length > 70 ? x.t.slice(0, 70) + '…' : x.t)}</div>`).join('');
+    l.classList.toggle('open', cur.length > 0);
+  };
+  inp.addEventListener('input', show); inp.addEventListener('focus', show);
+  inp.addEventListener('blur', () => setTimeout(() => l.classList.remove('open'), 150));
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === 'Escape') l.classList.remove('open') });
+  l.addEventListener('mousedown', e => e.preventDefault()); // memilih saran tidak menghilangkan fokus
+  l.addEventListener('click', e => {
+    const d = e.target.closest('[data-i]'); if (!d) return;
+    inp.value = cur[+d.dataset.i].t; inp.dispatchEvent(new Event('input', { bubbles: true })); l.classList.remove('open');
+  });
+}
+function bdQItems(q) {
+  if (!q) return [];
+  const F = [['resi', 'Resi'], ['oid', 'ID Pesanan'], ['tiket', 'Tiket'], ['desk', 'Deskripsi'], ['ket', 'Keterangan']], out = [], seen = new Set();
+  for (const r of returns.slice().sort((a, b) => b.ts - a.ts)) {
+    for (const [k, lb] of F) { const v = String(r[k] || ''); if (v && v.toLowerCase().includes(q) && !seen.has(lb + v)) { seen.add(lb + v); out.push({ l: lb, t: v }) } }
+    if (out.length >= 10) break;
+  }
+  return out.slice(0, 10);
+}
+function bdTokoItems(q) {
+  const m = new Map(); returns.forEach(r => { const t = (r.toko || '').trim(); if (t && !m.has(t.toLowerCase())) m.set(t.toLowerCase(), t) });
+  return [...m.values()].filter(t => t.toLowerCase().includes(q)).sort((a, b) => a.localeCompare(b)).slice(0, 30).map(t => ({ l: '', t }));
+}
 // edit & hapus
 let tEd = null;
 function openTEdit(id) {
@@ -1701,6 +1732,7 @@ $('#impFile').onchange = e => {
 /* ---------- mulai ---------- */
 [$('#pSearch'), $('#fqProd'), $('#fqSj'), $('#xProd'), $('#dlFile'), $('#rwQ'), $('#bdQ'), $('#bdToko')].forEach(addClear);
 $$('.tm24').forEach(time24);
+bdSuggest($('#bdQ'), bdQItems); bdSuggest($('#bdToko'), bdTokoItems);
 let curDay = dayWIB(Date.now());
 const dayCheck = () => {
   const d = dayWIB(Date.now());

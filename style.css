@@ -274,6 +274,9 @@ input[type=checkbox]{width:18px;height:18px;padding:0;accent-color:var(--pri);cu
 #tmdl{z-index:45}
 #tdmdl{z-index:44}
 #wamdl{z-index:46}
+.bds{margin:14px 0 4px}
+.bds label{margin:0 0 6px}
+.sug .sl{margin-right:8px;font-size:11px}
 .btn.wa{background:#25a244}
 /* notifikasi due date mengambang */
 .notif{position:fixed;top:10px;left:50%;transform:translateX(-50%);width:min(580px,calc(100% - 24px));z-index:35;display:flex;flex-direction:column;gap:8px;max-height:45vh;overflow:auto;pointer-events:none}

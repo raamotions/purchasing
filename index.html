@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Purchasing Barang</title>
-<link rel="stylesheet" href="style.css?v=36">
+<link rel="stylesheet" href="style.css?v=37">
 </head>
 <body>
 
@@ -237,12 +237,14 @@
         <div><label>Sampai tanggal &amp; jam input</label><div class="dt"><input type="date" id="bdToD"><input class="tm24" id="bdToT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
         <div><label>Status</label><select id="bdSt"><option value="">Semua</option><option>On Progress</option><option>Failed</option><option>Done</option><option>Review</option></select></div>
         <div><label>Marketplace</label><select id="bdMp"><option value="">Semua</option><option>Shopee</option><option>Tiktokshop</option><option>Lazada</option></select></div>
-        <div><label>Due Date</label><select id="bdDue"><option value="">Semua</option><option>Cek Berkala</option><option>Tanggal</option></select></div>
+        <div><label>Jenis Due Date</label><select id="bdDue"><option value="">Semua</option><option>Cek Berkala</option><option>Tanggal</option></select></div>
+        <div><label>Due date dari tanggal</label><input type="date" id="bdDueFrom"></div>
+        <div><label>Due date sampai tanggal</label><input type="date" id="bdDueTo"></div>
         <div><label>Nama Admin</label><select id="bdAdm" data-adm="Semua"></select></div>
         <div><label>Nama toko</label><input id="bdToko" placeholder="Cari nama toko" autocomplete="off"></div>
-        <div><label>Cari</label><input id="bdQ" placeholder="Resi / ID pesanan / tiket / deskripsi" autocomplete="off"></div>
         <div class="xb"><button class="btn ghost sm" id="bdReset" type="button">Reset filter</button><button class="btn ghost sm" id="bdXls" type="button">Export Excel</button><button class="btn ghost sm" id="bdPdf" type="button">Export PDF</button><button class="btn ghost sm" data-rwgo="RETUR" type="button">Riwayat</button></div>
       </div>
+      <div class="bds"><label for="bdQ">Cari</label><input id="bdQ" placeholder="Cari resi / ID pesanan / no tiket / deskripsi / keterangan..." autocomplete="off"></div>
       <div id="bdGrp"></div>
     </div>
   </section>
@@ -501,6 +503,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
-<script src="script.js?v=55"></script>
+<script src="script.js?v=56"></script>
 </body>
 </html>
