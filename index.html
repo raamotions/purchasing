@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Purchasing Barang</title>
-<link rel="stylesheet" href="style.css?v=37">
+<link rel="stylesheet" href="style.css?v=41">
 </head>
 <body>
 
@@ -20,8 +20,8 @@
       <button data-t="pu">Purchase</button>
       <button data-t="dl">Download</button>
       <button data-t="rw">Riwayat</button>
-      <div class="ng" id="ngRetur"><button type="button" id="ngBtn" aria-haspopup="true">Retur ▾</button><div class="sub"><button data-t="rt">Input Retur</button><button data-t="bd">Laporan Retur</button></div></div>
-      <button data-t="pr">Produk</button>
+      <div class="ng" id="ngRetur" data-p="rt,bd,br"><button type="button" aria-haspopup="true">Retur ▾</button><div class="sub"><button data-t="rt">Input Retur</button><button data-t="bd">Laporan Retur</button><button data-t="br">Barang Retur</button></div></div>
+      <div class="ng" id="ngProduk" data-p="pr,gd"><button type="button" aria-haspopup="true">Produk ▾</button><div class="sub"><button data-t="pr">Database Produk</button><button data-t="gd">Barang Gudang</button></div></div>
     </nav>
     <button id="burger" aria-label="Menu" hidden>☰</button>
   </div>
@@ -62,6 +62,7 @@
         </div>
         <div class="f"><label>Asal Barang</label><select id="pgSrc" data-src="Pilih asal barang"></select></div>
       </div>
+      <div class="gdhint" id="pgGd" hidden></div>
       <div class="foot"><div class="msg" id="pgMsg"></div><button class="btn" id="pgSubmit">Submit</button></div>
     </div>
     <div class="card">
@@ -164,7 +165,7 @@
         <div id="owToW" hidden><label>Sampai tanggal</label><input type="date" id="owTo"></div>
         <div><label>Asal Barang</label><select id="owSrc" data-src="Semua"></select></div>
       </div>
-      <div class="otabs"><button data-o="sum" class="on" type="button">Ringkasan</button><button data-o="prod" type="button">Produk</button><button data-o="adm" type="button">Admin &amp; Akses</button><button data-o="rec" type="button">Rekomendasi</button><button data-o="role" type="button">Role &amp; Akses</button></div>
+      <div class="otabs"><button data-o="sum" class="on" type="button">Ringkasan</button><button data-o="chart" type="button">Grafik</button><button data-o="prod" type="button">Produk</button><button data-o="adm" type="button">Admin &amp; Akses</button><button data-o="rec" type="button">Rekomendasi</button><button data-o="role" type="button">Role &amp; Akses</button></div>
     </div>
     <div id="owBody"></div>
   </section>
@@ -173,11 +174,11 @@
   <section class="sec" id="rw">
     <div class="card">
       <h3>Riwayat Perubahan &amp; Penghapusan</h3>
-      <p class="hint">Setiap data Pengajuan, Purchase, dan Download yang diedit atau dihapus tercatat di sini. Data lama bisa <b>Dipulihkan</b> ke kondisi sebelum diedit / dihapus, atau riwayatnya dihapus permanen. Keduanya wajib memakai kode 6 digit.</p>
+      <p class="hint">Setiap data Pengajuan, Purchase, Download, Retur, Upload Stok, dan Barang Gudang yang diedit atau dihapus tercatat di sini. Data lama bisa <b>Dipulihkan</b> ke kondisi sebelum diedit / dihapus, atau riwayatnya dihapus permanen. Keduanya wajib memakai kode 6 digit.</p>
       <div class="exf">
         <div><label>Dari tanggal &amp; jam</label><div class="dt"><input type="date" id="rwFromD"><input class="tm24" id="rwFromT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
         <div><label>Sampai tanggal &amp; jam</label><div class="dt"><input type="date" id="rwToD"><input class="tm24" id="rwToT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
-        <div><label>Menu</label><select id="rwMenu"><option value="">Semua</option><option value="PENGAJUAN">Pengajuan</option><option value="PURCHASE">Purchase</option><option value="DOWNLOAD">Download</option><option value="RETUR">Retur</option></select></div>
+        <div><label>Menu</label><select id="rwMenu"><option value="">Semua</option><option value="PENGAJUAN">Pengajuan</option><option value="PURCHASE">Purchase</option><option value="DOWNLOAD">Download</option><option value="RETUR">Retur</option><option value="UPLOAD STOK">Upload Stok</option><option value="BARANG GUDANG">Barang Gudang</option></select></div>
         <div><label>Aksi</label><select id="rwAct"><option value="">Semua</option><option value="edit">Diedit</option><option value="hapus">Dihapus</option></select></div>
         <div><label>Nama Admin</label><select id="rwAdm" data-adm="Semua"></select></div>
         <div><label>Status</label><select id="rwSt"><option value="">Semua</option><option value="aktif">Belum dipulihkan</option><option value="pulih">Sudah dipulihkan</option></select></div>
@@ -250,8 +251,88 @@
   </section>
 
   <!-- PRODUK -->
+  <!-- BARANG RETUR (form) -->
+  <section class="sec" id="br">
+    <div class="card">
+      <h3>Form Barang Retur</h3>
+      <p class="hint">Barang retur / cancel yang kembali ke gudang. Kondisi <b>Baik / Kurang</b>: masuk ke Barang Retur, <b>Barang Gudang</b>, dan <b>Database Produk</b>. Kondisi <b>Rusak / Lecet</b>: hanya masuk ke Barang Retur.</p>
+      <label>Nama Barang</label>
+      <input id="brName" list="brNames" placeholder="Nama barang" autocomplete="off"><datalist id="brNames"></datalist>
+      <label>Varian <span style="font-weight:400">(warna, kosongkan jika tidak ada)</span></label>
+      <input id="brVar" list="brVars" placeholder="Varian / warna" autocomplete="off"><datalist id="brVars"></datalist>
+      <label>Qty (pcs)</label>
+      <input type="number" id="brQty" min="1" inputmode="numeric" placeholder="Jumlah">
+      <label>Kondisi Produk</label>
+      <select id="brCond"><option value="">Pilih kondisi</option><option>Baik</option><option>Kurang</option><option>Rusak</option><option>Lecet</option></select>
+      <div class="hint2" id="brCondHint"></div>
+      <label>Keterangan <span style="font-weight:400">(opsional)</span></label>
+      <textarea id="brKet" rows="3" placeholder="Catatan tambahan, mis. alasan retur / detail kerusakan"></textarea>
+      <div class="foot"><p class="msg" id="brMsg"></p><button class="btn" id="brSubmit" type="button">Submit</button></div>
+    </div>
+
+    <div class="card">
+      <h3>Barang Retur Bermasalah</h3>
+      <p class="hint">Semua barang retur yang sudah diinput, bisa difilter per tanggal, kondisi, admin, atau dicari. Pilih kondisi <b>Rusak</b> / <b>Lecet</b> untuk melihat barang bermasalah (tidak masuk Barang Gudang). Edit atau Hapus akan ditolak jika membuat stok gudang minus karena sebagian sudah dikeluarkan. Data lama tanpa kondisi dianggap layak pakai (Baik).</p>
+      <div class="exf">
+        <div><label>Dari tanggal &amp; jam</label><div class="dt"><input type="date" id="brFromD"><input class="tm24" id="brFromT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
+        <div><label>Sampai tanggal &amp; jam</label><div class="dt"><input type="date" id="brToD"><input class="tm24" id="brToT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
+        <div><label>Kondisi</label><select id="brFCond"><option value="">Semua</option><option>Baik</option><option>Kurang</option><option>Rusak</option><option>Lecet</option></select></div>
+        <div><label>Nama Admin</label><select id="brFAdm" data-adm="Semua"></select></div>
+        <div><label>Cari</label><input id="brFQ" placeholder="CARI NAMA BARANG, VARIAN, KETERANGAN..." autocomplete="off"></div>
+        <div class="xb"><button class="btn ghost sm" id="brFReset" type="button">Reset filter</button></div>
+      </div>
+      <div id="brList"></div>
+    </div>
+  </section>
+
+  <!-- BARANG GUDANG -->
+  <section class="sec" id="gd">
+    <div class="card">
+      <h3>Barang Gudang</h3>
+      <p class="hint">Daftar barang retur / cancel yang tersimpan di gudang. <b>Cari dulu di sini sebelum mengajukan barang</b>, supaya barang retur terpakai dan tidak menumpuk.</p>
+      <input id="gdSearch" placeholder="CARI NAMA BARANG ATAU VARIAN..." autocomplete="off">
+      <label class="chk"><input type="checkbox" id="gdAll"> Tampilkan juga barang yang stoknya sudah habis</label>
+      <div id="gdList"></div>
+    </div>
+  </section>
+
   <section class="sec" id="pr">
-    <div class="cols2">
+    <div class="card">
+      <h3>Stok Produk</h3>
+      <p class="hint">Qty = barang yang sudah masuk lewat menu Purchase + Upload Stok (manual / massal) + Barang Retur berkondisi Baik / Kurang. Produk yang sama dengan banyak varian digabung: klik panah di bawah nama produk untuk melihat varian dan Qty-nya. Diperbarui otomatis.</p>
+      <input id="stSearch" placeholder="CARI NAMA PRODUK ATAU VARIAN..." autocomplete="off">
+      <div id="stList"></div>
+    </div>
+    <div class="cols2" style="margin-top:20px">
+      <div class="card">
+        <h3>Upload Stok Manual</h3>
+        <p class="hint">Tambah stok produk langsung tanpa lewat Purchase. Produk / varian yang belum ada otomatis masuk ke daftar produk.</p>
+        <label>Nama Produk</label>
+        <input id="usName" list="brNames" placeholder="Nama produk" autocomplete="off">
+        <label>Varian <span style="font-weight:400">(warna, kosongkan jika tidak ada)</span></label>
+        <input id="usVar" list="brVars" placeholder="Varian / warna" autocomplete="off">
+        <label>Qty (pcs)</label>
+        <input type="number" id="usQty" min="1" inputmode="numeric" placeholder="Jumlah">
+        <label>Keterangan <span style="font-weight:400">(opsional)</span></label>
+        <textarea id="usKet" rows="2" placeholder="Catatan, mis. stok awal / hasil opname"></textarea>
+        <div class="foot"><div class="msg" id="usMsg"></div><button class="btn" id="usSubmit" type="button">Upload Stok</button></div>
+      </div>
+      <div class="card">
+        <h3>Upload Stok Massal (Excel / CSV)</h3>
+        <p class="hint">Kolom: <code>Produk</code>, <code>Varian</code>, <code>Warna</code> (opsional), <code>Qty</code>, <code>Keterangan</code> (opsional). Satu baris per varian. Qty dari file <b>ditambahkan</b> ke stok yang ada, jadi jangan upload file yang sama dua kali. Sebelum disimpan akan ada konfirmasi jumlah data.</p>
+        <button class="btn ghost sm" id="usTpl" type="button">Unduh Template CSV</button>
+        <label>Pilih file</label>
+        <input type="file" id="usFile" accept=".xlsx,.xls,.csv">
+        <div class="msg" id="usImpMsg" style="margin-top:12px"></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:20px">
+      <h3>Riwayat Upload Stok</h3>
+      <p class="hint">Semua stok yang diupload manual / massal. Bisa diedit atau dihapus; Qty di Stok Produk ikut berubah.</p>
+      <input id="usSearch" placeholder="CARI PRODUK, VARIAN, ATAU KETERANGAN..." autocomplete="off">
+      <div id="usList"></div>
+    </div>
+    <div class="cols2" style="margin-top:20px">
       <div class="card">
         <h3>Tambah Produk Manual</h3>
         <label>Nama Produk</label>
@@ -401,6 +482,17 @@
 </div></div>
 
 <!-- MODAL DETAIL LAPORAN RETUR -->
+<!-- MODAL DETAIL BARANG GUDANG -->
+<div class="modal" id="gdmdl" hidden><div class="box dbox">
+  <h3 id="gdTitle"></h3>
+  <div class="gdsum"><span class="tag in">Tersedia: <b id="gdQty">0</b> pcs</span><span class="tag">Total masuk: <b id="gdInT">0</b> pcs</span><span class="tag out">Total keluar: <b id="gdOutT">0</b> pcs</span><span class="tag">Jumlah catatan: <b id="gdNum">0</b></span></div>
+  <div class="tw" id="gdHist"></div>
+  <label>Ambil / keluarkan dari gudang</label>
+  <div class="row"><div><input type="number" id="gdOutQty" min="1" inputmode="numeric" placeholder="Qty"></div><div style="flex:2"><input id="gdOutNote" placeholder="Keterangan (opsional), mis. untuk pesanan..." autocomplete="off"></div></div>
+  <div class="msg" id="gdMsg"></div>
+  <div class="acts"><button class="btn ghost" id="gdClose" type="button">Keluar</button><button class="btn" id="gdOut" type="button">Keluarkan</button></div>
+</div></div>
+
 <div class="modal" id="tdmdl" hidden><div class="box dbox">
   <h3>Detail Retur</h3>
   <div id="tdBody"></div>
@@ -481,6 +573,30 @@
   <div class="acts"><button class="btn ghost" id="eCancel">Batal</button><button class="btn" id="eSave">Simpan</button></div>
 </div></div>
 
+<!-- MODAL EDIT UPLOAD STOK / BARANG RETUR -->
+<div class="modal" id="sgmdl" hidden><div class="box">
+  <h3 id="sgTitle"></h3>
+  <label>Nama</label><input id="sgName" list="brNames" autocomplete="off">
+  <label>Varian <span style="font-weight:400">(kosongkan jika tidak ada)</span></label><input id="sgVar" list="brVars" autocomplete="off">
+  <label>Qty (pcs)</label><input type="number" id="sgQty" min="1" inputmode="numeric">
+  <div id="sgCondW"><label>Kondisi Produk</label><select id="sgCond"><option>Baik</option><option>Kurang</option><option>Rusak</option><option>Lecet</option></select>
+  <div class="hint2">Baik / Kurang masuk ke Barang Gudang &amp; Database Produk; Rusak / Lecet hanya di Barang Retur.</div></div>
+  <label>Keterangan</label><textarea id="sgKet" rows="3"></textarea>
+  <div class="msg" id="sgMsg"></div>
+  <div class="acts"><button class="btn ghost" id="sgCancel" type="button">Batal</button><button class="btn" id="sgSave" type="button">Simpan</button></div>
+</div></div>
+
+<!-- MODAL EDIT BARANG GUDANG (keseluruhan) -->
+<div class="modal" id="gemdl" hidden><div class="box">
+  <h3>Edit Barang Gudang</h3>
+  <label>Nama Barang</label><input id="geName" list="brNames" autocomplete="off">
+  <label>Varian <span style="font-weight:400">(kosongkan jika tidak ada)</span></label><input id="geVar" list="brVars" autocomplete="off">
+  <label>Qty tersedia (pcs)</label><input type="number" id="geQty" min="0" inputmode="numeric">
+  <div class="hint2">Nama / varian yang diganti berlaku untuk semua catatan barang ini. Jika Qty diubah, selisihnya dicatat sebagai "Koreksi stok" di riwayat barang.</div>
+  <div class="msg" id="geMsg"></div>
+  <div class="acts"><button class="btn ghost" id="geCancel" type="button">Batal</button><button class="btn" id="geSave" type="button">Simpan</button></div>
+</div></div>
+
 <!-- KAMERA (laptop/PC) -->
 <div class="modal" id="cam" hidden><div class="box camb">
   <video id="camV" autoplay playsinline muted></video>
@@ -503,6 +619,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
-<script src="script.js?v=56"></script>
+<script src="script.js?v=64"></script>
 </body>
 </html>

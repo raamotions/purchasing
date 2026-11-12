@@ -44,7 +44,7 @@ appId: "1:1040272792195:web:eb29be8c86e0517f7299b6"</textarea>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script>
-const COLS = ['products', 'requests', 'records', 'photos', 'admins', 'returns', 'settings', 'downloads', 'hlog'];
+const COLS = ['products', 'requests', 'records', 'photos', 'admins', 'returns', 'settings', 'downloads', 'hlog', 'rgoods', 'pstock'];
 const $ = s => document.querySelector(s);
 const log = t => { const l = $('#log'); l.textContent += t + '\n'; l.scrollTop = l.scrollHeight };
 const TO = (p, ms, msg) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(msg)), ms))]);

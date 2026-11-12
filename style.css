@@ -319,3 +319,33 @@ input[type=checkbox]{width:18px;height:18px;padding:0;accent-color:var(--pri);cu
 .ng .sub button:hover{background:var(--soft)}
 .ng .sub button.on{background:var(--soft);color:var(--pri2)}
 @media(max-width:1024px){.ng>button{width:100%;text-align:left}.ng .sub{position:static;box-shadow:none;border:0;background:none;padding:0 0 0 16px;min-width:0}}
+/* stok produk, barang retur & barang gudang */
+#br .card:first-child{max-width:620px}
+#brSearch,#usSearch{font-size:15px}
+#usSearch{margin-top:6px}
+#sgmdl,#gemdl{z-index:46}
+.gdsum{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 4px}
+#gdSearch,#stSearch{font-size:16px;padding:13px 14px}
+.chk{display:flex;align-items:center;gap:8px;margin:12px 0 0;font-weight:500}
+.chk input{width:auto}
+tr[data-gdk]{cursor:pointer}
+.gdhint{margin:14px 0 0;padding:10px 14px;background:#e1f4ea;border:1px solid #b9e2cb;border-radius:10px;font-size:13px;line-height:1.5;color:#1f6b43}
+.gdhint.warn{background:#fff4d6;border-color:#f0dc9a;color:#8a5d00}
+.gdhint .lnk{padding:0 0 0 6px}
+#gdmdl{z-index:45}
+.tag.in{background:#e1f4ea;color:var(--ok)}
+.tag.out{background:#fde8e8;color:var(--bad)}
+/* total (tfoot) & grafik batang mendatar */
+tfoot td{font-weight:700;background:var(--soft);border-top:2px solid var(--line);border-bottom:0;font-size:13px}
+tbody tr:hover td{background:var(--soft)}
+.hcard{margin-top:20px}
+.sh{margin:30px 0 0;font-size:18px;padding-left:4px;color:var(--pri2)}
+.hcw{margin-top:12px}
+.hc{display:grid;grid-template-columns:minmax(110px,200px) 1fr minmax(90px,170px);gap:10px;align-items:center;margin:7px 0;font-size:13px}
+.hl2{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.hbars{display:flex;flex-direction:column;gap:3px;min-width:0}
+.hbar{height:9px;border-radius:5px;background:var(--pri)}
+.hbar.ok{background:var(--ok)}.hbar.bad{background:var(--bad)}.hbar.mid{background:#e0a21c}
+.hv{text-align:right;font-size:12px;white-space:nowrap}
+.hv small{color:var(--mute);font-weight:600}
+@media(max-width:700px){.hc{grid-template-columns:96px 1fr 84px}.hv{font-size:11px}}

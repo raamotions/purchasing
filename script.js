@@ -40,6 +40,27 @@ const dayBlocks = (list, dayFn, pre, isOpen, dflt, tblFn) => { const o = {}; lis
 const stat = (a, m) => a === m ? '<b class="okc">✓</b>' : '<b class="badc">✕</b>';
 const msg = (id, t, ok) => { const m = $(id); m.textContent = t; m.className = 'msg' + (ok ? ' ok' : '') };
 
+/* ---------- helper ringkasan & total (dipakai di semua menu) ---------- */
+const NF = n => Number(n || 0).toLocaleString('id-ID');
+const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
+const stag = (l, v, c) => `<span class="tag${c ? ' ' + c : ''}">${l}: <b>${v}</b></span>`;
+const sumBar = a => '<div class="gdsum">' + a.filter(Boolean).join('') + '</div>';
+const uniq = a => new Set(a).size;
+const countBy = (a, f) => { const m = {}; a.forEach(x => { const k = f(x) || '-'; m[k] = (m[k] || 0) + 1 }); return m };
+const cTags = (m, pre) => Object.keys(m).sort().map(k => stag((pre || '') + esc(k), NF(m[k])));
+const sumK2 = (a, f) => a.reduce((s, x) => s + (Number(f(x)) || 0), 0);
+// penerimaan purchase menyimpan jumlah kumulatif per pengajuan: untuk total ambil yang terbesar per pengajuan agar tidak dihitung ganda
+const latestRec = list => { const m = {}, loose = []; list.forEach(r => { if (r.rid) { const o = m[r.rid]; if (!o || (Number(r.ada) || 0) > (Number(o.ada) || 0) || ((Number(r.ada) || 0) === (Number(o.ada) || 0) && r.ts > o.ts)) m[r.rid] = r } else loose.push(r) }); return Object.values(m).concat(loose) };
+const sumPg = L => sumBar([stag('Total data', NF(L.length)), stag('Total item', NF(sumK2(L, r => r.min)) + ' pcs')]);
+const pgFoot = () => '', puFoot = () => '';
+const sumPu = rows => sumBar([stag('Total data', NF(rows.length)), stag('Total item', NF(sumK2(latestRec(rows), r => r.ada)) + ' pcs')]);
+const sumDl = L => sumBar([stag('Total data', NF(L.length))]);
+const sumRw = L => sumBar([stag('Total data', NF(L.length))]);
+const sumBd = L => sumBar([stag('Total data', NF(L.length))]);
+const sumIn = rs => sumBar([stag('Total data', NF(rs.length)), stag('Total item', NF(sumK2(rs, r => r.min)) + ' pcs')]);
+const pdSum = L => sumBar([stag('Total data', NF(L.length)), stag('Total item', NF(sumK2(L, p => (p.variants || []).length)) + ' varian')]);
+const stSum = (G, L) => sumBar([stag('Total data', NF(G.length)), stag('Total item', NF(sumK2(L, g => g.qty)) + ' pcs')]);
+
 /* ---------- penyimpanan: Firebase (sinkron semua perangkat) atau lokal ---------- */
 // Isi dengan config Firebase Anda agar data tersinkron di semua perangkat (HP, tablet, PC).
 // Biarkan null untuk mode lokal (data hanya tersimpan di browser ini).
@@ -67,7 +88,7 @@ const PROJ = (() => { try { const p = localStorage.getItem('pp_proj'); return FI
 const FIREBASE_CONFIG = FIREBASE_PROJECTS[PROJ];
 const SESS = 'pp_session_' + PROJ; // sesi login dipisah per project
 
-let db = null, products = [], reqs = [], records = [], downloads = [], hlog = [], returns = [], photos = {}, admins = [], me = null; // me: {username, name} atau null (tamu)
+let db = null, products = [], reqs = [], records = [], downloads = [], hlog = [], returns = [], rgoods = [], pstock = [], photos = {}, admins = [], me = null; // me: {username, name} atau null (tamu)
 const sk = k => k === 'pp_session' ? SESS : k; // sesi login terpisah per project
 const store = {
   get(k, d) { try { const v = localStorage.getItem(sk(k)); return v ? JSON.parse(v) : d } catch (e) { return d } },
@@ -83,8 +104,8 @@ function loadLocal() {
     { id: 'p2', name: 'Tas Kanvas', variants: [] }
   ];
   reqs = store.get('pp_requests', []); records = store.get('pp_records', []); photos = store.get('pp_photos', {});
-  admins = Object.values(store.get('pp_admins', {})); downloads = store.get('pp_downloads', []); hlog = store.get('pp_hlog', []); returns = store.get('pp_returns', []); rolesCfg = store.get('pp_roles', null);
-  [['requests', reqs], ['records', records], ['downloads', downloads], ['hlog', hlog], ['returns', returns], ['admins', admins]].forEach(([c, a]) => fixAdm(c, a, true));
+  admins = Object.values(store.get('pp_admins', {})); downloads = store.get('pp_downloads', []); hlog = store.get('pp_hlog', []); returns = store.get('pp_returns', []); rgoods = store.get('pp_rgoods', []); pstock = store.get('pp_pstock', []); rolesCfg = store.get('pp_roles', null);
+  [['requests', reqs], ['records', records], ['downloads', downloads], ['hlog', hlog], ['returns', returns], ['rgoods', rgoods], ['pstock', pstock], ['admins', admins]].forEach(([c, a]) => fixAdm(c, a, true));
 }
 // ---- nama admin diseragamkan: HURUF KAPITAL
 const UN = t => String(t == null ? '' : t).trim().replace(/\s+/g, ' ').toUpperCase();
@@ -102,7 +123,7 @@ function commit(ops = []) {
   if (!db) {
     const used = new Set(records.map(r => r.pid).concat(...hlog.map(h => h.pids || [])));
     Object.keys(photos).forEach(k => { if (!used.has(k)) delete photos[k] });
-    const ok = store.set('pp_products', products) && store.set('pp_requests', reqs) && store.set('pp_records', records) && store.set('pp_photos', photos) && store.set('pp_downloads', downloads) && store.set('pp_hlog', hlog) && store.set('pp_returns', returns) && store.set('pp_roles', rolesCfg);
+    const ok = store.set('pp_products', products) && store.set('pp_requests', reqs) && store.set('pp_records', records) && store.set('pp_photos', photos) && store.set('pp_downloads', downloads) && store.set('pp_hlog', hlog) && store.set('pp_returns', returns) && store.set('pp_rgoods', rgoods) && store.set('pp_pstock', pstock) && store.set('pp_roles', rolesCfg);
     if (!ok) loadLocal();
     return ok;
   }
@@ -187,6 +208,10 @@ $('#projBtn').onclick = () => {
 };
 function refresh() {
   fillAdm(); renderReqs(); renderProducts(); renderAuto();
+  if ($('#pr').classList.contains('on')) { renderStock(); brLists(normName($('#usName').value)) }
+  if ($('#gd').classList.contains('on')) renderGd();
+  if (!$('#gdmdl').hidden) renderGdDetail();
+  if ($('#br').classList.contains('on')) { brLists(); renderBr() }
   if ($('#pu').classList.contains('on')) renderTable();
   if ($('#dl').classList.contains('on')) renderDl();
   if ($('#ow').classList.contains('on') && !(owTab === 'role' && roleDirty)) renderOw();
@@ -217,6 +242,8 @@ function startSync() {
       setSync(sn.metadata.fromCache || sn.metadata.hasPendingWrites ? 'wait' : 'ok'); refresh();
     }, e => failSync(e));
     on('returns', (a, fc) => returns = fixAdm('returns', a, fc).sort((x, y) => y.ts - x.ts));
+    on('rgoods', (a, fc) => rgoods = fixAdm('rgoods', a, fc).sort((x, y) => y.ts - x.ts));
+    on('pstock', (a, fc) => pstock = fixAdm('pstock', a, fc).sort((x, y) => y.ts - x.ts));
     on('settings', a => { rolesCfg = a.find(x => x.id === 'roles') || null; const w = a.find(x => x.id === 'wa'); if (w && Array.isArray(w.nums)) { waNums = w.nums; store.set('pp_wa', waNums) } applyRole() });
     on('downloads', (a, fc) => downloads = fixAdm('downloads', a, fc).sort((x, y) => y.ts - x.ts));
     on('hlog', (a, fc) => hlog = fixAdm('hlog', a, fc).sort((x, y) => y.ts - x.ts));
@@ -224,11 +251,11 @@ function startSync() {
 }
 
 /* ---------- menu & hamburger ---------- */
-const TT = { pg: ['Pengajuan', 'Hari ini tampil di atas; hari sebelumnya masuk riwayat per bulan (ganti hari pukul 00.00 WIB)'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], rt: ['Input Retur', 'Form retur / pengembalian barang'], bd: ['Laporan Retur', 'Hasil input retur marketplace, bisa diedit'], rw: ['Riwayat', 'Riwayat edit & hapus; data lama bisa dipulihkan'], ow: ['Dashboard Khusus', 'Kontrol admin & analisa pemasaran (khusus pemilik)'], dl: ['Download', 'Riwayat export Excel / PDF, bisa difilter dan diexport gabungan'], pr: ['Produk', 'Kelola database produk dan varian warna'] };
+const TT = { pg: ['Pengajuan', 'Hari ini tampil di atas; hari sebelumnya masuk riwayat per bulan (ganti hari pukul 00.00 WIB)'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], rt: ['Input Retur', 'Form retur / pengembalian barang'], bd: ['Laporan Retur', 'Hasil input retur marketplace, bisa diedit'], rw: ['Riwayat', 'Riwayat edit & hapus; data lama bisa dipulihkan'], ow: ['Dashboard Khusus', 'Kontrol admin & analisa pemasaran (khusus pemilik)'], dl: ['Download', 'Riwayat export Excel / PDF, bisa difilter dan diexport gabungan'], pr: ['Database Produk', 'Stok produk (Purchase, Barang Retur, upload manual / massal); kelola produk dan varian warna'], gd: ['Barang Gudang', 'Cek barang retur / cancel yang tersedia sebelum mengajukan lagi'], br: ['Barang Retur', 'Input barang retur; otomatis masuk ke Barang Gudang'] };
 function go(t) {
   if (!can(t)) { t = firstPage(); if (!t) return }
   $$('nav button[data-t]').forEach(b => b.classList.toggle('on', b.dataset.t === t));
-  $('#ngBtn').classList.toggle('on', t === 'rt' || t === 'bd'); $('#ngRetur').classList.remove('open');
+  $$('.ng').forEach(g => { g.classList.remove('open'); g.firstElementChild.classList.toggle('on', g.dataset.p.split(',').includes(t)) });
   $$('.sec').forEach(s => s.classList.toggle('on', s.id === t));
   $('#nav').classList.remove('open'); $('#pt').textContent = TT[t][0]; $('#ps').textContent = TT[t][1];
   if (t === 'pu') renderTable();
@@ -236,18 +263,21 @@ function go(t) {
   if (t === 'ow') renderOw();
   if (t === 'rw') renderRw();
   if (t === 'bd') renderBd();
+  if (t === 'pr') { renderStock(); brLists(normName($('#usName').value)) }
+  if (t === 'gd') renderGd();
+  if (t === 'br') { brLists(); renderBr() }
   if (t === 'pg') renderReqs();
   if (t === 'in') refreshBlocks();
 }
 $$('nav button[data-t]').forEach(b => b.onclick = () => go(b.dataset.t));
-$('#ngBtn').onclick = e => { e.stopPropagation(); $('#ngRetur').classList.toggle('open') };
+$$('.ng > button').forEach(b => b.onclick = e => { e.stopPropagation(); const g = b.parentElement, was = g.classList.contains('open'); $$('.ng').forEach(x => x.classList.remove('open')); g.classList.toggle('open', !was) });
 $('#burger').onclick = e => { e.stopPropagation(); $('#nav').classList.toggle('open') };
-document.addEventListener('click', e => { if (!e.target.closest('#nav')) $('#nav').classList.remove('open'); if (!e.target.closest('.ng')) $('#ngRetur').classList.remove('open') });
+document.addEventListener('click', e => { if (!e.target.closest('#nav')) $('#nav').classList.remove('open'); if (!e.target.closest('.ng')) $$('.ng').forEach(g => g.classList.remove('open')) });
 $$('select[data-src]').forEach(s => {
   s.innerHTML = `<option value="">${s.dataset.src}</option>` + SRC.map(x => `<option>${x}</option>`).join('');
 });
 function fillAdm() { // daftar nama admin = akun terdaftar + nama yang sudah tercatat di data
-  const names = [...new Set(admins.map(a => a.name).concat(reqs.map(r => r.adm), records.map(r => r.adm), downloads.map(r => r.adm), hlog.map(r => r.adm), returns.map(r => r.adm)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const names = [...new Set(admins.map(a => a.name).concat(reqs.map(r => r.adm), records.map(r => r.adm), downloads.map(r => r.adm), hlog.map(r => r.adm), returns.map(r => r.adm), rgoods.map(r => r.adm)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   $$('select[data-adm]').forEach(s => {
     const v = s.value;
     s.innerHTML = `<option value="">${s.dataset.adm}</option>` + names.map(x => `<option>${esc(x)}</option>`).join('');
@@ -336,6 +366,7 @@ function pgVarUI() {
     b.disabled = false;
     L.innerHTML = pgProd.variants.map((v, i) => `<span class="sw" data-i="${i}" title="${esc(v.n)}" style="background:${v.c}"></span>`).join('');
   } else { b.disabled = true; L.innerHTML = '' }
+  gdHint();
 }
 $('#pgVar').onclick = () => $('#pgVarList').classList.toggle('open');
 $('#pgVarList').onclick = e => {
@@ -396,13 +427,13 @@ const pgRow = (r, n) => `<tr>
     <td>${r.ada} / ${r.min} pcs${r.part ? '<div class="tm">sesuai filter · total ' + r.tot + ' pcs</div>' : ''}</td><td><span class="tag">${esc(r.src)}</span></td><td>${esc(r.adm || '-')}</td>
     <td>${reqStat(r)}</td>
     <td class="nw"><button class="btn ghost sm" data-redit="${r.id}">Edit</button> <button class="btn ghost sm" data-del="${r.id}">Hapus</button></td></tr>${histRow(r)}`;
-const pgTbl = list => `<div class="tw"><table><thead><tr><th>No</th><th>Tanggal</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Asal</th><th>Admin</th><th>Status</th><th></th></tr></thead><tbody>${list.map(pgRow).join('')}</tbody></table></div>`;
+const pgTbl = list => `<div class="tw"><table><thead><tr><th>No</th><th>Tanggal</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Asal</th><th>Admin</th><th>Status</th><th></th></tr></thead><tbody>${list.map(pgRow).join('')}</tbody>${pgFoot(list)}</table></div>`;
 function renderReqs() { // hari ini tampil di atas; hari-hari sebelumnya otomatis masuk riwayat per tahun > bulan (tertutup)
   const all = pgFiltered(), today = dayWIB(Date.now()), filt = PGF.some(x => $(x).value);
   const tr = all.filter(r => dayWIB(r.ts) === today), hr = all.filter(r => dayWIB(r.ts) !== today), g = {};
   hr.forEach(r => { const d = dayWIB(r.ts), y = d.slice(0, 4), m = d.slice(5, 7); ((g[y] = g[y] || {})[m] = g[y][m] || []).push(r) });
   const isOpen = (k, dflt) => k in openState ? openState[k] : (filt || dflt);
-  let html = '<div class="dayh">Hari ini <span class="tag">' + tr.length + ' data</span></div>' + (tr.length ? pgTbl(tr) : '<div class="empty">Belum ada pengajuan hari ini.</div>');
+  let html = sumPg(all) + '<div class="dayh">Hari ini <span class="tag">' + tr.length + ' data</span></div>' + (tr.length ? pgTbl(tr) : '<div class="empty">Belum ada pengajuan hari ini.</div>');
   if (hr.length) {
     html += '<div class="dayh" style="margin-top:24px">Riwayat <span class="tag">' + hr.length + ' data</span></div>' + Object.keys(g).sort().reverse().map(y => {
       const ms = Object.keys(g[y]).sort().reverse(), cnt = ms.reduce((s, m) => s + g[y][m].length, 0), ky = 'ry' + y;
@@ -735,7 +766,7 @@ function renderAuto(force) {
   if (!force && sig === autoSig) return; // tidak ada perubahan data: jangan hapus isian yang sedang diketik
   autoSig = sig;
   $('#auto').innerHTML = rs.length
-    ? '<div class="hint">' + rs.length + ' barang diajukan ' + (inDateOn() ? 'pada rentang tanggal & jam yang dipilih' : 'hari ini') + '. Isi jumlah "Ada" (boleh 0), kolom yang dikosongkan akan dilewati.</div>' + rs.map(r => `<div class="ln" data-id="${r.id}">
+    ? '<div class="hint">' + rs.length + ' barang diajukan ' + (inDateOn() ? 'pada rentang tanggal & jam yang dipilih' : 'hari ini') + '. Isi jumlah "Ada" (boleh 0), kolom yang dikosongkan akan dilewati.</div>' + sumIn(rs) + rs.map(r => `<div class="ln" data-id="${r.id}">
       ${r.vc ? sw(r.vc, r.vn) : ''}
       <div class="inf"><b class="pn">${esc(r.prod)}${r.vn ? ' · ' + esc(r.vn) : ''}</b>
         <span>Diajukan <b>${r.min}</b> pcs · sudah ada ${r.ada} · <span class="tag">${esc(r.src)}</span> · Admin: <b>${esc(r.adm || '-')}</b>${inInfo(r)}</span></div>
@@ -858,15 +889,15 @@ function renderTable() {
     <td>${r.ada} / ${r.min} pcs</td><td>${stat(r.ada, r.min)}</td><td><span class="tag">${esc(r.src)}</span></td><td>${esc(r.adm || '-')}</td>
     <td>${!r.pid || photos[r.pid] === '' ? '-' : photos[r.pid] ? `<img class="thumb" src="${photos[r.pid]}" alt="Surat jalan">` : `<button class="btn ghost sm" data-photo="${esc(r.pid)}" type="button">📷 Lihat</button>`}</td>
     <td class="nw"><button class="btn ghost sm" data-edit="${r.id}">Edit</button> <button class="btn ghost sm" data-del="${r.id}">Hapus</button></td></tr>`;
-  const tbl = list => `<div class="tw"><table><thead><tr><th>No</th><th>Tanggal</th><th>No. SJ</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Status</th><th>Asal</th><th>Admin</th><th>Foto</th><th></th></tr></thead><tbody>${list.slice().sort((a, b) => seq[a.id] - seq[b.id]).map(rowHtml).join('')}</tbody></table></div>`;
+  const tbl = list => `<div class="tw"><table><thead><tr><th>No</th><th>Tanggal</th><th>No. SJ</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Status</th><th>Asal</th><th>Admin</th><th>Foto</th><th></th></tr></thead><tbody>${list.slice().sort((a, b) => seq[a.id] - seq[b.id]).map(rowHtml).join('')}</tbody>${puFoot(list)}</table></div>`;
   const isOpen = (k, cur) => k in openState ? openState[k] : (filt || cur);
   const g = {};
   rows.forEach(r => { const d = ymd(r.ts), y = d.slice(0, 4), m = d.slice(5, 7); ((g[y] = g[y] || {})[m] = g[y][m] || []).push(r) });
-  $('#grp').innerHTML = rows.length ? Object.keys(g).sort().reverse().map(y => {
+  $('#grp').innerHTML = (rows.length ? sumPu(rows) : '') + (rows.length ? Object.keys(g).sort().reverse().map(y => {
     const ms = Object.keys(g[y]).sort().reverse(), cnt = ms.reduce((s, m) => s + g[y][m].length, 0), ky = 'y' + y;
     return `<details class="yr" data-k="${ky}" ${isOpen(ky, y === now.slice(0, 4)) ? 'open' : ''}><summary>${y} <span class="tag">${cnt} data</span></summary>` +
       ms.map(m => { const km = 'm' + y + m; return `<details class="mo" data-k="${km}" ${isOpen(km, y + '-' + m === now.slice(0, 7)) ? 'open' : ''}><summary>${BLN[+m - 1]} ${y} <span class="tag">${g[y][m].length} data</span></summary>${dayBlocks(g[y][m], ymd, 'd', isOpen, d => d === now, tbl)}</details>` }).join('') + '</details>';
-  }).join('') : '<div class="empty">Belum ada data purchase.</div>';
+  }).join('') : '<div class="empty">Belum ada data purchase.</div>');
 }
 $('#grp').addEventListener('click', e => { const s = e.target.closest('summary'); if (s) { const d = s.parentElement; openState[d.dataset.k] = !d.open } });
 FIL.forEach(s => $(s).oninput = renderTable);
@@ -1020,7 +1051,7 @@ function renderDl() { // hari ini di atas; hari sebelumnya masuk Riwayat per tah
   const tr = all.filter(r => dayWIB(r.ts) === today), hr = all.filter(r => dayWIB(r.ts) !== today), g = {};
   hr.forEach(r => { const d = dayWIB(r.ts), y = d.slice(0, 4), m = d.slice(5, 7); ((g[y] = g[y] || {})[m] = g[y][m] || []).push(r) });
   const isOpen = (k, dflt) => k in openState ? openState[k] : (filt || dflt);
-  let html = '<div class="dayh">Hari ini <span class="tag">' + tr.length + ' data</span></div>' + (tr.length ? dlTbl(tr) : '<div class="empty">Belum ada download hari ini.</div>');
+  let html = sumDl(all) + '<div class="dayh">Hari ini <span class="tag">' + tr.length + ' data</span></div>' + (tr.length ? dlTbl(tr) : '<div class="empty">Belum ada download hari ini.</div>');
   if (hr.length) {
     html += '<div class="dayh" style="margin-top:24px">Riwayat <span class="tag">' + hr.length + ' data</span></div>' + Object.keys(g).sort().reverse().map(y => {
       const ms = Object.keys(g[y]).sort().reverse(), cnt = ms.reduce((s, m) => s + g[y][m].length, 0), ky = 'ly' + y;
@@ -1138,7 +1169,7 @@ const EDIT_CODE = '030201';
 const codeOk = id => $(id).value.trim() === EDIT_CODE;
 const cl = o => o ? JSON.parse(JSON.stringify(o)) : null;
 const hKeep = pid => hlog.some(h => (h.pids || []).includes(pid)); // foto yang masih dipakai riwayat jangan dihapus
-const FLD = { ts: 'Waktu', prod: 'Produk', vn: 'Varian', min: 'Diminta', ada: 'Ada', src: 'Asal', adm: 'Admin', sj: 'No. SJ', pid: 'Foto', hist: 'Rincian input', fname: 'Nama file', resi: 'Resi', oid: 'ID Pesanan', tiket: 'No Tiket', desk: 'Deskripsi', dueT: 'Tipe due', due: 'Due Date', status: 'Status', toko: 'Toko', mp: 'Marketplace', ket: 'Keterangan' };
+const FLD = { ts: 'Waktu', prod: 'Produk', vn: 'Varian', min: 'Diminta', ada: 'Ada', src: 'Asal', adm: 'Admin', sj: 'No. SJ', pid: 'Foto', hist: 'Rincian input', fname: 'Nama file', resi: 'Resi', oid: 'ID Pesanan', tiket: 'No Tiket', desk: 'Deskripsi', dueT: 'Tipe due', due: 'Due Date', status: 'Status', toko: 'Toko', mp: 'Marketplace', ket: 'Keterangan', name: 'Nama', qty: 'Qty', cond: 'Kondisi', note: 'Catatan' };
 const fv = (k, v) => v == null || v === '' ? '-' : k === 'ts' ? tsFmt(v) : k === 'pid' ? 'ada' : typeof v === 'object' ? '' : String(v);
 function diffTxt(b, a) { // ringkasan perubahan: "Diminta: 10 → 15; Waktu: ... → ..."
   const out = [];
@@ -1199,7 +1230,7 @@ function renderRw() {
   const tr = all.filter(r => dayWIB(r.ts) === today), hr = all.filter(r => dayWIB(r.ts) !== today), g = {};
   hr.forEach(r => { const d = dayWIB(r.ts), y = d.slice(0, 4), m = d.slice(5, 7); ((g[y] = g[y] || {})[m] = g[y][m] || []).push(r) });
   const isOpen = (k, dflt) => k in openState ? openState[k] : (filt || dflt);
-  let html = '<div class="dayh">Hari ini <span class="tag">' + tr.length + ' data</span></div>' + (tr.length ? rwTbl(tr) : '<div class="empty">Belum ada perubahan / penghapusan hari ini.</div>');
+  let html = sumRw(all) + '<div class="dayh">Hari ini <span class="tag">' + tr.length + ' data</span></div>' + (tr.length ? rwTbl(tr) : '<div class="empty">Belum ada perubahan / penghapusan hari ini.</div>');
   if (hr.length) {
     html += '<div class="dayh" style="margin-top:24px">Riwayat <span class="tag">' + hr.length + ' data</span></div>' + Object.keys(g).sort().reverse().map(y => {
       const ms = Object.keys(g[y]).sort().reverse(), cnt = ms.reduce((s, m) => s + g[y][m].length, 0), ky = 'wy' + y;
@@ -1212,7 +1243,8 @@ function renderRw() {
 function applyDocs(docs) { // kembalikan tiap dokumen ke kondisi "sebelum"
   const ops = [];
   docs.forEach(d => {
-    const arr = d.c === 'requests' ? reqs : d.c === 'records' ? records : d.c === 'downloads' ? downloads : d.c === 'returns' ? returns : null; if (!arr || !d.b) return;
+    const arr = d.c === 'requests' ? reqs : d.c === 'records' ? records : d.c === 'downloads' ? downloads : d.c === 'returns' ? returns : d.c === 'pstock' ? pstock : d.c === 'rgoods' ? rgoods : null; if (!arr) return;
+    if (!d.b) { if (d.a) { const j = arr.findIndex(x => x.id === d.a.id); if (j >= 0) arr.splice(j, 1); ops.push([d.c, 'del', d.a.id]) } return } // data yang dibuat oleh perubahan itu dibatalkan
     const i = arr.findIndex(x => x.id === d.b.id), o = cl(d.b);
     i >= 0 ? arr[i] = o : arr.push(o); ops.push([d.c, 'set', o]);
   });
@@ -1222,7 +1254,7 @@ function restoreH(id) {
   const h = hlog.find(x => x.id === id); if (!h || h.rest) return;
   let docs; try { docs = JSON.parse(h.docs) } catch (e) { return alert('Data riwayat rusak, tidak bisa dipulihkan.') }
   const ops = applyDocs(docs); h.rest = Date.now(); ops.push(['hlog', 'set', h]);
-  commit(ops); renderRw(); renderReqs(); renderTable(); renderDl(); renderBd();
+  commit(ops); renderRw(); renderReqs(); renderTable(); renderDl(); renderBd(); refresh();
 }
 function purgeH(id) {
   const h = hlog.find(x => x.id === id); if (!h) return;
@@ -1384,7 +1416,7 @@ function renderBd() {
   const tr = all.filter(r => dayWIB(r.ts) === today), hr = all.filter(r => dayWIB(r.ts) !== today), g = {};
   hr.forEach(r => { const d = dayWIB(r.ts), y = d.slice(0, 4), m = d.slice(5, 7); ((g[y] = g[y] || {})[m] = g[y][m] || []).push(r) });
   const isOpen = (k, dflt) => k in openState ? openState[k] : (filt || dflt);
-  let html = '<div class="dayh">Hari ini <span class="tag">' + tr.length + ' data</span></div>' + (tr.length ? bdTbl(tr) : '<div class="empty">Belum ada retur yang diinput hari ini.</div>');
+  let html = sumBd(all) + '<div class="dayh">Hari ini <span class="tag">' + tr.length + ' data</span></div>' + (tr.length ? bdTbl(tr) : '<div class="empty">Belum ada retur yang diinput hari ini.</div>');
   if (hr.length) {
     html += '<div class="dayh" style="margin-top:24px">Riwayat <span class="tag">' + hr.length + ' data</span></div>' + Object.keys(g).sort().reverse().map(y => {
       const ms = Object.keys(g[y]).sort().reverse(), cnt = ms.reduce((s, m) => s + g[y][m].length, 0), ky = 'by' + y;
@@ -1602,10 +1634,340 @@ $('#saveP').onclick = () => {
   $('#pName').value = ''; $('#vBox').innerHTML = '';
   msg('#pMsg', ex ? 'Digabung ke produk yang sama: ' + added + ' varian ditambahkan.' : 'Produk tersimpan.', true); renderProducts();
 };
+/* ---------- STOK PRODUK (Database Produk) ---------- */
+// Qty = jumlah barang "ada" yang sudah tercatat di Purchase. Tiap penerimaan menyimpan jumlah kumulatif pengajuannya, jadi ambil yang terbaru per pengajuan.
+function stockRows() {
+  const byRid = {}, loose = [];
+  records.forEach(r => { if (r.rid) { const o = byRid[r.rid]; if (!o || (Number(r.ada) || 0) > (Number(o.ada) || 0) || ((Number(r.ada) || 0) === (Number(o.ada) || 0) && r.ts > o.ts)) byRid[r.rid] = r } else loose.push(r) });
+  const m = new Map();
+  const add = (prod, vn0, vc, qty, ts) => { const pn = normName(prod), vn = normName(vn0), k = pn + '|' + vn, g = m.get(k) || { prod: pn, vn, vc, qty: 0, last: 0 }; g.qty += Number(qty) || 0; g.last = Math.max(g.last, ts || 0); if (!g.vc) g.vc = vc; m.set(k, g) };
+  Object.values(byRid).concat(loose).forEach(r => add(r.prod, r.vn, r.vc, r.ada, r.ts));
+  pstock.forEach(e => add(e.prod, e.vn, e.vc, e.qty, e.ts)); // stok yang diupload manual / massal
+  rgoods.forEach(e => { if (gdUse(e)) add(e.name, e.vn, gdColor(e.name, normName(e.vn)), e.qty, e.ts) }); // barang retur Baik / Kurang (dan pengambilannya dari gudang)
+  return [...m.values()].sort((a, b) => a.prod.localeCompare(b.prod) || a.vn.localeCompare(b.vn));
+}
+const tokOk = (text, q) => normName(q).split(' ').filter(Boolean).every(t => text.includes(t));
+const nfm = n => Number(n || 0).toLocaleString('id-ID');
+const stOpen = {}; // produk (nama) -> daftar varian sedang dibuka
+function renderStock() { // satu baris per produk (varian digabung); panah membuka varian & qty-nya
+  const q = $('#stSearch').value, all = stockRows(), L = all.filter(g => tokOk(g.prod + ' ' + g.vn, q)), m = new Map();
+  L.forEach(g => { let o = m.get(g.prod); if (!o) m.set(g.prod, o = { prod: g.prod, qty: 0, vs: [] }); o.qty += g.qty; o.vs.push(g) });
+  const G = [...m.values()], vcell = g => g.vn ? sw(g.vc, g.vn) + ' ' + esc(g.vn) : 'Tanpa varian';
+  $('#stList').innerHTML = stSum(G, L) + (G.length
+    ? `<div class="tw"><table style="min-width:520px"><thead><tr><th>No</th><th>Nama Produk</th><th>Qty</th></tr></thead><tbody>${G.map((o, i) => {
+      const many = o.vs.length > 1, k = encodeURIComponent(o.prod), open = k in stOpen ? stOpen[k] : !!q.trim();
+      return `<tr><td>${i + 1}</td><td><b>${esc(o.prod)}</b>${many ? `<button type="button" class="arw${open ? ' on' : ''}" data-stk="${k}" title="Lihat varian dan Qty">${o.vs.length} varian</button>` : o.vs[0].vn ? `<div class="tm">${vcell(o.vs[0])}</div>` : ''}</td><td><b>${nfm(o.qty)}</b> pcs</td></tr>`
+        + (many ? `<tr class="hrow" data-stfor="${k}"${open ? '' : ' hidden'}><td></td><td colspan="2"><table class="mt"><thead><tr><th>Varian</th><th>Qty</th></tr></thead><tbody>${o.vs.map(g => `<tr><td>${vcell(g)}</td><td><b>${nfm(g.qty)}</b> pcs</td></tr>`).join('')}</tbody></table></td></tr>` : '');
+    }).join('')}</tbody></table></div>`
+    : '<div class="empty">' + (all.length ? 'Produk tidak ditemukan.' : 'Belum ada stok. Stok berasal dari Purchase, Barang Retur (Baik / Kurang), atau Upload Stok.') + '</div>');
+  renderUs();
+}
+caps($('#stSearch')); $('#stSearch').addEventListener('input', renderStock);
+$('#stList').addEventListener('click', e => {
+  const b = e.target.closest('[data-stk]'); if (!b) return;
+  const k = b.dataset.stk, open = !(k in stOpen ? stOpen[k] : !!$('#stSearch').value.trim());
+  stOpen[k] = open; const row = $('#stList').querySelector('tr.hrow[data-stfor="' + k + '"]'); if (row) row.hidden = !open; b.classList.toggle('on', open);
+});
+
+/* ---------- UPLOAD STOK (manual & massal) + edit/hapus ---------- */
+// pastikan produk & varian ada di database produk (dibuat otomatis jika belum); changed = produk perlu disimpan
+function ensureProd(name, vn, col) {
+  let p = products.find(x => normName(x.name) === name), changed = false, v = null;
+  if (!p) { p = { id: uid(), name, variants: [] }; products.push(p); changed = true }
+  if (vn) { v = p.variants.find(x => normName(x.n) === vn); if (!v) { v = { n: vn, c: col || toHex(vn) || '#4a7bd0' }; p.variants.push(v); changed = true } }
+  return { p, vc: v ? v.c : '', changed };
+}
+caps($('#usName')); caps($('#usVar')); caps($('#sgName')); caps($('#sgVar')); caps($('#usSearch')); addClear($('#usSearch'));
+$('#usName').addEventListener('input', () => brLists(normName($('#usName').value)));
+$('#sgName').addEventListener('input', () => brLists(normName($('#sgName').value)));
+$('#usSubmit').onclick = () => {
+  const name = normName($('#usName').value), vn = normName($('#usVar').value), q = parseInt($('#usQty').value, 10);
+  if (!name) return msg('#usMsg', 'Nama Produk wajib diisi.');
+  if (!(q >= 1)) return msg('#usMsg', 'Qty minimal 1.');
+  const pr = ensureProd(name, vn), e = { id: uid(), ts: Date.now(), prod: name, vn, vc: pr.vc, qty: q, ket: $('#usKet').value.trim(), adm: me ? me.name : '' }, ops = [['pstock', 'set', e]];
+  if (pr.changed) ops.push(['products', 'set', pr.p]);
+  pstock.unshift(e);
+  if (!commit(ops)) return msg('#usMsg', 'Penyimpanan penuh.');
+  ['#usName', '#usVar', '#usQty', '#usKet'].forEach(x => $(x).value = '');
+  msg('#usMsg', 'Tersimpan: ' + q + ' pcs ' + name + (vn ? ' · ' + vn : '') + ' masuk ke stok.', true); renderStock(); renderProducts(); brLists('');
+};
+$('#usTpl').onclick = () => {
+  const csv = 'Produk,Varian,Warna,Qty,Keterangan\nKaos Polos,Biru,#3b82f6,10,Stok awal\nKaos Polos,Merah,#ef4444,5,\nTas Kanvas,,,20,\n';
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv' })); a.download = 'template-stok.csv'; a.click();
+};
+$('#usFile').onchange = e => {
+  const inp = e.target, f = inp.files[0]; if (!f) return;
+  if (!window.XLSX) { inp.value = ''; return msg('#usImpMsg', 'Library Excel gagal dimuat. Pastikan terhubung ke internet.') }
+  const rd = new FileReader();
+  rd.onload = () => {
+    try {
+      const wb = XLSX.read(rd.result, { type: 'array' }), rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' }), items = [];
+      let bad = 0;
+      rows.forEach(row => {
+        const k = {}; Object.keys(row).forEach(x => k[x.trim().toLowerCase()] = row[x]);
+        const name = normName(k.produk || k['nama produk'] || k['nama barang'] || k.nama || ''), qv = [k.qty, k.jumlah, k.stok].find(v => v !== undefined && v !== ''), q = parseInt(qv, 10);
+        if (!name && qv === undefined) return; // baris kosong
+        if (!name || !(q >= 1)) { bad++; return }
+        const vr = String(k.varian || '').trim(), col = String(k.warna || '').trim();
+        items.push({ name, vn: normName(vr || col), c: toHex(col || vr) || '', q, ket: String(k.keterangan || '').trim() });
+      });
+      if (!items.length) { inp.value = ''; return msg('#usImpMsg', 'Tidak ada baris yang bisa diimpor' + (bad ? ' (' + bad + ' baris dilewati: produk kosong / Qty bukan angka ≥ 1)' : '') + '.') }
+      const tot = items.reduce((s, x) => s + x.q, 0);
+      if (!confirm('Tambahkan ' + items.length + ' baris stok (total ' + tot + ' pcs) ke Database Produk?' + (bad ? '\n' + bad + ' baris dilewati.' : ''))) { inp.value = ''; return msg('#usImpMsg', 'Upload dibatalkan.') }
+      const now = Date.now(), touched = new Set(), recs = items.map((x, i) => {
+        const pr = ensureProd(x.name, x.vn, x.c); if (pr.changed) touched.add(pr.p);
+        return { id: uid(), ts: now + i, prod: x.name, vn: x.vn, vc: pr.vc, qty: x.q, ket: x.ket, adm: me ? me.name : '' };
+      });
+      pstock = recs.slice().reverse().concat(pstock);
+      if (!commit(recs.map(x => ['pstock', 'set', x]).concat([...touched].map(p => ['products', 'set', p])))) { inp.value = ''; return msg('#usImpMsg', 'Penyimpanan penuh.') }
+      renderStock(); renderProducts();
+      msg('#usImpMsg', recs.length + ' baris stok (' + tot + ' pcs) berhasil diupload' + (bad ? ', ' + bad + ' baris dilewati.' : '.'), !bad);
+    } catch (err) { console.error(err); msg('#usImpMsg', 'File tidak bisa dibaca. Gunakan format .xlsx atau .csv.') }
+    inp.value = '';
+  };
+  rd.readAsArrayBuffer(f);
+};
+function renderUs() {
+  const q = $('#usSearch').value, L = pstock.filter(e => tokOk(e.prod + ' ' + (e.vn || '') + ' ' + String(e.ket || '').toUpperCase(), q)).sort((a, b) => b.ts - a.ts), V = L.slice(0, 200);
+  const usT = sumK2(L, e => e.qty);
+  $('#usList').innerHTML = sumBar([stag('Total data', NF(L.length)), stag('Total item', NF(usT) + ' pcs')]) + (V.length
+    ? `<div class="tw"><table style="min-width:760px"><thead><tr><th>No</th><th>Waktu</th><th>Produk</th><th>Varian</th><th>Qty</th><th>Keterangan</th><th>Admin</th><th></th></tr></thead><tbody>${V.map((e, i) => `<tr>
+      <td>${i + 1}</td><td class="nw">${fmt(e.ts)}${tm(e.ts)}</td><td><b>${esc(e.prod)}</b></td><td>${e.vn ? sw(e.vc, e.vn) + ' ' + esc(e.vn) : '-'}</td><td>${nfm(e.qty)} pcs</td><td><div class="wrapc">${esc(e.ket || '-')}</div></td><td>${esc(e.adm || '-')}</td>
+      <td class="nw"><button class="btn ghost sm" data-usedit="${e.id}" type="button">Edit</button> <button class="btn ghost sm" data-usdel="${e.id}" type="button">Hapus</button></td></tr>`).join('')}</tbody></table></div>` + (L.length > V.length ? '<div class="hint2">Menampilkan 200 terbaru dari ' + nfm(L.length) + ' data. Gunakan pencarian untuk mempersempit.</div>' : '')
+    : '<div class="empty">' + (pstock.length ? 'Data tidak ditemukan.' : 'Belum ada stok yang diupload.') + '</div>');
+}
+$('#usSearch').addEventListener('input', renderUs);
+$('#usList').addEventListener('click', e => {
+  const ed = e.target.closest('[data-usedit]'), dl = e.target.closest('[data-usdel]');
+  if (ed) return openSg('pstock', ed.dataset.usedit);
+  if (dl) {
+    const id = dl.dataset.usdel, r0 = pstock.find(x => x.id === id); if (!r0) return;
+    askYN('Yakin menghapus upload stok ' + r0.prod + (r0.vn ? ' · ' + r0.vn : '') + ' (' + r0.qty + ' pcs)? Qty di Stok Produk berkurang sebesar itu.', () => {
+      const r = pstock.find(x => x.id === id); if (!r) return;
+      const lop = logH('UPLOAD STOK', 'hapus', r.prod + (r.vn ? ' · ' + r.vn : '') + ' · ' + r.qty + ' pcs', [{ c: 'pstock', b: cl(r), a: null }]);
+      pstock = pstock.filter(x => x.id !== id); commit([['pstock', 'del', id], lop]); refresh();
+    });
+  }
+});
+// popup edit bersama: kind 'pstock' (upload stok) atau 'rgoods' (barang retur)
+let sgCur = null;
+function openSg(kind, id) {
+  const r = (kind === 'pstock' ? pstock : rgoods).find(x => x.id === id); if (!r) return;
+  sgCur = { kind, id, out: kind === 'rgoods' && r.qty < 0 };
+  $('#sgTitle').textContent = kind === 'pstock' ? 'Edit Upload Stok' : sgCur.out ? 'Edit Pengeluaran Gudang' : 'Edit Barang Masuk Gudang';
+  $('#sgName').value = kind === 'pstock' ? r.prod : r.name; $('#sgVar').value = r.vn || ''; $('#sgQty').value = Math.abs(r.qty); $('#sgName').disabled = $('#sgVar').disabled = sgCur.out;
+  $('#sgCondW').hidden = kind === 'pstock' || sgCur.out; $('#sgCond').value = r.cond || 'Baik'; $('#sgKet').value = (sgCur.out ? r.note : r.ket) || '';
+  brLists(normName($('#sgName').value)); msg('#sgMsg', ''); $('#sgmdl').hidden = false;
+}
+const closeSg = () => { $('#sgmdl').hidden = true; sgCur = null };
+$('#sgCancel').onclick = closeSg; $('#sgmdl').addEventListener('mousedown', e => { if (e.target === $('#sgmdl')) closeSg() });
+$('#sgSave').onclick = () => {
+  if (!sgCur) return;
+  const isP = sgCur.kind === 'pstock', r = (isP ? pstock : rgoods).find(x => x.id === sgCur.id); if (!r) return closeSg();
+  const name = normName($('#sgName').value), vn = normName($('#sgVar').value), q = parseInt($('#sgQty').value, 10), ket = $('#sgKet').value.trim(), cond = $('#sgCond').value;
+  if (!name) return msg('#sgMsg', 'Nama wajib diisi.');
+  if (!(q >= 1)) return msg('#sgMsg', 'Qty minimal 1.');
+  const ops = [], b0 = cl(r);
+  if (isP) {
+    const pr = ensureProd(name, vn); if (pr.changed) ops.push(['products', 'set', pr.p]);
+    Object.assign(r, { prod: name, vn, vc: pr.vc, qty: q, ket }); ops.push(['pstock', 'set', r]);
+  } else if (sgCur.out) { // pengeluaran: hanya qty & keterangan
+    const sim = rgoods.map(x => x.id === r.id ? Object.assign({}, x, { qty: -q }) : x);
+    if (gdAvail(sim, r.name, r.vn || '') < 0) return msg('#sgMsg', 'Qty pengeluaran melebihi stok yang tersedia di gudang.');
+    Object.assign(r, { qty: -q, note: ket }); ops.push(['rgoods', 'set', r]);
+  } else {
+    const oName = r.name, oVn = r.vn || '', sim = rgoods.map(x => x.id === r.id ? Object.assign({}, x, { name, vn, qty: q, cond }) : x); // jangan sampai stok gudang jadi minus
+    if (gdAvail(sim, oName, oVn) < 0 || gdAvail(sim, name, vn) < 0) return msg('#sgMsg', 'Perubahan ini membuat stok gudang minus karena sebagian barang sudah dikeluarkan.');
+    if (!RBAD.includes(cond)) { const pr = ensureProd(name, vn); if (pr.changed) ops.push(['products', 'set', pr.p]) }
+    Object.assign(r, { name, vn, qty: q, cond, ket }); ops.push(['rgoods', 'set', r]);
+  }
+  ops.push(logH(isP ? 'UPLOAD STOK' : 'BARANG GUDANG', 'edit', (!isP && b0.qty < 0 ? 'Pengeluaran ' : '') + (isP ? b0.prod : b0.name) + (b0.vn ? ' · ' + b0.vn : '') + ' · ' + Math.abs(b0.qty) + ' pcs', [{ c: isP ? 'pstock' : 'rgoods', b: b0, a: cl(r) }]));
+  if (!commit(ops)) return msg('#sgMsg', 'Penyimpanan penuh.');
+  closeSg(); refresh(); renderProducts();
+};
+
+/* ---------- BARANG RETUR (form) & BARANG GUDANG ---------- */
+// rgoods = riwayat gerak barang: qty positif = masuk (form Barang Retur), qty negatif = keluar (diambil dari gudang)
+const RBAD = ['Rusak', 'Lecet']; // kondisi ini hanya masuk Barang Retur (tidak ke Barang Gudang & Database Produk)
+const gdUse = e => e.qty < 0 || !RBAD.includes(e.cond); // data lama tanpa kondisi dianggap layak pakai
+const gdAvail = (list, name, vn) => list.filter(e => e.name === name && (e.vn || '') === (vn || '') && gdUse(e)).reduce((s, e) => s + (Number(e.qty) || 0), 0);
+function gdStock() {
+  const m = new Map();
+  rgoods.filter(gdUse).forEach(e => { const k = e.name + '|' + (e.vn || ''), g = m.get(k) || { name: e.name, vn: e.vn || '', qty: 0, last: 0 }; g.qty += Number(e.qty) || 0; g.last = Math.max(g.last, e.ts); m.set(k, g) });
+  return [...m.values()].sort((a, b) => a.name.localeCompare(b.name) || a.vn.localeCompare(b.vn));
+}
+const gdColor = (name, vn) => { const p = products.find(x => normName(x.name) === name), v = p && (p.variants || []).find(x => normName(x.n) === vn); return v ? v.c : '' };
+function brLists(nm) { // saran nama & varian saat mengetik (form Barang Retur, Upload Stok, popup edit)
+  const names = [...new Set(products.map(p => normName(p.name)).concat(rgoods.map(e => e.name), pstock.map(e => normName(e.prod))))].sort();
+  $('#brNames').innerHTML = names.map(n => `<option value="${esc(n)}">`).join('');
+  nm = typeof nm === 'string' ? nm : normName($('#brName').value); const p = products.find(x => normName(x.name) === nm);
+  const vs = [...new Set((p ? p.variants.map(v => normName(v.n)) : []).concat(rgoods.filter(e => e.name === nm && e.vn).map(e => e.vn), pstock.filter(e => normName(e.prod) === nm && e.vn).map(e => e.vn)))].sort();
+  $('#brVars').innerHTML = vs.map(v => `<option value="${esc(v)}">`).join('');
+}
+caps($('#brName')); caps($('#brVar')); $('#brName').addEventListener('input', () => brLists());
+function brCondHint() {
+  const c = $('#brCond').value;
+  $('#brCondHint').textContent = !c ? '' : RBAD.includes(c) ? 'Kondisi ' + c + ': hanya masuk ke Barang Retur (tidak masuk Barang Gudang dan Database Produk).' : 'Kondisi ' + c + ': masuk ke Barang Retur, Barang Gudang, dan Database Produk.';
+}
+$('#brCond').addEventListener('change', brCondHint);
+$('#brSubmit').onclick = () => {
+  const name = normName($('#brName').value), vn = normName($('#brVar').value), q = parseInt($('#brQty').value, 10);
+  if (!name) return msg('#brMsg', 'Nama Barang wajib diisi.');
+  if (!(q >= 1)) return msg('#brMsg', 'Qty minimal 1.');
+  const cond = $('#brCond').value, ket = $('#brKet').value.trim();
+  if (!cond) return msg('#brMsg', 'Pilih kondisi produk.');
+  const bad = RBAD.includes(cond), e = { id: uid(), ts: Date.now(), name, vn, qty: q, kind: 'in', cond, ket, note: '', adm: me ? me.name : '' }, ops = [['rgoods', 'set', e]];
+  if (!bad) { const pr = ensureProd(name, vn); if (pr.changed) ops.push(['products', 'set', pr.p]) } // Baik / Kurang: produk & varian juga masuk database produk
+  rgoods.unshift(e);
+  if (!commit(ops)) return msg('#brMsg', 'Penyimpanan penuh.');
+  ['#brName', '#brVar', '#brQty', '#brKet'].forEach(x => $(x).value = ''); $('#brCond').selectedIndex = 0; brCondHint(); brLists(''); renderBr(); // form kosong lagi, dropdown kembali ke default
+  msg('#brMsg', 'Tersimpan: ' + q + ' pcs ' + name + (vn ? ' · ' + vn : '') + ' (' + cond + ') ' + (bad ? 'masuk ke Barang Retur saja.' : 'masuk ke Barang Retur, Barang Gudang, dan Database Produk.'), true);
+};
+
+/* ---------- BARANG RETUR BERMASALAH (daftar + filter, edit, hapus) ---------- */
+const BRF = ['#brFromD', '#brFromT', '#brToD', '#brToT', '#brFCond', '#brFAdm', '#brFQ'];
+const brCondOf = e => e.cond || 'Baik'; // data lama tanpa kondisi dianggap layak pakai
+function brFiltered() {
+  const f = dtv(dtVal('#brFrom')), t = dtv(dtVal('#brTo', true), true), c = $('#brFCond').value, a = $('#brFAdm').value, q = $('#brFQ').value;
+  return rgoods.filter(e => e.qty > 0 && (f === null || e.ts >= f) && (t === null || e.ts <= t) && (!c || brCondOf(e) === c) && (!a || e.adm === a)
+    && (!q.trim() || tokOk(e.name + ' ' + (e.vn || '') + ' ' + String(e.ket || '').toUpperCase(), q))).sort((x, y) => y.ts - x.ts);
+}
+function renderBr() {
+  const L = brFiltered(), V = L.slice(0, 200), bad = L.filter(e => RBAD.includes(brCondOf(e)));
+  $('#brList').innerHTML = sumBar([stag('Total data', NF(L.length)), stag('Total item', NF(sumK2(L, e => e.qty)) + ' pcs')]) + (V.length
+    ? `<div class="tw"><table style="min-width:860px"><thead><tr><th>No</th><th>Waktu</th><th>Nama Barang</th><th>Varian</th><th>Qty</th><th>Kondisi</th><th>Keterangan</th><th>Admin</th><th></th></tr></thead><tbody>${V.map((e, i) => `<tr>
+      <td>${i + 1}</td><td class="nw">${fmt(e.ts)}${tm(e.ts)}</td><td><b>${esc(e.name)}</b></td><td>${e.vn ? sw(gdColor(e.name, e.vn), e.vn) + ' ' + esc(e.vn) : '-'}</td><td>${nfm(e.qty)} pcs</td>
+      <td><span class="tag ${RBAD.includes(brCondOf(e)) ? 'out' : 'in'}">${esc(brCondOf(e))}</span></td><td><div class="wrapc">${esc(e.ket || '-')}</div></td><td>${esc(e.adm || '-')}</td>
+      <td class="nw"><button class="btn ghost sm" data-bredit="${e.id}" type="button">Edit</button> <button class="btn ghost sm" data-brdel="${e.id}" type="button">Hapus</button></td></tr>`).join('')}</tbody></table></div>` + (L.length > V.length ? '<div class="hint2">Menampilkan 200 terbaru dari ' + nfm(L.length) + ' data. Gunakan filter untuk mempersempit.</div>' : '')
+    : '<div class="empty">' + (rgoods.some(e => e.qty > 0) ? 'Data tidak ditemukan.' : 'Belum ada barang retur yang diinput.') + '</div>');
+}
+caps($('#brFQ')); addClear($('#brFQ'));
+BRF.forEach(x => { $(x).addEventListener('input', renderBr); $(x).addEventListener('change', renderBr) });
+$('#brFReset').onclick = () => { BRF.forEach(x => $(x).value = ''); $('#brFQ')._upd && $('#brFQ')._upd(); renderBr() };
+$('#brList').addEventListener('click', e => {
+  const ed = e.target.closest('[data-bredit]'), dl = e.target.closest('[data-brdel]');
+  if (ed) return openSg('rgoods', ed.dataset.bredit);
+  if (dl) {
+    const id = dl.dataset.brdel, r0 = rgoods.find(x => x.id === id); if (!r0) return;
+    askYN('Yakin menghapus barang retur ' + r0.name + (r0.vn ? ' · ' + r0.vn : '') + ' (' + r0.qty + ' pcs, ' + brCondOf(r0) + ')?' + (gdUse(r0) ? ' Stok di Barang Gudang dan Database Produk ikut berkurang.' : ''), () => {
+      const r = rgoods.find(x => x.id === id); if (!r) return;
+      const left = rgoods.filter(x => x.id !== id);
+      if (gdAvail(left, r.name, r.vn || '') < 0) return alert('Tidak bisa dihapus: sebagian barang ini sudah dikeluarkan dari gudang, stok akan menjadi minus. Hapus / ubah pengeluarannya dulu.');
+      const lop = logH('BARANG GUDANG', 'hapus', 'Barang retur ' + r.name + (r.vn ? ' · ' + r.vn : '') + ' · ' + r.qty + ' pcs · ' + brCondOf(r), [{ c: 'rgoods', b: cl(r), a: null }]);
+      rgoods = left; commit([['rgoods', 'del', id], lop]); refresh();
+    });
+  }
+});
+function renderGd() {
+  const q = $('#gdSearch').value, showAll = $('#gdAll').checked, all = gdStock();
+  const L = all.filter(g => (showAll || g.qty > 0) && tokOk(g.name + ' ' + g.vn, q));
+  const sum = sumBar([stag('Total data', NF(L.length)), stag('Total item', NF(L.reduce((s, g) => s + Math.max(0, g.qty), 0)) + ' pcs')]);
+  const found = q.trim() && L.some(g => g.qty > 0) ? '<div class="gdhint">✅ Ada barang retur yang cocok. Pakai stok ini dulu sebelum mengajukan barang baru. Klik barisnya untuk mengambil.</div>' : '';
+  const none = q.trim() && !L.some(g => g.qty > 0) ? '<div class="gdhint warn">Tidak ada stok retur yang cocok dengan pencarian ini. Silakan ajukan barang baru.</div>' : '';
+  $('#gdList').innerHTML = sum + found + none + (L.length
+    ? `<div class="tw"><table style="min-width:720px"><thead><tr><th>No</th><th>Nama Barang</th><th>Varian</th><th>Qty Tersedia</th><th>Update Terakhir</th><th></th></tr></thead><tbody>${L.map((g, i) => `<tr data-gdk="${encodeURIComponent(g.name + '|' + g.vn)}">
+      <td>${i + 1}</td><td><b>${esc(g.name)}</b></td><td>${g.vn ? sw(gdColor(g.name, g.vn), g.vn) + ' ' + esc(g.vn) : '-'}</td><td><span class="tag ${g.qty > 0 ? 'in' : 'out'}">${nfm(g.qty)} pcs</span></td><td class="nw">${fmt(g.last)}${tm(g.last)}</td><td class="nw"><button class="btn ghost sm" data-gdgedit="${encodeURIComponent(g.name + '|' + g.vn)}" type="button">Edit</button> <button class="btn ghost sm" data-gdgdel="${encodeURIComponent(g.name + '|' + g.vn)}" type="button">Hapus</button></td></tr>`).join('')}</tbody></table></div>`
+    : (q.trim() ? '' : '<div class="empty">Belum ada barang di gudang. Barang retur yang diinput lewat menu Barang Retur akan muncul di sini.</div>'));
+}
+caps($('#gdSearch')); $('#gdSearch').addEventListener('input', renderGd); $('#gdAll').addEventListener('change', renderGd);
+let gdCur = null;
+$('#gdList').addEventListener('click', e => {
+  const be = e.target.closest('[data-gdgedit]'), bd = e.target.closest('[data-gdgdel]');
+  if (be) return openGe(decodeURIComponent(be.dataset.gdgedit));
+  if (bd) return delGe(decodeURIComponent(bd.dataset.gdgdel));
+  const tr = e.target.closest('tr[data-gdk]'); if (!tr) return;
+  const [name, vn] = decodeURIComponent(tr.dataset.gdk).split('|'); gdCur = { name, vn }; $('#gdOutQty').value = ''; $('#gdOutNote').value = ''; msg('#gdMsg', ''); renderGdDetail(); $('#gdmdl').hidden = false;
+});
+// edit / hapus satu barang gudang secara keseluruhan (semua catatan nama + varian itu)
+let geCur = null;
+const geEntries = c => rgoods.filter(e => e.name === c.name && (e.vn || '') === c.vn);
+function openGe(key) {
+  const [name, vn] = key.split('|'); geCur = { name, vn };
+  $('#geName').value = name; $('#geVar').value = vn; $('#geQty').value = Math.max(0, gdAvail(rgoods, name, vn));
+  brLists(name); msg('#geMsg', ''); $('#gemdl').hidden = false;
+}
+const closeGe = () => { $('#gemdl').hidden = true; geCur = null };
+$('#geCancel').onclick = closeGe; $('#gemdl').addEventListener('mousedown', e => { if (e.target === $('#gemdl')) closeGe() });
+caps($('#geName')); caps($('#geVar')); $('#geName').addEventListener('input', () => brLists(normName($('#geName').value)));
+$('#geSave').onclick = () => {
+  if (!geCur) return;
+  const name = normName($('#geName').value), vn = normName($('#geVar').value), q = parseInt($('#geQty').value, 10);
+  if (!name) return msg('#geMsg', 'Nama barang wajib diisi.');
+  if (isNaN(q) || q < 0) return msg('#geMsg', 'Qty tersedia harus angka 0 atau lebih.');
+  const ops = [], renamed = name !== geCur.name || vn !== geCur.vn;
+  const ldocs = [], oldLbl = geCur.name + (geCur.vn ? ' · ' + geCur.vn : '');
+  if (renamed) geEntries(geCur).forEach(e => { const b = cl(e); e.name = name; e.vn = vn; ops.push(['rgoods', 'set', e]); ldocs.push({ c: 'rgoods', b, a: cl(e) }) }); // nama / varian diganti di semua catatan
+  const diff = q - gdAvail(rgoods, name, vn); // selisih qty dicatat sebagai koreksi stok
+  if (diff) {
+    const e = diff > 0 ? { id: uid(), ts: Date.now(), name, vn, qty: diff, kind: 'in', cond: 'Baik', ket: 'Koreksi stok', note: '', adm: me ? me.name : '' } : { id: uid(), ts: Date.now(), name, vn, qty: diff, kind: 'out', note: 'Koreksi stok', adm: me ? me.name : '' };
+    rgoods.unshift(e); ops.push(['rgoods', 'set', e]); ldocs.push({ c: 'rgoods', b: null, a: cl(e) });
+  }
+  if (!ops.length) return closeGe();
+  ops.push(logH('BARANG GUDANG', 'edit', oldLbl + (renamed ? ' → ' + name + (vn ? ' · ' + vn : '') : '') + (diff ? ' · koreksi qty ' + (diff > 0 ? '+' : '') + diff : ''), ldocs));
+  if (q > 0 && (renamed || diff > 0)) { const pr = ensureProd(name, vn); if (pr.changed) ops.push(['products', 'set', pr.p]) }
+  if (!commit(ops)) return msg('#geMsg', 'Penyimpanan penuh.');
+  closeGe(); refresh(); renderProducts();
+};
+function delGe(key) {
+  const [name, vn] = key.split('|'), c = { name, vn }, all = geEntries(c); if (!all.length) return;
+  askYN('Yakin menghapus SELURUH data barang gudang ' + name + (vn ? ' · ' + vn : '') + ' (' + nfm(Math.max(0, gdAvail(rgoods, name, vn))) + ' pcs tersedia, ' + all.length + ' catatan)? Stok di Database Produk dari barang ini juga hilang dan tidak bisa dipulihkan.', () => {
+    const ids = new Set(all.map(e => e.id)), lop = logH('BARANG GUDANG', 'hapus', name + (vn ? ' · ' + vn : '') + ' · seluruh barang (' + all.length + ' catatan)', all.map(e => ({ c: 'rgoods', b: cl(e), a: null })));
+    rgoods = rgoods.filter(e => !ids.has(e.id));
+    commit([...ids].map(id => ['rgoods', 'del', id]).concat([lop])); if (gdCur && gdCur.name === name && gdCur.vn === vn) closeGd(); refresh();
+  });
+}
+function renderGdDetail() {
+  if (!gdCur) return;
+  const ev = rgoods.filter(e => e.name === gdCur.name && (e.vn || '') === gdCur.vn && gdUse(e)).sort((a, b) => b.ts - a.ts), qty = ev.reduce((s, e) => s + (Number(e.qty) || 0), 0);
+  $('#gdTitle').textContent = gdCur.name + (gdCur.vn ? ' · ' + gdCur.vn : ''); $('#gdQty').textContent = nfm(qty);
+  $('#gdInT').textContent = nfm(ev.filter(e => e.qty > 0).reduce((s, e) => s + e.qty, 0)); $('#gdOutT').textContent = nfm(-ev.filter(e => e.qty < 0).reduce((s, e) => s + e.qty, 0)); $('#gdNum').textContent = nfm(ev.length);
+  if (!ev.length) return closeGd();
+  $('#gdHist').innerHTML = `<table style="min-width:640px"><thead><tr><th>Waktu</th><th>Jenis</th><th>Qty</th><th>Kondisi</th><th>Admin</th><th>Keterangan</th><th></th></tr></thead><tbody>${ev.map(e => `<tr><td class="nw">${fmt(e.ts)}${tm(e.ts)}</td><td><span class="tag ${e.qty > 0 ? 'in' : 'out'}">${e.qty > 0 ? 'Masuk' : 'Keluar'}</span></td><td>${e.qty > 0 ? '+' : ''}${nfm(e.qty)}</td><td>${e.qty > 0 && e.cond ? esc(e.cond) : '-'}</td><td>${esc(e.adm || '-')}</td><td><div class="wrapc">${esc((e.qty > 0 ? e.ket : e.note) || '-')}</div></td><td class="nw"><button class="btn ghost sm" data-gdedit="${e.id}" type="button">Edit</button> <button class="btn ghost sm" data-gddel="${e.id}" type="button">Hapus</button></td></tr>`).join('')}</tbody></table>`;
+  $('#gdOut').disabled = $('#gdOutQty').disabled = qty <= 0;
+}
+const closeGd = () => { $('#gdmdl').hidden = true; gdCur = null };
+$('#gdHist').addEventListener('click', e => { // edit / hapus riwayat gerak barang langsung dari popup
+  const ed = e.target.closest('[data-gdedit]'), dl = e.target.closest('[data-gddel]');
+  if (ed) return openSg('rgoods', ed.dataset.gdedit);
+  if (dl) {
+    const id = dl.dataset.gddel, r0 = rgoods.find(x => x.id === id); if (!r0) return;
+    askYN('Yakin menghapus ' + (r0.qty > 0 ? 'barang masuk ' : 'pengeluaran ') + r0.name + (r0.vn ? ' · ' + r0.vn : '') + ' (' + Math.abs(r0.qty) + ' pcs)?', () => {
+      const left = rgoods.filter(x => x.id !== id);
+      if (gdAvail(left, r0.name, r0.vn || '') < 0) return alert('Tidak bisa dihapus: sebagian barang ini sudah dikeluarkan dari gudang, stok akan menjadi minus. Hapus / ubah pengeluarannya dulu.');
+      const lop = logH('BARANG GUDANG', 'hapus', (r0.qty > 0 ? 'Barang masuk ' : 'Pengeluaran ') + r0.name + (r0.vn ? ' · ' + r0.vn : '') + ' · ' + Math.abs(r0.qty) + ' pcs', [{ c: 'rgoods', b: cl(r0), a: null }]);
+      rgoods = left; commit([['rgoods', 'del', id], lop]); refresh();
+    });
+  }
+});
+$('#gdClose').onclick = closeGd; $('#gdmdl').addEventListener('mousedown', e => { if (e.target === $('#gdmdl')) closeGd() });
+$('#gdOut').onclick = () => {
+  if (!gdCur) return;
+  const avail = () => rgoods.filter(e => e.name === gdCur.name && (e.vn || '') === gdCur.vn && gdUse(e)).reduce((s, e) => s + (Number(e.qty) || 0), 0), q = parseInt($('#gdOutQty').value, 10);
+  if (!(q >= 1)) return msg('#gdMsg', 'Isi jumlah yang diambil (minimal 1).');
+  if (q > avail()) return msg('#gdMsg', 'Stok hanya tersedia ' + avail() + ' pcs.');
+  const { name, vn } = gdCur;
+  askYN('Yakin mengeluarkan ' + q + ' pcs ' + name + (vn ? ' · ' + vn : '') + ' dari Barang Gudang?', () => {
+    if (q > avail()) return msg('#gdMsg', 'Stok sudah berubah, hanya tersedia ' + avail() + ' pcs.');
+    const e = { id: uid(), ts: Date.now(), name, vn, qty: -q, kind: 'out', note: $('#gdOutNote').value.trim(), adm: me ? me.name : '' };
+    rgoods.unshift(e); commit([['rgoods', 'set', e]]); $('#gdOutQty').value = ''; $('#gdOutNote').value = ''; msg('#gdMsg', q + ' pcs dikeluarkan dari gudang.', true); renderGdDetail(); renderGd();
+  });
+};
+// pengajuan: ingatkan jika barang yang sama masih ada di Barang Gudang
+function gdHint() {
+  const el = $('#pgGd'); if (!el) return;
+  const nm = pgProd ? normName(pgProd.name) : normName(pgSearch.text()), vn = pgVar ? normName(pgVar.n) : '';
+  let L = nm && (pgProd || nm.length >= 3) ? gdStock().filter(g => g.qty > 0 && (pgProd ? g.name === nm : g.name.includes(nm)) && (!vn || g.vn === vn)) : [];
+  if (!L.length) { el.hidden = true; return }
+  el.innerHTML = '📦 Barang retur masih tersedia di Barang Gudang: ' + L.slice(0, 6).map(g => '<b>' + esc(g.name) + (g.vn ? ' · ' + esc(g.vn) : '') + '</b> ' + nfm(g.qty) + ' pcs').join('; ') + (L.length > 6 ? ' dan lainnya' : '') + '.' + (can('gd') ? ' <button type="button" class="lnk" data-gdgo="' + esc(nm) + '">Cek Barang Gudang</button>' : '');
+  el.hidden = false;
+}
+$('#pgGd').onclick = e => { const b = e.target.closest('[data-gdgo]'); if (b) { $('#gdSearch').value = b.dataset.gdgo; go('gd') } };
+
 function renderProducts() {
   const q = $('#pSearch').value.trim().toLowerCase();
   const L = products.filter(p => !q || p.name.toLowerCase().includes(q) || p.variants.some(v => v.n.toLowerCase().includes(q)));
-  $('#pList').innerHTML = '<label>Daftar Produk (' + (q ? L.length + ' dari ' : '') + products.length + ')</label>' + (L.length ? L.map(p => `<div class="pl">
+  $('#pList').innerHTML = pdSum(L) + '<label>Daftar Produk (' + (q ? L.length + ' dari ' : '') + products.length + ')</label>' + (L.length ? L.map(p => `<div class="pl">
     <div><b>${esc(p.name)}</b><div style="margin-top:6px">${p.variants.length ? p.variants.map(v => sw(v.c, v.n)).join(' ') : '<span style="color:var(--mute);font-size:13px">Tanpa varian</span>'}</div></div>
     <div class="nw"><button class="btn ghost sm" data-pe="${p.id}">Edit</button> <button class="btn ghost sm" data-p="${p.id}">Hapus</button></div></div>`).join('') : '<div class="empty">' + (products.length ? 'Produk tidak ditemukan.' : 'Belum ada produk.') + '</div>');
 }
@@ -1784,32 +2146,36 @@ async function adminCreate(rec) {
 }
 /* ---------- ROLE & HAK AKSES ---------- */
 const ROLES = ['Admin', 'Gudang', 'Picker', 'Packing', 'Owner', 'Retur', 'Tamu']; // Tamu = masuk tanpa akun
-const PAGES = { pg: 'Pengajuan', in: 'Input Barang Masuk', pu: 'Purchase', dl: 'Download', rw: 'Riwayat', pr: 'Produk', rt: 'Input Retur', bd: 'Laporan Retur', ow: 'Dashboard Khusus (gembok)' };
+const PAGES = { pg: 'Pengajuan', in: 'Input Barang Masuk', pu: 'Purchase', dl: 'Download', rw: 'Riwayat', pr: 'Database Produk', gd: 'Barang Gudang', rt: 'Input Retur', bd: 'Laporan Retur', br: 'Barang Retur', ow: 'Dashboard Khusus (gembok)' };
 const DEF_PERMS = {
-  Admin: ['pg', 'in', 'pu', 'dl', 'rw', 'pr', 'rt', 'bd', 'ow'],
-  Gudang: ['in', 'pu', 'pr'],
-  Picker: ['pg'],
-  Packing: ['pu'],
-  Owner: ['pg', 'in', 'pu', 'dl', 'rw', 'pr', 'rt', 'bd', 'ow'],
-  Retur: ['rt', 'bd'],
-  Tamu: ['pg', 'in', 'pu', 'dl', 'rw', 'pr']
+  Admin: ['pg', 'in', 'pu', 'dl', 'rw', 'pr', 'gd', 'rt', 'bd', 'br', 'ow'],
+  Gudang: ['in', 'pu', 'pr', 'gd'],
+  Picker: ['pg', 'gd'],
+  Packing: ['pu', 'gd'],
+  Owner: ['pg', 'in', 'pu', 'dl', 'rw', 'pr', 'gd', 'rt', 'bd', 'br', 'ow'],
+  Retur: ['rt', 'bd', 'br', 'gd'],
+  Tamu: ['pg', 'in', 'pu', 'dl', 'rw', 'pr', 'gd']
 };
+const OLD_KEYS = ['pg', 'in', 'pu', 'dl', 'rw', 'pr', 'rt', 'bd', 'ow']; // halaman yang sudah ada saat pengaturan role lama disimpan
 const DEF_DESC = {
   Admin: 'Mengelola seluruh data: pengajuan, input barang masuk, purchase, download, riwayat, dan produk.',
-  Gudang: 'Menerima barang masuk dan mencatat purchase; mengelola daftar produk.',
+  Gudang: 'Menerima barang masuk dan mencatat purchase; mengelola database produk dan barang gudang.',
   Picker: 'Mengambil barang sesuai pengajuan; hanya melihat dan menginput pengajuan.',
   Packing: 'Mengecek hasil penerimaan barang (purchase) sebelum dikemas.',
   Owner: 'Pemilik: akses penuh termasuk Dashboard Khusus (kontrol admin, role, dan analisa).',
-  Retur: 'Menginput retur / pengembalian dan memantau Laporan Retur marketplace.',
+  Retur: 'Menginput retur / pengembalian, mencatat barang retur ke gudang, dan memantau Laporan Retur marketplace.',
   Tamu: 'Masuk tanpa akun; nama admin tidak tercatat.'
 };
 let rolesCfg = null, roleDirty = false; // pengaturan role yang disimpan pemilik (menimpa default)
-const permsOf = r => (rolesCfg && rolesCfg.perms && rolesCfg.perms[r]) || DEF_PERMS[r] || [];
+const permsOf = r => { // halaman baru (belum ada saat pengaturan disimpan) ikut aturan default role sampai pemilik menyimpan ulang
+  const c = rolesCfg && rolesCfg.perms && rolesCfg.perms[r]; if (!c) return DEF_PERMS[r] || [];
+  const seen = rolesCfg.seen || OLD_KEYS; return c.concat((DEF_PERMS[r] || []).filter(k => !seen.includes(k) && !c.includes(k)));
+};
 const descOf = r => (rolesCfg && rolesCfg.desc && rolesCfg.desc[r]) || DEF_DESC[r] || '';
 const defRole = () => (rolesCfg && rolesCfg.defRole) || 'Admin';
 const roleName = () => { if (!me) return 'Tamu'; if (me.username === SUPER.username) return 'Owner'; const a = admins.find(x => x.username === me.username); return (a && a.role) || me.role || 'Admin' };
 const can = k => roleName() === 'Owner' || permsOf(roleName()).includes(k); // Owner selalu boleh semua halaman
-const firstPage = () => ['pg', 'in', 'pu', 'rt', 'bd', 'dl', 'rw', 'pr'].find(can);
+const firstPage = () => ['pg', 'in', 'pu', 'rt', 'bd', 'br', 'dl', 'rw', 'pr', 'gd'].find(can);
 let superDone = false;
 async function ensureSuper() { // dibuat sekali per sesi bila belum ada; bila ada, dipastikan tetap Owner (password yang sudah diganti tidak ditimpa)
   if (superDone) return; superDone = true;
@@ -1836,7 +2202,7 @@ function syncMe() { // data akun berubah (mis. role diganti pemilik) -> ikut dip
 }
 function applyRole() {
   $$('nav button[data-t]').forEach(b => b.style.display = can(b.dataset.t) ? '' : 'none');
-  $('#ngRetur').style.display = can('rt') || can('bd') ? '' : 'none';
+  $$('.ng').forEach(g => g.style.display = g.dataset.p.split(',').some(can) ? '' : 'none');
   $('#lockBtn').style.display = can('ow') ? '' : 'none';
   renderWho(); renderNotif();
   const cur = ($('.sec.on') || {}).id;
@@ -2035,7 +2401,7 @@ function saveRoles() {
   $$('#owBody [data-rp]').forEach(c => { const [r, k] = c.dataset.rp.split('|'); if (c.checked || (r === 'Owner' && k === 'ow')) perms[r].push(k) });
   perms.Owner = Object.keys(PAGES); // Owner selalu penuh
   $$('#owBody [data-rdesc]').forEach(t => desc[t.dataset.rdesc] = t.value.trim());
-  rolesCfg = { id: 'roles', perms, desc, defRole: $('#owDef').value || 'Admin', upd: Date.now() };
+  rolesCfg = { id: 'roles', perms, desc, defRole: $('#owDef').value || 'Admin', seen: Object.keys(PAGES), upd: Date.now() };
   commit([['settings', 'set', rolesCfg]]); roleDirty = false; applyRole(); renderOw(); alert('Role & hak akses tersimpan.');
 }
 function resetRoles() {
@@ -2074,11 +2440,50 @@ function tabReco(D) {
   const ic = { good: '✅', bad: '🚨', warn: '⚠️', info: '💡' };
   return `<div class="card"><h3>Rekomendasi kebijakan pemasaran</h3><p class="hint">Dihitung otomatis dari data pengajuan &amp; pemenuhan pada periode dan filter di atas. Catatan: pengajuan barang adalah <b>indikator permintaan internal</b>, bukan data penjualan ke pelanggan. Cocokkan dengan data penjualan sebelum mengambil keputusan besar.</p>${owReco(D).map(o => `<div class="rec ${o.t}"><b>${ic[o.t]} ${o.h}</b><p>${o.x}</p></div>`).join('')}</div>`;
 }
+/* ---------- tab GRAFIK: diagram batang mendatar yang rinci ---------- */
+function topN(a, n, f) { return a.slice().sort((x, y) => (y[f || 'a'] || 0) - (x[f || 'a'] || 0)).slice(0, n) }
+function aggBy(arr, kf, vf) { const m = new Map(); arr.forEach(x => { const k = kf(x); if (k == null || k === '') return; let o = m.get(k); if (!o) m.set(k, o = { k, a: 0, b: 0, n: 0 }); const v = vf(x); o.a += v[0] || 0; o.b += v[1] || 0; o.n++ }); return [...m.values()] }
+const monLbl = k => BLN[+k.slice(5, 7) - 1] + ' ' + k.slice(0, 4);
+const byKey = a => a.slice().sort((x, y) => x.k < y.k ? -1 : x.k > y.k ? 1 : 0);
+// items: [{k: label, a: nilai utama, b: nilai kedua (opsional), t: warna 'ok'|'bad'|'mid', txt: teks nilai bebas}]
+function hch(title, hint, items, o) {
+  o = o || {}; let rows = items.filter(x => o.keep || x.a || x.b);
+  if (!o.fixed) rows = rows.slice().sort((x, y) => (y.a || 0) - (x.a || 0));
+  if (o.max) rows = rows.slice(0, o.max);
+  const mx = Math.max(1, ...rows.map(x => Math.max(x.a || 0, x.b || 0))), ta = rows.reduce((s, x) => s + (x.a || 0), 0), tb = rows.reduce((s, x) => s + (x.b || 0), 0), u = o.unit ? ' ' + o.unit : '', bc = o.bc || 'ok';
+  const lg = o.lb ? `<div class="lg"><span><i style="background:var(--pri)"></i>${o.la}</span><span><i class="${bc}"></i>${o.lb}</span></div>` : '';
+  const tot = o.notot ? '' : sumBar([stag('Total ' + (o.la || 'data'), NF(ta) + u), o.lb ? stag('Total ' + o.lb, NF(tb) + u) : '']);
+  const w = v => v ? Math.max(1.5, v / mx * 100) : 0;
+  return `<div class="card hcard"><h3>${title}</h3><p class="hint">${hint}</p>${tot}${lg}<div class="hcw">` + (rows.length ? rows.map(x => `<div class="hc"><span class="hl2" title="${esc(x.k)}">${esc(x.k)}</span><div class="hbars"><div class="hbar ${x.t || ''}" style="width:${w(x.a)}%"></div>${o.lb ? `<div class="hbar ${bc}" style="width:${w(x.b)}%"></div>` : ''}</div><b class="hv">${x.txt != null ? x.txt : NF(x.a) + (o.lb ? ' / ' + NF(x.b) + ' <small>(' + pct(x.b, x.a) + '%)</small>' : '') + u}</b></div>`).join('') : '<div class="empty">Belum ada data pada periode / filter ini.</div>') + '</div></div>';
+}
+const shd = t => `<h3 class="sh">${t}</h3>`;
+const hrWIB = ts => (new Date(ts).getUTCHours() + 7) % 24;
+function tabChart(D) {
+  const { R, E, lead, f, t } = D, fin = x => inR(x.ts, f, t), H = [];
+  const rets = returns.filter(fin), rgs = rgoods.filter(x => x.qty > 0 && fin(x)), stock = stockRows();
+  H.push(`<div class="card hcard"><h3>Grafik</h3><p class="hint">Mengikuti Periode dan Asal Barang di atas (Stok Produk selalu seluruh waktu; Retur tidak punya asal barang).</p></div>`);
+  H.push(shd('Pengajuan'));
+  const P = grp(R, r => r.prod, lead);
+  H.push(hch('Produk teratas: diminta vs terpenuhi (pcs)', '10 produk dengan pcs diminta terbanyak.', P.map(g => ({ k: g.k, a: g.min, b: g.ada })), { la: 'Diminta', lb: 'Terpenuhi', unit: 'pcs', max: 10 }));
+  H.push(hch('Status pengajuan (jumlah baris)', 'Selesai = ada ≥ diminta; Sebagian = sudah ada sebagian; Menunggu = belum ada.', [{ k: 'Selesai', a: R.filter(r => r.ada >= r.min).length, t: 'ok' }, { k: 'Sebagian', a: R.filter(r => r.ada > 0 && r.ada < r.min).length, t: 'mid' }, { k: 'Menunggu', a: R.filter(r => !r.ada).length, t: 'bad' }], { fixed: true, keep: true, la: 'Baris' }));
+  const hA = Array(24).fill(0), hB = Array(24).fill(0); E.forEach(e => { const i = hrWIB(e.ts); hA[i] += e.n; hB[i] += e.a });
+  H.push(hch('Pengajuan per jam input, WIB (pcs)', 'Jam berapa pengajuan paling sering diinput (hanya jam yang ada isinya).', hA.map((v, i) => ({ k: p2(i) + ':00 - ' + p2(i) + ':59', a: v, b: hB[i] })), { fixed: true, la: 'Diajukan', lb: 'Terpenuhi', unit: 'pcs' }));
+  const wdA = [0, 0, 0, 0, 0, 0, 0], wdB = [0, 0, 0, 0, 0, 0, 0]; E.forEach(e => { wdA[wdOf(e.ts)] += e.n; wdB[wdOf(e.ts)] += e.a });
+  H.push(hch('Pengajuan per hari dalam seminggu (pcs)', 'Hari mana permintaan paling ramai.', [1, 2, 3, 4, 5, 6, 0].map(i => ({ k: WD[i], a: wdA[i], b: wdB[i] })), { fixed: true, keep: true, la: 'Diajukan', lb: 'Terpenuhi', unit: 'pcs' }));
+  H.push(hch('Per asal barang: diminta vs terpenuhi (pcs)', 'Perbandingan tiap sumber barang.', grp(R, r => r.src, lead).map(g => ({ k: g.k, a: g.min, b: g.ada })), { la: 'Diminta', lb: 'Terpenuhi', unit: 'pcs' }));
+  H.push(shd('Retur'));
+  H.push(hch('Status retur', 'Jumlah laporan retur per status.', [['On Progress', ''], ['Review', 'mid'], ['Done', 'ok'], ['Failed', 'bad']].map(([k, tc]) => ({ k, a: rets.filter(r => r.status === k).length, t: tc })), { fixed: true, keep: true, la: 'Laporan' }));
+  H.push(hch('Per marketplace', 'Jumlah retur dan yang sudah Done.', aggBy(rets, r => r.mp || '(tanpa marketplace)', r => [1, r.status === 'Done' ? 1 : 0]), { la: 'Retur', lb: 'Done' }));
+  H.push(hch('Barang retur per kondisi (pcs)', 'Baik / Kurang masuk gudang; Rusak / Lecet hanya tercatat di Barang Retur.', ['Baik', 'Kurang', 'Rusak', 'Lecet'].map(c => ({ k: c, a: sumK2(rgs.filter(x => brCondOf(x) === c), x => x.qty), t: RBAD.includes(c) ? 'bad' : 'ok' })), { fixed: true, keep: true, la: 'Qty', unit: 'pcs' }));
+  H.push(shd('Stok'));
+  H.push(hch('Stok per produk (pcs, seluruh waktu)', '10 produk dengan stok terbanyak (varian digabung).', aggBy(stock, g => g.prod, g => [g.qty]), { la: 'Stok', unit: 'pcs', max: 10 }));
+  return H.join('');
+}
 function renderOw() {
   if (!owOk) return;
   $$('.otabs button').forEach(b => b.classList.toggle('on', b.dataset.o === owTab));
   const D = owData();
-  $('#owBody').innerHTML = { sum: tabSum, prod: tabProd, adm: tabAdm, rec: tabReco, role: tabRole }[owTab](D);
+  $('#owBody').innerHTML = { sum: tabSum, chart: tabChart, prod: tabProd, adm: tabAdm, rec: tabReco, role: tabRole }[owTab](D);
 }
 // ---- gerbang kode & kontrol akses ----
 function openOw() { if (owOk) return go('ow'); $('#gCode').value = ''; msg('#gMsg', ''); $('#gmdl').hidden = false; $('#gCode').focus() }
