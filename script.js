@@ -855,7 +855,7 @@ $('#inSubmit').onclick = () => {
   if (pid) { photos[pid] = photo; ops.push(['photos', 'set', { id: pid, d: photo }]) }
   lines.forEach(([r, v]) => {
     r.ada += v;
-    const rec = { id: uid(), ts, sj, prod: r.prod, vn: r.vn, vc: r.vc, ada: r.ada, min: r.min, src: r.src, adm: r.adm || '', pid, rid: r.id };
+    const rec = { id: uid(), ts, sj, prod: r.prod, vn: r.vn, vc: r.vc, ada: r.ada, min: r.min, src: r.src, adm: r.adm || '', pid, rid: r.id, got: v }; // got = jumlah yang diterima pada input ini (boleh 0); ada = total kumulatif
     records.unshift(rec); ops.push(['requests', 'set', r], ['records', 'set', rec]);
   });
   if (!commit(ops)) return msg('#inMsg', 'Penyimpanan penuh. Coba tanpa foto atau hapus data lama.');
@@ -886,7 +886,7 @@ function renderTable() {
   const rows = filtered(), filt = FIL.some(s => $(s).value), now = ymd(Date.now());
   const rowHtml = r => `<tr>
     <td>${seq[r.id]}</td><td>${fmt(r.ts)}${tm(r.ts)}</td><td>${esc(r.sj || '-')}</td><td>${esc(r.prod)}</td><td>${sw(r.vc, r.vn)}</td>
-    <td>${r.ada} / ${r.min} pcs</td><td>${stat(r.ada, r.min)}</td><td><span class="tag">${esc(r.src)}</span></td><td>${esc(r.adm || '-')}</td>
+    <td>${r.ada} / ${r.min} pcs${r.got != null ? `<div class="tm">Diterima input ini: <b>${r.got}</b> pcs</div>` : ''}</td><td>${stat(r.ada, r.min)}</td><td><span class="tag">${esc(r.src)}</span></td><td>${esc(r.adm || '-')}</td>
     <td>${!r.pid || photos[r.pid] === '' ? '-' : photos[r.pid] ? `<img class="thumb" src="${photos[r.pid]}" alt="Surat jalan">` : `<button class="btn ghost sm" data-photo="${esc(r.pid)}" type="button">📷 Lihat</button>`}</td>
     <td class="nw"><button class="btn ghost sm" data-edit="${r.id}">Edit</button> <button class="btn ghost sm" data-del="${r.id}">Hapus</button></td></tr>`;
   const tbl = list => `<div class="tw"><table><thead><tr><th>No</th><th>Tanggal</th><th>No. SJ</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Status</th><th>Asal</th><th>Admin</th><th>Foto</th><th></th></tr></thead><tbody>${list.slice().sort((a, b) => seq[a.id] - seq[b.id]).map(rowHtml).join('')}</tbody>${puFoot(list)}</table></div>`;
@@ -973,6 +973,7 @@ $('#eSave').onclick = () => {
   if ((d !== ymd(r.ts) || ($('#eTime').value.trim() || hm(r.ts)) !== hm(r.ts)) && !codeOk('#eCode')) return msg('#eMsg', 'Mengubah tanggal / jam wajib memakai kode 6 digit yang benar.');
   const bRec = cl(r), bRq = cl(r.rid && reqs.find(x => x.id === r.rid)), bSib = sibs.map(cl);
   Object.assign(r, { ts: new Date(d + 'T' + ($('#eTime').value || hm(r.ts))).getTime(), sj: $('#eSj').value.trim(), prod: $('#eProd').value, vn: v ? v.n : '', vc: v ? v.c : '', ada: a, min: m, src: $('#eSrc').value, adm: $('#eAdm').value });
+  if (a !== bRec.ada) delete r.got;
   const rq = r.rid && reqs.find(x => x.id === r.rid);
   if (rq) { // sinkron ke form Pengajuan
     const f = { prod: r.prod, vn: r.vn, vc: r.vc, min: r.min, src: r.src, adm: r.adm }, pp = products.find(x => x.name === r.prod);
