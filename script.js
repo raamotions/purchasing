@@ -1,5 +1,7 @@
 const $ = s => document.querySelector(s), $$ = s => document.querySelectorAll(s);
 const SRC = ['Kode A', 'Kode B', 'Aling', 'Kode AG', 'Kode BG'];
+const TAHAP_MAX = 10;
+const thLbl = n => n ? 'Tahap ' + n : '-';
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const sw = (c, n) => c ? `<span class="sw" title="${esc(n || '')}" style="background:${c}"></span>` : '-';
@@ -273,19 +275,25 @@ $$('nav button[data-t]').forEach(b => b.onclick = () => go(b.dataset.t));
 $$('.ng > button').forEach(b => b.onclick = e => { e.stopPropagation(); const g = b.parentElement, was = g.classList.contains('open'); $$('.ng').forEach(x => x.classList.remove('open')); g.classList.toggle('open', !was) });
 $('#burger').onclick = e => { e.stopPropagation(); $('#nav').classList.toggle('open') };
 document.addEventListener('click', e => { if (!e.target.closest('#nav')) $('#nav').classList.remove('open'); if (!e.target.closest('.ng')) $$('.ng').forEach(g => g.classList.remove('open')) });
+$$('select[data-th]').forEach(s => { // dropdown Tahap 1 - Tahap 10
+  s.innerHTML = `<option value="">${s.dataset.th}</option>` + Array.from({ length: TAHAP_MAX }, (_, i) => `<option value="${i + 1}">Tahap ${i + 1}</option>`).join('');
+});
 $$('select[data-src]').forEach(s => {
   s.innerHTML = `<option value="">${s.dataset.src}</option>` + SRC.map(x => `<option>${x}</option>`).join('');
 });
-function fillAdm() { // daftar nama admin = akun terdaftar + nama yang sudah tercatat di data
-  const names = [...new Set(admins.map(a => a.name).concat(reqs.map(r => r.adm), records.map(r => r.adm), downloads.map(r => r.adm), hlog.map(r => r.adm), returns.map(r => r.adm), rgoods.map(r => r.adm)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+// pembatasan data per admin: hanya Owner & Retur yang boleh melihat data semua admin; role lain hanya melihat data miliknya sendiri
+const seeAll = () => { const r = roleName(); return r === 'Owner' || r === 'Retur' };
+const mine = x => seeAll() || (x.adm || '') === (me ? me.name : '');
+const admF = id => roleName() === 'Owner' ? $(id).value : ''; // filter Nama Admin hanya berlaku untuk Owner
+function fillAdm() { // daftar nama admin = akun terdaftar + nama yang sudah tercatat di data (non-Owner/Retur: hanya namanya sendiri)
+  const names = seeAll() ? [...new Set(admins.map(a => a.name).concat(reqs.map(r => r.adm), records.map(r => r.adm), downloads.map(r => r.adm), hlog.map(r => r.adm), returns.map(r => r.adm), rgoods.map(r => r.adm)).filter(Boolean))].sort((a, b) => a.localeCompare(b)) : (me && me.name ? [me.name] : []);
+  $$('.ownadm').forEach(w => w.hidden = roleName() !== 'Owner');
   $$('select[data-adm]').forEach(s => {
     const v = s.value;
     s.innerHTML = `<option value="">${s.dataset.adm}</option>` + names.map(x => `<option>${esc(x)}</option>`).join('');
     s.value = v;
   });
 }
-fillAdm();
-
 /* ---------- tombol x (hapus teks) pada kolom pencarian ---------- */
 function addClear(inp) {
   const w = document.createElement('span'); w.className = 'clrw';
@@ -383,6 +391,9 @@ $('#pgSubmit').onclick = () => {
   const m = parseInt($('#pgMin').value, 10), src = $('#pgSrc').value, adm = me ? me.name : ''; // nama admin otomatis dari akun yang login (tamu: kosong)
   if (!(m >= 1)) return msg('#pgMsg', 'Isi jumlah barang diminta (angka).');
   if (!src) return msg('#pgMsg', 'Pilih asal barang.');
+  const th = parseInt($('#pgTh').value, 10);
+  if (!(th >= 1 && th <= TAHAP_MAX)) return msg('#pgMsg', 'Pilih tahap pengajuan (wajib).');
+  if (!tahapOk(th, adm, dayWIB(Date.now()))) return msg('#pgMsg', tahapErr(th));
   const ops = []; let np = null, nvAdded = null;
   if (!prod) { // produk baru: langsung masuk ke database produk
     np = prod = { id: uid(), name: typed, variants: [] }; products.push(np);
@@ -396,14 +407,14 @@ $('#pgSubmit').onclick = () => {
   if (np || nvAdded) ops.push(['products', 'set', prod]);
   const vn = vr ? vr.n : '', vc = vr ? vr.c : '';
   // produk + warna + asal yang sama (hari ini) digabung, jumlah diminta dijumlahkan
-  const ex = np ? null : todayReqs().find(r => String(r.pid) === String(prod.id) && r.vn === vn && r.vc === vc && r.src === src && (r.adm || '') === adm);
+  const ex = np ? null : todayReqs().find(r => String(r.pid) === String(prod.id) && r.vn === vn && r.vc === vc && r.src === src && (r.adm || '') === adm && (r.tahap || 0) === th);
   const now = Date.now();
   if (ex) {
     ex.hist = reqHist(ex).concat({ ts: now, n: m }); // catat jam input tambahan
     ex.min += m; ops.push(['requests', 'set', ex]);
     records.filter(x => x.rid === ex.id).forEach(x => { x.min = ex.min; ops.push(['records', 'set', x]) });
   } else {
-    const q = { id: uid(), ts: now, pid: prod.id, prod: prod.name, vn, vc, min: m, ada: 0, src, adm, hist: [{ ts: now, n: m }] };
+    const q = { id: uid(), ts: now, pid: prod.id, prod: prod.name, vn, vc, min: m, ada: 0, src, adm, tahap: th, hist: [{ ts: now, n: m }] };
     reqs.unshift(q); ops.push(['requests', 'set', q]);
   }
   if (!commit(ops)) return msg('#pgMsg', 'Penyimpanan penuh.');
@@ -413,21 +424,23 @@ $('#pgSubmit').onclick = () => {
     : nvAdded ? 'Varian "' + nvAdded + '" ditambahkan ke produk ' + prod.name + ', pengajuan tersimpan.' : 'Pengajuan tersimpan.', true);
   renderReqs(); renderProducts();
 };
-const todayReqs = () => reqs.filter(r => dayWIB(r.ts) === dayWIB(Date.now()));
+const tahapOk = (n, adm, day, selfId) => n <= 1 || reqs.some(x => x.id !== selfId && (x.adm || '') === (adm || '') && dayWIB(x.ts) === day && x.tahap === n - 1);
+const tahapErr = n => 'Tahap ' + n + ' ditolak: belum ada pengajuan Tahap ' + (n - 1) + ' hari ini. Ajukan Tahap ' + (n - 1) + ' dulu (Tahap 1 boleh langsung, dan Tahap yang sama boleh diajukan berulang).';
+const todayReqs = () => reqs.filter(r => mine(r) && dayWIB(r.ts) === dayWIB(Date.now()));
 const openHist = {}; // id pengajuan -> daftar jam input sedang dibuka
 const histLab = (r, x) => ymd(x.ts) === ymd(r.ts) ? hm(x.ts) : tsFmt(x.ts);
 const histBtn = r => { const h = reqHist(r); return h.length > 1 ? `<button type="button" class="arw${openHist[r.id] ? ' on' : ''}" data-hist="${r.id}" title="Lihat jam input">${h.length}×</button>` : '' };
 const histRow = r => {
   const h = reqHist(r); if (h.length < 2) return '';
-  return `<tr class="hrow" data-for="${r.id}"${openHist[r.id] ? '' : ' hidden'}><td></td><td colspan="8"><table class="mt"><thead><tr><th>Produk</th><th>Varian</th><th>Ada / Diajukan</th><th>Waktu input</th><th></th></tr></thead><tbody>`
+  return `<tr class="hrow" data-for="${r.id}"${openHist[r.id] ? '' : ' hidden'}><td></td><td colspan="9"><table class="mt"><thead><tr><th>Produk</th><th>Varian</th><th>Ada / Diajukan</th><th>Waktu input</th><th></th></tr></thead><tbody>`
     + reqEntries(r).map(x => `<tr><td>${esc(r.prod)}</td><td>${r.vc ? sw(r.vc, r.vn) + ' ' : ''}${esc(r.vn || '-')}</td><td>${x.a} / ${x.n} pcs</td><td>${tsFmt(x.ts)}</td><td class="nw"><button class="btn ghost sm" data-hedit="${r.id}" data-ts="${x.ts}">Edit</button> <button class="btn ghost sm" data-hdel="${r.id}" data-ts="${x.ts}">Hapus</button></td></tr>`).join('') + '</tbody></table></td></tr>';
 };
 const pgRow = (r, n) => `<tr>
     <td>${n + 1}</td><td>${fmt(r.ts)}${tm(r.ts)}${histBtn(r)}</td><td>${esc(r.prod)}</td><td>${sw(r.vc, r.vn)}</td>
-    <td>${r.ada} / ${r.min} pcs${r.part ? '<div class="tm">sesuai filter · total ' + r.tot + ' pcs</div>' : ''}</td><td><span class="tag">${esc(r.src)}</span></td><td>${esc(r.adm || '-')}</td>
+    <td>${r.ada} / ${r.min} pcs${r.part ? '<div class="tm">sesuai filter · total ' + r.tot + ' pcs</div>' : ''}</td><td><span class="tag">${esc(r.src)}</span></td><td>${thLbl(r.tahap)}</td><td>${esc(r.adm || '-')}</td>
     <td>${reqStat(r)}</td>
     <td class="nw"><button class="btn ghost sm" data-redit="${r.id}">Edit</button> <button class="btn ghost sm" data-del="${r.id}">Hapus</button></td></tr>${histRow(r)}`;
-const pgTbl = list => `<div class="tw"><table><thead><tr><th>No</th><th>Tanggal</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Asal</th><th>Admin</th><th>Status</th><th></th></tr></thead><tbody>${list.map(pgRow).join('')}</tbody>${pgFoot(list)}</table></div>`;
+const pgTbl = list => `<div class="tw"><table><thead><tr><th>No</th><th>Tanggal</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Asal</th><th>Pengajuan</th><th>Admin</th><th>Status</th><th></th></tr></thead><tbody>${list.map(pgRow).join('')}</tbody>${pgFoot(list)}</table></div>`;
 function renderReqs() { // hari ini tampil di atas; hari-hari sebelumnya otomatis masuk riwayat per tahun > bulan (tertutup)
   const all = pgFiltered(), today = dayWIB(Date.now()), filt = PGF.some(x => $(x).value);
   const tr = all.filter(r => dayWIB(r.ts) === today), hr = all.filter(r => dayWIB(r.ts) !== today), g = {};
@@ -478,7 +491,7 @@ function openREdit(id) {
   const r = rRec = reqs.find(x => x.id === id); if (!r) return;
   rSearch.set(r.prod);
   fillRVar(r.prod, r.vn, r.vc);
-  $('#rAda').value = r.ada; $('#rMin').value = r.min; $('#rSrc').value = r.src; $('#rAdm').value = r.adm || '';
+  $('#rAda').value = r.ada; $('#rMin').value = r.min; $('#rSrc').value = r.src; $('#rAdm').value = r.adm || ''; $('#rTh').value = r.tahap || '';
   rAddNew = false; $('#rVarName').value = ''; $('#rVarCol').value = '#4a7bd0'; rNewUI();
   const nh = reqHist(r).length;
   $('#rD').value = ymd(r.ts); $('#rT').value = hm(r.ts); $('#rD').disabled = $('#rT').disabled = nh > 1; $('#rCode').value = '';
@@ -511,6 +524,9 @@ $('#rSave').onclick = () => {
   const r = reqs.find(x => x.id === rRec.id) || rRec, m = parseInt($('#rMin').value, 10), name = normName(rSearch.text());
   if (!name) return msg('#rMsg', 'Isi nama produk.');
   if (!(m >= 1)) return msg('#rMsg', 'Isi jumlah diminta dengan angka.');
+  const rth = parseInt($('#rTh').value, 10);
+  if (r.tahap && !rth) return msg('#rMsg', 'Pilih tahap pengajuan (wajib).');
+  if (rth && (rth !== r.tahap || $('#rAdm').value !== (r.adm || '')) && !tahapOk(rth, $('#rAdm').value, dayWIB(r.ts), r.id)) return msg('#rMsg', tahapErr(rth).replace('hari ini', 'pada hari pengajuan ini'));
   if (m < r.ada) return msg('#rMsg', 'Jumlah diminta tidak boleh kurang dari barang yang sudah ada (' + r.ada + ').');
   if (!$('#rSrc').value) return msg('#rMsg', 'Pilih asal barang.');
   const bR = cl(r), bRec = records.filter(x => x.rid === r.id).map(cl), rT = $('#rT').value.trim();
@@ -532,10 +548,10 @@ $('#rSave').onclick = () => {
     if (!v) return msg('#rMsg', 'Warna wajib diisi: pilih dari daftar atau klik "+ Warna baru".');
   }
   if (np) products.push(np);
-  Object.assign(r, { pid: p.id, prod: p.name, vn: v.n, vc: v.c, min: m, src: $('#rSrc').value, adm: $('#rAdm').value });
+  Object.assign(r, { pid: p.id, prod: p.name, vn: v.n, vc: v.c, min: m, src: $('#rSrc').value, adm: $('#rAdm').value }); if (rth) r.tahap = rth;
   if (dtCh) { r.ts = new Date($('#rD').value + 'T' + rT).getTime(); if (Array.isArray(r.hist) && r.hist.length === 1) r.hist = [{ ts: r.ts, n: r.min }] }
   ops.push(['requests', 'set', r]);
-  records.filter(x => x.rid === r.id).forEach(x => { Object.assign(x, { prod: r.prod, vn: r.vn, vc: r.vc, min: r.min, src: r.src, adm: r.adm }); ops.push(['records', 'set', x]) });
+  records.filter(x => x.rid === r.id).forEach(x => { Object.assign(x, { prod: r.prod, vn: r.vn, vc: r.vc, min: r.min, src: r.src, adm: r.adm }); if (r.tahap) x.tahap = r.tahap; ops.push(['records', 'set', x]) });
   ops.push(logH('PENGAJUAN', 'edit', bR.prod + (bR.vn ? ' · ' + bR.vn : ''), histDocs(bR, bRec, r)));
   if (!commit(ops)) return msg('#rMsg', 'Penyimpanan penuh.');
   closeREdit(); renderReqs(); renderProducts();
@@ -617,42 +633,42 @@ function pgView(r, f, t) {
 const inTime = (r, f, t) => reqHist(r).some(h => (f === null || h.ts >= f) && (t === null || h.ts <= t)); // salah satu jam input masuk rentang filter
 const reqStat = r => r.ada >= r.min ? 'Selesai' : r.ada ? 'Sebagian' : 'Menunggu';
 function pgFiltered() { // dipakai oleh daftar di layar DAN export
-  const f = dtv(dtVal('#xFrom')), t = dtv(dtVal('#xTo', true), true), s = $('#xSrc').value, a = $('#xAdm').value,
+  const f = dtv(dtVal('#xFrom')), t = dtv(dtVal('#xTo', true), true), s = $('#xSrc').value, th = $('#xTh').value, am = admF('#xAdm'),
     q = $('#xProd').value.trim().toLowerCase(), st = $('#xSt').value, out = [];
   reqs.forEach(r => {
-    if ((s && r.src !== s) || (a && r.adm !== a) || (q && !String(r.prod).toLowerCase().includes(q))) return;
+    if (!mine(r) || (s && r.src !== s) || (am && (r.adm || '') !== am) || (th && String(r.tahap) !== th) || (q && !String(r.prod).toLowerCase().includes(q))) return;
     const v = pgView(r, f, t); // filter tanggal & jam: hanya input yang sesuai rentang
     if (v && (!st || reqStat(v) === st)) out.push(v);
   });
   return out.sort((x, y) => x.ts - y.ts);
 }
 // nama admin untuk header & nama file: sesuai filter, atau nama admin yang ada di data
-const admList = (sel, rows) => $(sel).value ? [$(sel).value] : [...new Set(rows.map(r => r.adm).filter(Boolean))];
-const admHead = (sel, rows) => admList(sel, rows).join(', ') || '-';
-function fileName(asal, adm, form, ext) { // KODE ASAL BARANG-NAMA ADMIN-DDMMYY-FORM DOWNLOAD-JJ.MM
+const admList = rows => [...new Set(rows.map(r => r.adm).filter(Boolean))];
+const admHead = rows => admList(rows).join(', ') || '-';
+function fileName(asal, adm, form, ext) { // KODE ASAL BARANG (tanpa filter: REPORT)-NAMA ADMIN-DDMMYY-FORM DOWNLOAD-JJ.MM
   const d = dayWIB(Date.now()).split('-');
   const jam = new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).replace(':', '.'); // jam export (WIB), mis. 15.00
-  return [asal || 'SEMUA', adm || 'SEMUA', d[2] + d[1] + d[0].slice(2), form, jam].join('-').toUpperCase().replace(/[\\/:*?"<>|]+/g, '') + '.' + ext;
+  return [asal || 'REPORT', adm || 'SEMUA', d[2] + d[1] + d[0].slice(2), form, jam].join('-').toUpperCase().replace(/[\\/:*?"<>|]+/g, '') + '.' + ext;
 }
-const admFile = (sel, rows) => { const l = admList(sel, rows); return l.length === 1 ? l[0] : 'SEMUA' };
+const admFile = rows => { const l = admList(rows); return l.length === 1 ? l[0] : 'SEMUA' };
 function pgHead(rows) {
   const f = dtVal('#xFrom'), t = dtVal('#xTo', true);
   const tgl = !f && !t ? 'Semua tanggal' : f && t ? fDT(f) + ' s/d ' + fDT(t) : f ? 'Mulai ' + fDT(f) : 'Sampai ' + fDT(t);
-  return { title: 'Permintaan Pengajuan Barang', tgl: 'Tanggal & Jam Pengajuan: ' + tgl, asal: 'Asal Barang: ' + ($('#xSrc').value || 'Semua'), adm: 'Nama Admin: ' + admHead('#xAdm', rows || []) };
+  return { title: 'Permintaan Pengajuan Barang', tgl: 'Tanggal & Jam Pengajuan: ' + tgl, asal: 'Asal Barang: ' + ($('#xSrc').value || 'Semua'), adm: 'Nama Admin: ' + admHead(rows || []) };
 }
 $('#pgXls').onclick = () => {
   if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
   const rows = pgFiltered().sort(azSort);
   if (!rows.length) return alert('Tidak ada pengajuan pada filter itu.');
   const H = pgHead(rows);
-  const aoa = [[H.title], [H.tgl], [H.asal], [H.adm], [], ['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Status']]
-    .concat(rows.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', SL + r.min + ' pcs', r.src, '\u2610']));
+  const aoa = [[H.title], [H.tgl], [H.asal], [H.adm], [], ['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Pengajuan', 'Status']]
+    .concat(rows.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', SL + r.min + ' pcs', r.src, thLbl(r.tahap), '\u2610']));
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!merges'] = [0, 1, 2, 3].map(r => ({ s: { r, c: 0 }, e: { r, c: 6 } }));
-  ws['!cols'] = [5, 17, 28, 16, 18, 10, 8].map(w => ({ wch: w }));
+  ws['!merges'] = [0, 1, 2, 3].map(r => ({ s: { r, c: 0 }, e: { r, c: 7 } }));
+  ws['!cols'] = [5, 17, 28, 16, 18, 10, 11, 8].map(w => ({ wch: w }));
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Pengajuan');
-  const fn = fileName($('#xSrc').value, admFile('#xAdm', rows), 'PENGAJUAN', 'xlsx'); XLSX.writeFile(wb, fn);
-  logDl({ form: 'PENGAJUAN', fmt: 'Excel', fname: fn, src: $('#xSrc').value, subs: rows.map(r => reqHist(r).length > 1 ? reqEntries(r).map(x => [tsFmt(x.ts), x.a, x.n]) : null), title: H.title, tgl: H.tgl, cols: aoa[5], rows: aoa.slice(6) });
+  const fn = fileName($('#xSrc').value, admFile(rows), 'PENGAJUAN', 'xlsx'); XLSX.writeFile(wb, fn);
+  logDl({ form: 'PENGAJUAN', fmt: 'Excel', fname: fn, src: $('#xSrc').value, th: $('#xTh').value, subs: rows.map(r => reqHist(r).length > 1 ? reqEntries(r).map(x => [tsFmt(x.ts), x.a, x.n]) : null), title: H.title, tgl: H.tgl, cols: aoa[5], rows: aoa.slice(6) });
 };
 $('#pgPdf').onclick = () => {
   if (!window.jspdf) return alert('Library PDF gagal dimuat. Pastikan terhubung ke internet.');
@@ -663,25 +679,25 @@ $('#pgPdf').onclick = () => {
   doc.setFontSize(10); doc.text(H.tgl, 14, 22); doc.text(H.asal + '     ' + H.adm, 14, 28);
   doc.autoTable({
     startY: 33, headStyles: { fillColor: [74, 123, 208] },
-    head: [['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Status']],
-    body: rows.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', SL + r.min + ' pcs', r.src, '']),
+    head: [['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Pengajuan', 'Status']],
+    body: rows.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', SL + r.min + ' pcs', r.src, thLbl(r.tahap), '']),
     didDrawCell: d => {
       if (d.section !== 'body') return;
-      if (d.column.index === 6) { // kotak centang kosong
+      if (d.column.index === 7) { // kotak centang kosong
         const s = 4.5; doc.setDrawColor(60); doc.setLineWidth(.3);
         doc.rect(d.cell.x + (d.cell.width - s) / 2, d.cell.y + (d.cell.height - s) / 2, s, s);
       }
     }
   });
-  const fn = fileName($('#xSrc').value, admFile('#xAdm', rows), 'PENGAJUAN', 'pdf'); doc.save(fn);
-  logDl({ form: 'PENGAJUAN', fmt: 'PDF', fname: fn, src: $('#xSrc').value, subs: rows.map(r => reqHist(r).length > 1 ? reqEntries(r).map(x => [tsFmt(x.ts), x.a, x.n]) : null), title: H.title, tgl: H.tgl, cols: ['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Status'], rows: rows.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', SL + r.min + ' pcs', r.src, '\u2610']) });
+  const fn = fileName($('#xSrc').value, admFile(rows), 'PENGAJUAN', 'pdf'); doc.save(fn);
+  logDl({ form: 'PENGAJUAN', fmt: 'PDF', fname: fn, src: $('#xSrc').value, th: $('#xTh').value, subs: rows.map(r => reqHist(r).length > 1 ? reqEntries(r).map(x => [tsFmt(x.ts), x.a, x.n]) : null), title: H.title, tgl: H.tgl, cols: ['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Pengajuan', 'Status'], rows: rows.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', SL + r.min + ' pcs', r.src, thLbl(r.tahap), '\u2610']) });
 };
-const PGF = ['#xFromD', '#xFromT', '#xToD', '#xToT', '#xSrc', '#xAdm', '#xProd', '#xSt'];
+const PGF = ['#xFromD', '#xFromT', '#xToD', '#xToT', '#xSrc', '#xAdm', '#xTh', '#xProd', '#xSt'];
 function setPgToday() { $('#xFromD').value = $('#xToD').value = $('#xFromT').value = $('#xToT').value = '' } // filter tanggal kosong = semua data
 setPgToday();
 PGF.forEach(x => { $(x).addEventListener('input', renderReqs); $(x).addEventListener('change', renderReqs) });
 $('#xReset').onclick = () => {
-  setPgToday(); ['#xSrc', '#xAdm', '#xProd', '#xSt'].forEach(x => $(x).value = '');
+  setPgToday(); ['#xSrc', '#xAdm', '#xTh', '#xProd', '#xSt'].forEach(x => $(x).value = '');
   $('#xProd')._upd && $('#xProd')._upd(); renderReqs();
 };
 
@@ -691,8 +707,8 @@ let blocks = [], photo = '';
 const IN_DT = ['#iFromD', '#iFromT', '#iToD', '#iToT'];
 const inRange = () => ({ f: dtv(dtVal('#iFrom')), t: dtv(dtVal('#iTo', true), true) });
 const inDateOn = () => { const { f, t } = inRange(); return f !== null || t !== null };
-const inReqs = () => { const { f, t } = inRange(); return f === null && t === null ? todayReqs() : reqs.filter(r => inTime(r, f, t)) };
-const inInfo = r => { const h = reqHist(r); return (inDateOn() ? ' · ' + tsFmt(r.ts) : '') + (h.length > 1 ? ' · Diinput ' + h.length + '× (' + h.map(x => hm(x.ts)).join(' → ') + ')' : '') };
+const inReqs = () => { const { f, t } = inRange(); return f === null && t === null ? todayReqs() : reqs.filter(r => mine(r) && inTime(r, f, t)) };
+const inInfo = r => { const h = reqHist(r); return (r.tahap ? ' · Tahap ' + r.tahap : '') + (inDateOn() ? ' · ' + tsFmt(r.ts) : '') + (h.length > 1 ? ' · Diinput ' + h.length + '× (' + h.map(x => hm(x.ts)).join(' → ') + ')' : '') };
 const openProducts = () => [...new Map(inReqs().filter(r => r.ada < r.min).map(r => [r.pid, { id: r.pid, name: r.prod }])).values()];
 
 function addBlock() {
@@ -752,17 +768,17 @@ function lineInput(e) {
 }
 
 /* mode filter: pilih nama admin dan/atau asal barang -> semua pengajuan hari ini tampil sebagai daftar isian */
-const autoMode = () => !!($('#inAdm').value || $('#inSrc').value || inDateOn());
+const autoMode = () => !!($('#inTh').value || $('#inSrc').value || admF('#inAdm') || inDateOn());
 const autoReqs = () => {
-  const a = $('#inAdm').value, s = $('#inSrc').value;
-  return inReqs().filter(r => r.ada < r.min && (!a || (r.adm || '') === a) && (!s || r.src === s))
+  const a = $('#inTh').value, s = $('#inSrc').value, am = admF('#inAdm');
+  return inReqs().filter(r => r.ada < r.min && (!a || String(r.tahap) === a) && (!s || r.src === s) && (!am || (r.adm || '') === am))
     .sort((x, y) => x.ts - y.ts || (x.id < y.id ? -1 : 1)); // urut sesuai waktu pengisian form pengajuan (terlama di atas)
 };
 function renderAuto(force) {
   const on = autoMode();
   $('#auto').hidden = !on; $('#autoQBox').hidden = !on; $('#blocks').hidden = on; $('#addBlk').hidden = on;
   if (!on) { autoSig = ''; $('#autoQ').value = ''; $('#autoQ')._upd && $('#autoQ')._upd(); return }
-  const rs = autoReqs(), sig = $('#inAdm').value + '|' + $('#inSrc').value + '|' + inDateOn() + '|' + JSON.stringify(rs.map(r => [r.id, r.ada, r.min]));
+  const rs = autoReqs(), sig = $('#inTh').value + '|' + $('#inSrc').value + '|' + admF('#inAdm') + '|' + inDateOn() + '|' + JSON.stringify(rs.map(r => [r.id, r.ada, r.min]));
   if (!force && sig === autoSig) return; // tidak ada perubahan data: jangan hapus isian yang sedang diketik
   autoSig = sig;
   $('#auto').innerHTML = rs.length
@@ -780,7 +796,7 @@ function renderAuto(force) {
   applyAutoQ();
 }
 $('#auto').addEventListener('input', lineInput);
-$('#inAdm').onchange = $('#inSrc').onchange = () => { msg('#inMsg', ''); renderAuto(true) };
+$('#inTh').onchange = $('#inSrc').onchange = $('#inAdm').onchange = () => { msg('#inMsg', ''); renderAuto(true) };
 // cari produk di dalam daftar hasil filter (baris yang tidak cocok disembunyikan; isian yang sudah diketik tetap tersimpan & ikut ter-submit)
 function applyAutoQ() {
   const q = $('#autoQ').value.trim().toLowerCase(), lns = $('#auto').querySelectorAll('.ln');
@@ -792,7 +808,7 @@ caps($('#autoQ')); addClear($('#autoQ')); $('#autoQ').addEventListener('input', 
 const onInDate = () => { msg('#inMsg', ''); refreshBlocks() };
 IN_DT.forEach(x => { $(x).addEventListener('input', onInDate); $(x).addEventListener('change', onInDate) });
 $('#inReset').onclick = () => { // reset filter admin, asal, tanggal & jam (isian jumlah yang sudah diketik tidak dihapus)
-  $('#inAdm').value = ''; $('#inSrc').value = ''; IN_DT.forEach(x => $(x).value = ''); msg('#inMsg', ''); refreshBlocks(); renderAuto(true);
+  $('#inTh').value = ''; $('#inSrc').value = ''; $('#inAdm').value = ''; IN_DT.forEach(x => $(x).value = ''); msg('#inMsg', ''); refreshBlocks(); renderAuto(true);
 };
 
 function compress(f, cb) {
@@ -851,11 +867,11 @@ $('#inSubmit').onclick = () => {
     if (r && scope.has(r.id)) lines.push([r, v]);
   }));
   if (!lines.length) return msg('#inMsg', 'Isi jumlah barang ada (boleh 0) minimal pada satu produk/varian.');
-  const ts = Date.now(), sj = $('#sj').value.trim(), pid = photo ? uid() : '', ops = [];
+  const ts = Date.now(), sj = $('#sj').value.trim(), pid = photo ? uid() : '', gid = uid(), ops = []; // gid = penanda satu kali submit Input (dikelompokkan di menu Purchase)
   if (pid) { photos[pid] = photo; ops.push(['photos', 'set', { id: pid, d: photo }]) }
   lines.forEach(([r, v]) => {
     r.ada += v;
-    const rec = { id: uid(), ts, sj, prod: r.prod, vn: r.vn, vc: r.vc, ada: r.ada, min: r.min, src: r.src, adm: r.adm || '', pid, rid: r.id, got: v }; // got = jumlah yang diterima pada input ini (boleh 0); ada = total kumulatif
+    const rec = { id: uid(), ts, sj, prod: r.prod, vn: r.vn, vc: r.vc, ada: r.ada, min: r.min, src: r.src, adm: r.adm || '', pid, rid: r.id, got: v, tahap: r.tahap || 0, gid }; // got = jumlah yang diterima pada input ini (boleh 0); ada = total kumulatif
     records.unshift(rec); ops.push(['requests', 'set', r], ['records', 'set', rec]);
   });
   if (!commit(ops)) return msg('#inMsg', 'Penyimpanan penuh. Coba tanpa foto atau hapus data lama.');
@@ -863,48 +879,86 @@ $('#inSubmit').onclick = () => {
 };
 
 /* ---------- PURCHASE ---------- */
-const FIL = ['#dFromD', '#dFromT', '#dToD', '#dToT', '#fqSj', '#fqProd', '#fqSrc', '#fqSt', '#fqVar', '#fqAdm'];
+const FIL = ['#dFromD', '#dFromT', '#dToD', '#dToT', '#fqSj', '#fqProd', '#fqSrc', '#fqAdm', '#fqSt', '#fqVar', '#fqTh'];
 function filtered() {
+  puInfo();
   const f = dtv(dtVal('#dFrom')), t = dtv(dtVal('#dTo', true), true), j = $('#fqSj').value.toLowerCase(), q = $('#fqProd').value.toLowerCase(),
-    s = $('#fqSrc').value, st = $('#fqSt').value, v = $('#fqVar').value, a = $('#fqAdm').value;
-  return records.filter(r => (f === null || r.ts >= f) && (t === null || r.ts <= t) &&
+    s = $('#fqSrc').value, st = $('#fqSt').value, v = $('#fqVar').value, th = $('#fqTh').value, am = admF('#fqAdm');
+  return records.filter(r => mine(r) && (f === null || r.ts >= f) && (t === null || r.ts <= t) &&
     (!j || (r.sj || '').toLowerCase().includes(j)) && (!q || r.prod.toLowerCase().includes(q)) &&
-    (!s || r.src === s) && (!a || r.adm === a) && (!v || r.vc === v) && (!st || (st === 'ok') === (r.ada === r.min)));
+    (!s || r.src === s) && (!am || (r.adm || '') === am) && (!th || String(r.tahap) === th) && (!v || r.vc === v) && (!st || (st === 'ok') === isFull(r)));
 }
 const openState = {};
+// Kolom "ada" di data purchase menyimpan jumlah KUMULATIF per pengajuan. Untuk tampilan & export dipakai jumlah masuk per input
+// (mis. 3 lalu 7 dari 10 -> tulis 3 / 10 dan 7 / 10, bukan 3 / 10 lalu 10 / 10), dan status Lengkap bila total seluruh input sudah mencapai jumlah diminta.
+let PI = null;
+function puInfo() {
+  const by = {}, got = {}, full = {};
+  records.forEach(r => { if (r.rid) (by[r.rid] = by[r.rid] || []).push(r) });
+  Object.keys(by).forEach(k => {
+    const L = by[k].slice().sort((a, b) => a.ts - b.ts || (a.id < b.id ? -1 : 1)); let prev = 0, mx = 0;
+    L.forEach(r => { const a = Number(r.ada) || 0; got[r.id] = Math.max(0, a - prev); prev = a; mx = Math.max(mx, a) });
+    L.forEach(r => { full[r.id] = mx >= (Number(r.min) || 0) });
+  });
+  return PI = { got, full };
+}
+const gotOf = r => { const p = PI || puInfo(); return r.id in p.got ? p.got[r.id] : (Number(r.ada) || 0) };
+const isFull = r => { const p = PI || puInfo(); return r.id in p.full ? p.full[r.id] : r.ada === r.min };
+// kunci grup: satu kali submit Input (gid) per tahap; data lama tanpa gid dikelompokkan dari waktu input + no. SJ + admin yang sama
+const gKey = r => (r.gid || 'x' + r.ts + '|' + (r.sj || '') + '|' + (r.adm || '')) + '|' + (r.tahap || 0);
+const gItems = k => records.filter(r => mine(r) && gKey(r) === k);
 // nomor urut per BULAN berdasarkan urutan masuk (terlama = 1), mulai dari 1 lagi setiap ganti bulan; tidak berubah oleh filter
 const seqMap = () => {
   const m = {}, c = {};
-  records.slice().sort((a, b) => a.ts - b.ts || (a.id < b.id ? -1 : 1)).forEach(r => { const k = ymd(r.ts).slice(0, 7); m[r.id] = c[k] = (c[k] || 0) + 1 });
+  records.filter(mine).sort((a, b) => a.ts - b.ts || (a.id < b.id ? -1 : 1)).forEach(r => { const k = ymd(r.ts).slice(0, 7); m[r.id] = c[k] = (c[k] || 0) + 1 });
   return m;
 };
 function renderTable() {
+  puInfo();
   const seq = seqMap();
-  const cols = [...new Map(records.filter(r => r.vc).map(r => [r.vc, r.vn])).entries()], cur = $('#fqVar').value;
+  const cols = [...new Map(records.filter(r => r.vc && mine(r)).map(r => [r.vc, r.vn])).entries()], cur = $('#fqVar').value;
   $('#fqVar').innerHTML = '<option value="">Semua</option>' + cols.map(([c, n]) => `<option value="${c}">${esc(n)}</option>`).join('');
   $('#fqVar').value = cur;
   const rows = filtered(), filt = FIL.some(s => $(s).value), now = ymd(Date.now());
+  const photoCell = pid => !pid || photos[pid] === '' ? '-' : photos[pid] ? `<img class="thumb" src="${photos[pid]}" alt="Surat jalan">` : `<button class="btn ghost sm" data-photo="${esc(pid)}" type="button">📷 Lihat</button>`;
   const rowHtml = r => `<tr>
-    <td>${seq[r.id]}</td><td>${fmt(r.ts)}${tm(r.ts)}</td><td>${esc(r.sj || '-')}</td><td>${esc(r.prod)}</td><td>${sw(r.vc, r.vn)}</td>
-    <td>${r.ada} / ${r.min} pcs${r.got != null ? `<div class="tm">Diterima input ini: <b>${r.got}</b> pcs</div>` : ''}</td><td>${stat(r.ada, r.min)}</td><td><span class="tag">${esc(r.src)}</span></td><td>${esc(r.adm || '-')}</td>
-    <td>${!r.pid || photos[r.pid] === '' ? '-' : photos[r.pid] ? `<img class="thumb" src="${photos[r.pid]}" alt="Surat jalan">` : `<button class="btn ghost sm" data-photo="${esc(r.pid)}" type="button">📷 Lihat</button>`}</td>
-    <td class="nw"><button class="btn ghost sm" data-edit="${r.id}">Edit</button> <button class="btn ghost sm" data-del="${r.id}">Hapus</button></td></tr>`;
-  const tbl = list => `<div class="tw"><table><thead><tr><th>No</th><th>Tanggal</th><th>No. SJ</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Status</th><th>Asal</th><th>Admin</th><th>Foto</th><th></th></tr></thead><tbody>${list.slice().sort((a, b) => seq[a.id] - seq[b.id]).map(rowHtml).join('')}</tbody>${puFoot(list)}</table></div>`;
+    <td>${seq[r.id]}</td><td>${esc(r.prod)}</td><td>${sw(r.vc, r.vn)}</td>
+    <td>${gotOf(r)} / ${r.min} pcs</td><td>${stat(isFull(r) ? 1 : 0, 1)}</td><td><span class="tag">${esc(r.src)}</span></td>
+    <td class="nw"><button class="btn ghost sm" data-edit="${r.id}" type="button">Edit</button> <button class="btn ghost sm dng" data-del="${r.id}" type="button" title="Hapus satu barang ini saja">Hapus barang</button></td></tr>`;
+  const tbl = list => { // satu kali Input (satu tahap) = satu grup; klik untuk membuka daftar barangnya
+    const gs = new Map();
+    list.forEach(r => { const k = gKey(r); (gs.get(k) || gs.set(k, []).get(k)).push(r) });
+    return [...gs.entries()].sort((a, b) => Math.min(...b[1].map(r => r.ts)) - Math.min(...a[1].map(r => r.ts))).map(([k, L]) => {
+      L = L.slice().sort((a, b) => seq[a.id] - seq[b.id]);
+      const ts0 = Math.min(...L.map(r => r.ts)), srcs = [...new Set(L.map(r => r.src))], adms = admList(L), pid = (L.find(r => r.pid) || {}).pid || '', sjs = [...new Set(L.map(r => r.sj).filter(Boolean))];
+      const full = L.every(isFull), tot = sumK2(L, gotOf), kk = 'g' + k;
+      return `<details class="gp" data-k="${esc(kk)}" ${openState[kk] ? 'open' : ''}><summary>
+        <span class="gi"><span class="gn"><b>Purchase</b> <small class="gtm">${hm(ts0)}</small></span> · ${L.length} barang · ${NF(tot)} pcs
+          <span class="gt">${sjs.length ? '<span class="tag">SJ ' + esc(sjs.join(', ')) + '</span>' : ''}${L[0].tahap ? '<span class="tag">' + thLbl(L[0].tahap) + '</span>' : ''}${srcs.map(s => '<span class="tag">' + esc(s) + '</span>').join('')}<span class="tag">${esc(adms.join(', ') || '-')}</span><span class="tag ${full ? 'in' : 'out'}">${full ? 'Lengkap' : 'Kurang'}</span></span></span>
+        <span class="ga"><button class="btn ghost sm" data-gdl="${esc(k)}" type="button" title="Download grup ini sebagai Excel">Download Excel</button><button class="btn ghost sm" data-gpdf="${esc(k)}" type="button" title="Download grup ini sebagai PDF">Download PDF</button><button class="btn ghost sm" data-gedit="${esc(k)}" type="button">Edit</button><button class="btn sm dng gsep" data-gdel="${esc(k)}" type="button" title="Hapus SEMUA barang dalam grup ini">Hapus grup</button></span></summary>
+        <div class="gpb"><div class="gph">Foto surat jalan: ${photoCell(pid)}</div>
+        <div class="tw"><table><thead><tr><th>No</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Status</th><th>Asal</th><th></th></tr></thead><tbody>${L.map(rowHtml).join('')}</tbody></table></div></div></details>`;
+    }).join('');
+  };
   const isOpen = (k, cur) => k in openState ? openState[k] : (filt || cur);
   const g = {};
   rows.forEach(r => { const d = ymd(r.ts), y = d.slice(0, 4), m = d.slice(5, 7); ((g[y] = g[y] || {})[m] = g[y][m] || []).push(r) });
-  $('#grp').innerHTML = (rows.length ? sumPu(rows) : '') + (rows.length ? Object.keys(g).sort().reverse().map(y => {
+  $('#grp').innerHTML = (rows.length ? sumBar([stag('Total grup', NF(new Set(rows.map(gKey)).size)), stag('Total data', NF(rows.length)), stag('Total item', NF(sumK2(latestRec(rows), r => r.ada)) + ' pcs')]) : '') + (rows.length ? Object.keys(g).sort().reverse().map(y => {
     const ms = Object.keys(g[y]).sort().reverse(), cnt = ms.reduce((s, m) => s + g[y][m].length, 0), ky = 'y' + y;
     return `<details class="yr" data-k="${ky}" ${isOpen(ky, y === now.slice(0, 4)) ? 'open' : ''}><summary>${y} <span class="tag">${cnt} data</span></summary>` +
       ms.map(m => { const km = 'm' + y + m; return `<details class="mo" data-k="${km}" ${isOpen(km, y + '-' + m === now.slice(0, 7)) ? 'open' : ''}><summary>${BLN[+m - 1]} ${y} <span class="tag">${g[y][m].length} data</span></summary>${dayBlocks(g[y][m], ymd, 'd', isOpen, d => d === now, tbl)}</details>` }).join('') + '</details>';
   }).join('') : '<div class="empty">Belum ada data purchase.</div>');
 }
-$('#grp').addEventListener('click', e => { const s = e.target.closest('summary'); if (s) { const d = s.parentElement; openState[d.dataset.k] = !d.open } });
+$('#grp').addEventListener('click', e => { if (e.target.closest('button')) return; const s = e.target.closest('summary'); if (s) { const d = s.parentElement; openState[d.dataset.k] = !d.open } });
 FIL.forEach(s => $(s).oninput = renderTable);
 $('#fToggle').onclick = () => $('#fl').classList.toggle('open');
 $('#reset').onclick = () => { FIL.forEach(s => $(s).value = ''); [$('#fqProd'), $('#fqSj')].forEach(i => i._upd && i._upd()); renderTable() };
 $('#grp').onclick = e => {
-  const t = e.target;
+  const t = e.target.closest('button') || e.target;
+  if (t.dataset.gdl) return puExcel(gItems(t.dataset.gdl));
+  if (t.dataset.gpdf) return puPdf(gItems(t.dataset.gpdf));
+  if (t.dataset.gedit) return openGEdit(t.dataset.gedit);
+  if (t.dataset.gdel) return delGroup(t.dataset.gdel);
   if (t.dataset.edit) openEdit(t.dataset.edit);
   if (t.dataset.del) {
     const id0 = t.dataset.del, r0 = records.find(x => x.id === id0); if (!r0) return;
@@ -925,6 +979,61 @@ $('#grp').onclick = e => {
   }
 };
 $('#lb').onclick = () => $('#lb').hidden = true;
+
+/* ---------- aksi per grup Purchase: Download / Edit / Hapus ---------- */
+const gLab = L => L.length + ' barang (' + L.slice(0, 3).map(r => r.prod + (r.vn ? ' · ' + r.vn : '')).join(', ') + (L.length > 3 ? ', dst.' : '') + ')';
+function delGroup(k) {
+  const L0 = gItems(k); if (!L0.length) return; puInfo();
+  askYN('HAPUS SEMUA BARANG DALAM GRUP INI? ' + L0.length + ' barang akan terhapus sekaligus: ' + L0.map(r => r.prod + (r.vn ? ' · ' + r.vn : '') + ' (' + gotOf(r) + ' pcs)').join('; ') + '. Untuk menghapus satu barang saja, buka grupnya lalu pakai tombol "Hapus barang".', () => {
+    const L = gItems(k); if (!L.length) return;
+    const lop = logH('PURCHASE', 'hapus', 'Grup input · ' + gLab(L) + (L[0].sj ? ' · SJ ' + L[0].sj : ''), L.map(r => ({ c: 'records', b: cl(r), a: null })));
+    const ids = new Set(L.map(r => r.id)), pids = [...new Set(L.map(r => r.pid).filter(Boolean))], ops = L.map(r => ['records', 'del', r.id]);
+    ops.push(lop); records = records.filter(r => !ids.has(r.id));
+    pids.forEach(p => { if (!records.some(x => x.pid === p) && !hKeep(p)) { ops.push(['photos', 'del', p]); delete photos[p] } });
+    commit(ops); renderTable();
+  });
+}
+let gEd = null, gFoto;
+const gPF = photoField($('#gpmdl'), d => { gFoto = d });
+function gpItems() {
+  if (!gEd) return;
+  puInfo();
+  const L = gItems(gEd.k).sort((a, b) => a.prod.localeCompare(b.prod, 'id') || (a.vn || '').localeCompare(b.vn || '', 'id'));
+  $('#gpList').innerHTML = L.map(r => `<div class="gpi"><span>${r.vc ? sw(r.vc, r.vn) + ' ' : ''}<b>${esc(r.prod)}</b>${r.vn ? ' · ' + esc(r.vn) : ''} · ${gotOf(r)} / ${r.min} pcs</span><button class="btn ghost sm" data-gpe="${r.id}" type="button">Edit barang</button></div>`).join('');
+}
+function openGEdit(k) {
+  const L = gItems(k); if (!L.length) return;
+  const ts0 = Math.min(...L.map(r => r.ts)), pid = (L.find(r => r.pid) || {}).pid || '';
+  gEd = { k, ts0, pid }; gFoto = undefined;
+  $('#gpInfo').textContent = 'Perubahan No. Surat Jalan, tanggal / jam, dan foto berlaku untuk SEMUA ' + L.length + ' barang dalam grup ini. Ubah jumlah atau produk per barang lewat tombol "Edit barang".';
+  $('#gpSj').value = [...new Set(L.map(r => r.sj).filter(Boolean))][0] || ''; $('#gpD').value = ymd(ts0); $('#gpT').value = hm(ts0); $('#gpCode').value = ''; msg('#gpMsg', '');
+  gPF.set(photos[pid]);
+  if (pid && photos[pid] === undefined) photoLoad(pid, d => { if (gEd && gEd.k === k && gFoto === undefined && !$('#gpmdl').hidden) gPF.set(d) });
+  gpItems(); $('#gpmdl').hidden = false;
+}
+const closeGEdit = () => { $('#gpmdl').hidden = true; gEd = null };
+$('#gpCancel').onclick = closeGEdit;
+$('#gpmdl').onclick = e => { if (e.target.id === 'gpmdl') closeGEdit(); const b = e.target.closest('[data-gpe]'); if (b) { const id = b.dataset.gpe; closeGEdit(); openEdit(id) } };
+$('#gpSave').onclick = () => {
+  if (!gEd) return;
+  const d = $('#gpD').value, tv = $('#gpT').value.trim(), L = gItems(gEd.k);
+  if (!d) return msg('#gpMsg', 'Isi tanggal.');
+  if (tv && !T24.test(tv)) return msg('#gpMsg', 'Isi jam dengan format 24 jam, mis. 14:30.');
+  if (!L.length) return closeGEdit();
+  const chT = d !== ymd(gEd.ts0) || (tv || hm(gEd.ts0)) !== hm(gEd.ts0);
+  if (chT && !codeOk('#gpCode')) return msg('#gpMsg', 'Mengubah tanggal / jam wajib memakai kode 6 digit yang benar.');
+  const nts = chT ? new Date(d + 'T' + (tv || hm(gEd.ts0))).getTime() : null, sj = $('#gpSj').value.trim(), olds = [...new Set(L.map(r => r.pid).filter(Boolean))], ops = [], docs = [];
+  let npid = null;
+  if (gFoto !== undefined) { if (gFoto) { npid = uid(); photos[npid] = gFoto; ops.push(['photos', 'set', { id: npid, d: gFoto }]) } else npid = '' }
+  L.forEach(r => {
+    const b = cl(r); r.sj = sj; if (nts !== null) r.ts = nts; if (npid !== null) r.pid = npid;
+    if (JSON.stringify(b) !== JSON.stringify(r)) { ops.push(['records', 'set', r]); docs.push({ c: 'records', b, a: cl(r) }) }
+  });
+  if (docs.length) ops.push(logH('PURCHASE', 'edit', 'Grup input · ' + gLab(L) + (sj ? ' · SJ ' + sj : ''), docs));
+  if (npid !== null) olds.forEach(p => { if (p !== npid && !records.some(x => x.pid === p) && !hKeep(p)) { ops.push(['photos', 'del', p]); delete photos[p] } });
+  if (ops.length && !commit(ops)) return msg('#gpMsg', 'Penyimpanan penuh. Coba foto yang lebih kecil.');
+  closeGEdit(); renderTable();
+};
 
 /* ---------- edit (popup) ---------- */
 let eRec = null, eFoto, eList = [];
@@ -993,56 +1102,79 @@ $('#eSave').onclick = () => {
 $('#mdl').onclick = e => { if (e.target.id === 'mdl') closeEdit() };
 
 /* ---------- export ---------- */
-const stDesc = r => r.ada === r.min ? 'Lengkap' : 'Kurang';
+const stDesc = r => isFull(r) ? 'Lengkap' : 'Kurang';
 function puHead(rows) {
   const f = dtVal('#dFrom'), t = dtVal('#dTo', true);
   const tgl = !f && !t ? 'Semua tanggal' : f && t ? fDT(f) + ' s/d ' + fDT(t) : f ? 'Mulai ' + fDT(f) : 'Sampai ' + fDT(t);
-  return { title: 'Laporan Purchase', tgl: 'Tanggal & Jam: ' + tgl, asal: 'Asal Barang: ' + ($('#fqSrc').value || 'Semua'), adm: 'Nama Admin: ' + admHead('#fqAdm', rows) };
+  return { title: 'Laporan Purchase', tgl: 'Tanggal & Jam: ' + tgl, asal: 'Asal Barang: ' + ($('#fqSrc').value || 'Semua'), adm: 'Nama Admin: ' + admHead(rows) };
 }
-$('#xXls').onclick = () => {
+// Export Purchase: SETIAP GRUP (satu kali Input) = satu header + satu tabel sendiri; antar tabel diberi jarak 5 baris kosong
+const PU_COLS = ['No.', 'Tanggal', 'No. Surat Jalan', 'Nama Produk', 'Varian', 'Ada / Diminta', 'Status', 'Asal'];
+const dLong = t => { const d = new Date(t); return d.getDate() + ' ' + BLN[d.getMonth()] + ' ' + d.getFullYear() };
+function puSections(rows) {
+  puInfo();
+  const m = new Map(); rows.forEach(r => { const k = gKey(r); (m.get(k) || m.set(k, []).get(k)).push(r) });
+  return [...m.values()].map(L => {
+    L = L.slice().sort(azSort);
+    const t0 = Math.min(...L.map(r => r.ts)), t1 = Math.max(...L.map(r => r.ts)), srcs = [...new Set(L.map(r => r.src))];
+    return { t0, src: srcs.length === 1 ? srcs[0] : '', th: L[0].tahap ? String(L[0].tahap) : '',
+      head: ['Laporan Purchase', 'Tanggal & Jam: ' + dLong(t0) + ' - ' + dLong(t1), 'Asal Barang: ' + srcs.join(', ') + '     Nama Admin: ' + admHead(L), 'Pengajuan : ' + (L[0].tahap ? thLbl(L[0].tahap) : '-')],
+      rows: L.map((r, i) => [i + 1, tsFmt(r.ts), r.sj || '-', r.prod, r.vn || '-', gotOf(r) + ' / ' + r.min + ' pcs', stDesc(r), r.src]) };
+  }).sort((a, b) => a.t0 - b.t0);
+}
+function puLog(rows, S, fmtName, fn) {
+  const srcs = [...new Set(rows.map(r => r.src))], ths = [...new Set(S.map(s => s.th))];
+  logDl({ form: 'PURCHASE', fmt: fmtName, fname: fn, src: srcs.length === 1 ? srcs[0] : '', th: ths.length === 1 ? ths[0] : '', title: 'Laporan Purchase', tgl: S.length + ' grup · ' + dLong(S[0].t0) + ' - ' + dLong(Math.max(...rows.map(r => r.ts))), cols: PU_COLS, rows: S.reduce((a, s) => a.concat(s.rows), []) });
+}
+const puFn = (rows, ext) => { const srcs = [...new Set(rows.map(r => r.src))]; return fileName(srcs.length === 1 ? srcs[0] : '', admFile(rows), 'PURCHASE', ext) };
+function puExcel(rows) {
   if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
-  const rows = filtered().sort(azSort);
   if (!rows.length) return alert('Tidak ada data untuk diexport.');
-  const H = puHead(rows);
-  const aoa = [[H.title], [H.tgl], [H.asal], [H.adm], [], ['No', 'Tanggal', 'Jam', 'No Surat Jalan', 'Produk', 'Varian', 'Ada', 'Diminta', 'Status', 'Asal']]
-    .concat(rows.map((r, i) => [i + 1, ymd(r.ts), hm(r.ts), r.sj || '', r.prod, r.vn || '-', r.ada, r.min, stDesc(r), r.src]));
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!merges'] = [0, 1, 2, 3].map(r => ({ s: { r, c: 0 }, e: { r, c: 9 } }));
-  ws['!cols'] = [5, 12, 8, 18, 28, 16, 6, 9, 10, 10].map(w => ({ wch: w }));
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Purchase');
-  const fn = fileName($('#fqSrc').value, admFile('#fqAdm', rows), 'PURCHASE', 'xlsx'); XLSX.writeFile(wb, fn);
-  logDl({ form: 'PURCHASE', fmt: 'Excel', fname: fn, src: $('#fqSrc').value, title: H.title, tgl: H.tgl, cols: aoa[5], rows: aoa.slice(6) });
-};
-$('#xPdf').onclick = () => {
-  if (!window.jspdf) return alert('Library PDF gagal dimuat. Pastikan terhubung ke internet.');
-  const rows = filtered().sort(azSort); if (!rows.length) return alert('Tidak ada data untuk diexport.');
-  const H = puHead(rows), doc = new jspdf.jsPDF({ orientation: 'landscape' });
-  doc.setFontSize(16); doc.text(H.title, 14, 15);
-  doc.setFontSize(10); doc.text(H.tgl, 14, 22); doc.text(H.asal + '     ' + H.adm, 14, 28);
-  doc.autoTable({
-    startY: 33, headStyles: { fillColor: [74, 123, 208] },
-    head: [['No', 'Tanggal', 'No. Surat Jalan', 'Produk', 'Varian', 'Ada / Diminta', 'Status', 'Asal']],
-    body: rows.map((r, i) => [i + 1, tsFmt(r.ts), r.sj || '-', r.prod, r.vn || '-', r.ada + ' / ' + r.min + ' pcs', stDesc(r), r.src]),
+  const S = puSections(rows), aoa = [], merges = [];
+  S.forEach((s, i) => {
+    if (i) for (let n = 0; n < 5; n++) aoa.push([]);
+    s.head.forEach(h => { merges.push({ s: { r: aoa.length, c: 0 }, e: { r: aoa.length, c: 7 } }); aoa.push([h]) });
+    aoa.push(PU_COLS); s.rows.forEach(x => aoa.push(x));
   });
-  const fn = fileName($('#fqSrc').value, admFile('#fqAdm', rows), 'PURCHASE', 'pdf'); doc.save(fn);
-  logDl({ form: 'PURCHASE', fmt: 'PDF', fname: fn, src: $('#fqSrc').value, title: H.title, tgl: H.tgl, cols: ['No', 'Tanggal', 'No. Surat Jalan', 'Produk', 'Varian', 'Ada / Diminta', 'Status', 'Asal'], rows: rows.map((r, i) => [i + 1, tsFmt(r.ts), r.sj || '-', r.prod, r.vn || '-', r.ada + ' / ' + r.min + ' pcs', stDesc(r), r.src]) });
-};
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges'] = merges; ws['!cols'] = [6, 18, 20, 30, 16, 16, 10, 10].map(w => ({ wch: w }));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Purchase');
+  const fn = puFn(rows, 'xlsx'); XLSX.writeFile(wb, fn); puLog(rows, S, 'Excel', fn);
+}
+function puPdf(rows) {
+  if (!window.jspdf) return alert('Library PDF gagal dimuat. Pastikan terhubung ke internet.');
+  if (!rows.length) return alert('Tidak ada data untuk diexport.');
+  const S = puSections(rows), doc = new jspdf.jsPDF({ orientation: 'landscape' }), H = doc.internal.pageSize.getHeight();
+  let y = 15;
+  S.forEach((s, i) => {
+    if (i) y += 30; // jarak 5 baris
+    if (y + 50 > H - 10) { doc.addPage(); y = 15 }
+    doc.setFontSize(16); doc.setFont(undefined, 'bold'); doc.text(s.head[0], 14, y);
+    doc.setFontSize(10); doc.setFont(undefined, 'normal');
+    s.head.slice(1).forEach((h, j) => doc.text(h, 14, y + 7 + j * 6));
+    doc.autoTable({ startY: y + 7 + 3 * 6 + 3, headStyles: { fillColor: [74, 123, 208] }, head: [PU_COLS], body: s.rows });
+    y = doc.lastAutoTable.finalY;
+  });
+  const fn = puFn(rows, 'pdf'); doc.save(fn); puLog(rows, S, 'PDF', fn);
+}
+$('#xXls').onclick = () => puExcel(filtered());
+$('#xPdf').onclick = () => puPdf(filtered());
 
 /* ---------- DOWNLOAD (riwayat export) ---------- */
 // Setiap export dicatat beserta isi datanya (snapshot). Tabel berlapis disimpan sebagai teks JSON karena Firestore tidak menerima array di dalam array.
 function logDl(o) {
   try {
-    const rec = { id: uid(), ts: Date.now(), fname: o.fname, fmt: o.fmt, form: o.form, adm: me ? me.name : '', src: o.src || 'Semua',
+    const rec = { id: uid(), ts: Date.now(), fname: o.fname, fmt: o.fmt, form: o.form, adm: me ? me.name : '', src: o.src || 'Semua', th: o.th || '',
       data: JSON.stringify({ title: o.title, tgl: o.tgl, cols: o.cols, rows: o.rows, subs: o.subs }) };
     downloads.unshift(rec); commit([['downloads', 'set', rec]]);
     if ($('#dl').classList.contains('on')) renderDl();
   } catch (e) { console.error('catat download', e) }
 }
-const DLF = ['#dlFromD', '#dlFromT', '#dlToD', '#dlToT', '#dlAdm', '#dlSrc', '#dlFmt', '#dlForm', '#dlFile'];
+const DLF = ['#dlFromD', '#dlFromT', '#dlToD', '#dlToT', '#dlTh', '#dlSrc', '#dlAdm', '#dlFmt', '#dlForm', '#dlFile'];
 function dlFiltered() { // dipakai oleh daftar di layar DAN export; terbaru di atas
-  const f = dtv(dtVal('#dlFrom')), t = dtv(dtVal('#dlTo', true), true), a = $('#dlAdm').value, s = $('#dlSrc').value,
+  const f = dtv(dtVal('#dlFrom')), t = dtv(dtVal('#dlTo', true), true), th = $('#dlTh').value, s = $('#dlSrc').value, am = admF('#dlAdm'),
     m = $('#dlFmt').value, fm = $('#dlForm').value, q = $('#dlFile').value.trim().toLowerCase();
-  return downloads.filter(r => (f === null || r.ts >= f) && (t === null || r.ts <= t) && (!a || r.adm === a) && (!s || r.src === s)
+  return downloads.filter(r => mine(r) && (f === null || r.ts >= f) && (t === null || r.ts <= t) && (!th || r.th === th) && (!s || r.src === s) && (!am || (r.adm || '') === am)
     && (!m || r.fmt === m) && (!fm || r.form === fm) && (!q || String(r.fname).toLowerCase().includes(q))).sort((x, y) => y.ts - x.ts);
 }
 const dlTbl = list => `<div class="tw"><table><thead><tr><th>No</th><th>Waktu Download</th><th>Nama File</th><th>Format</th><th>Admin</th><th>Asal</th><th></th></tr></thead><tbody>${list.map((r, i) => `<tr>
@@ -1095,7 +1227,7 @@ const dlRows = (d, pre) => {
   const out = [];
   (d.rows || []).forEach((x, i) => {
     out.push({ v: x, sub: false });
-    ((d.subs || [])[i] || []).forEach(z => out.push({ v: x.map((_, c) => c === 1 ? z[0] : c === 2 ? pre + x[2] : c === 3 ? x[3] : c === 4 ? z[1] + ' / ' + z[2] + ' pcs' : c === 5 ? x[5] : ''), sub: true }));
+    ((d.subs || [])[i] || []).forEach(z => out.push({ v: x.map((_, c) => c === 1 ? z[0] : c === 2 ? pre + x[2] : c === 3 ? x[3] : c === 4 ? z[1] + ' / ' + z[2] + ' pcs' : c === 5 ? x[5] : c === 6 ? x[6] : ''), sub: true }));
   });
   return out;
 };
@@ -1123,7 +1255,7 @@ async function dlExcelJS(rows, fn) { // Excel bergaya: data termerge berwarna & 
 $('#dlXls').onclick = async () => {
   const rows = dlFiltered().reverse();
   if (!rows.length) return alert('Tidak ada riwayat download pada filter itu.');
-  const fn = fileName($('#dlSrc').value, $('#dlAdm').value, 'RIWAYAT DOWNLOAD', 'xlsx');
+  const fn = fileName($('#dlSrc').value, '', 'RIWAYAT DOWNLOAD', 'xlsx');
   if (window.ExcelJS) { try { return await dlExcelJS(rows, fn) } catch (e) { console.error(e); alert('Export bergaya gagal, memakai format Excel biasa (tanpa warna).') } }
   if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
   const aoa = [], merges = [], wd = [];
@@ -1162,7 +1294,7 @@ $('#dlPdf').onclick = () => {
       }
     });
   });
-  doc.save(fileName($('#dlSrc').value, $('#dlAdm').value, 'RIWAYAT DOWNLOAD', 'pdf'));
+  doc.save(fileName($('#dlSrc').value, '', 'RIWAYAT DOWNLOAD', 'pdf'));
 };
 
 /* ---------- RIWAYAT (edit & hapus, bisa dipulihkan) ---------- */
@@ -1170,7 +1302,7 @@ const EDIT_CODE = '030201';
 const codeOk = id => $(id).value.trim() === EDIT_CODE;
 const cl = o => o ? JSON.parse(JSON.stringify(o)) : null;
 const hKeep = pid => hlog.some(h => (h.pids || []).includes(pid)); // foto yang masih dipakai riwayat jangan dihapus
-const FLD = { ts: 'Waktu', prod: 'Produk', vn: 'Varian', min: 'Diminta', ada: 'Ada', src: 'Asal', adm: 'Admin', sj: 'No. SJ', pid: 'Foto', hist: 'Rincian input', fname: 'Nama file', resi: 'Resi', oid: 'ID Pesanan', tiket: 'No Tiket', desk: 'Deskripsi', dueT: 'Tipe due', due: 'Due Date', status: 'Status', toko: 'Toko', mp: 'Marketplace', ket: 'Keterangan', name: 'Nama', qty: 'Qty', cond: 'Kondisi', note: 'Catatan' };
+const FLD = { ts: 'Waktu', prod: 'Produk', vn: 'Varian', min: 'Diminta', ada: 'Ada', src: 'Asal', tahap: 'Tahap', adm: 'Admin', sj: 'No. SJ', pid: 'Foto', hist: 'Rincian input', fname: 'Nama file', resi: 'Resi', oid: 'ID Pesanan', tiket: 'No Tiket', desk: 'Deskripsi', dueT: 'Tipe due', due: 'Due Date', status: 'Status', toko: 'Toko', mp: 'Marketplace', ket: 'Keterangan', name: 'Nama', qty: 'Qty', cond: 'Kondisi', note: 'Catatan' };
 const fv = (k, v) => v == null || v === '' ? '-' : k === 'ts' ? tsFmt(v) : k === 'pid' ? 'ada' : typeof v === 'object' ? '' : String(v);
 function diffTxt(b, a) { // ringkasan perubahan: "Diminta: 10 → 15; Waktu: ... → ..."
   const out = [];
@@ -1180,7 +1312,7 @@ function diffTxt(b, a) { // ringkasan perubahan: "Diminta: 10 → 15; Waktu: ...
 // docs: [{c: koleksi, b: kondisi sebelum (atau null), a: kondisi sesudah (atau null jika dihapus)}]. Mengembalikan op untuk dimasukkan ke commit().
 function logH(menu, act, label, docs) {
   docs = docs.filter(d => d && (d.b || d.a));
-  const m = docs[0], e = { id: uid(), ts: Date.now(), menu, act, adm: me ? me.name : '', label, diff: m && m.b && m.a ? diffTxt(m.b, m.a) : '', docs: JSON.stringify(docs), rest: 0,
+  const m = docs[0], e = { id: uid(), ts: Date.now(), menu, act, adm: me ? me.name : '', label, th: String(((m && (m.b || m.a)) || {}).tahap || ''), diff: m && m.b && m.a ? diffTxt(m.b, m.a) : '', docs: JSON.stringify(docs), rest: 0,
     pids: docs.filter(d => d.c === 'records' && d.b && d.b.pid).map(d => d.b.pid) };
   hlog.unshift(e);
   return ['hlog', 'set', e];
@@ -1216,10 +1348,10 @@ $('#lSave').onclick = () => {
   commit([['downloads', 'set', r], logH('DOWNLOAD', 'edit', r.fname, [{ c: 'downloads', b, a: cl(r) }])]); closeL(); renderDl();
 };
 // halaman Riwayat
-const RWF = ['#rwFromD', '#rwFromT', '#rwToD', '#rwToT', '#rwMenu', '#rwAct', '#rwAdm', '#rwSt', '#rwQ'];
+const RWF = ['#rwFromD', '#rwFromT', '#rwToD', '#rwToT', '#rwMenu', '#rwAct', '#rwTh', '#rwSt', '#rwQ'];
 function rwFiltered() {
-  const f = dtv(dtVal('#rwFrom')), t = dtv(dtVal('#rwTo', true), true), m = $('#rwMenu').value, a = $('#rwAct').value, ad = $('#rwAdm').value, st = $('#rwSt').value, q = $('#rwQ').value.trim().toLowerCase();
-  return hlog.filter(h => (f === null || h.ts >= f) && (t === null || h.ts <= t) && (!m || h.menu === m) && (!a || h.act === a) && (!ad || h.adm === ad)
+  const f = dtv(dtVal('#rwFrom')), t = dtv(dtVal('#rwTo', true), true), m = $('#rwMenu').value, a = $('#rwAct').value, th = $('#rwTh').value, st = $('#rwSt').value, q = $('#rwQ').value.trim().toLowerCase();
+  return hlog.filter(h => mine(h) && (f === null || h.ts >= f) && (t === null || h.ts <= t) && (!m || h.menu === m) && (!a || h.act === a) && (!th || h.th === th)
     && (!st || (st === 'pulih' ? !!h.rest : !h.rest)) && (!q || (h.label + ' ' + (h.diff || '')).toLowerCase().includes(q))).sort((x, y) => y.ts - x.ts);
 }
 const rwTbl = list => `<div class="tw"><table><thead><tr><th>No</th><th>Waktu</th><th>Menu</th><th>Aksi</th><th>Admin</th><th>Rincian</th><th>Status</th><th></th></tr></thead><tbody>${list.map((h, i) => `<tr>
@@ -1400,11 +1532,11 @@ $('#tImpFile').onchange = e => {
   rd.readAsArrayBuffer(f);
 };
 // Laporan Retur
-const BDF = ['#bdFromD', '#bdFromT', '#bdToD', '#bdToT', '#bdSt', '#bdMp', '#bdDue', '#bdDueFrom', '#bdDueTo', '#bdAdm', '#bdToko', '#bdQ'];
+const BDF = ['#bdFromD', '#bdFromT', '#bdToD', '#bdToT', '#bdSt', '#bdMp', '#bdDue', '#bdDueFrom', '#bdDueTo', '#bdToko', '#bdQ'];
 function bdFiltered() {
-  const f = dtv(dtVal('#bdFrom')), t = dtv(dtVal('#bdTo', true), true), st = $('#bdSt').value, mp = $('#bdMp').value, du = $('#bdDue').value, df = $('#bdDueFrom').value, dto = $('#bdDueTo').value, ad = $('#bdAdm').value,
+  const f = dtv(dtVal('#bdFrom')), t = dtv(dtVal('#bdTo', true), true), st = $('#bdSt').value, mp = $('#bdMp').value, du = $('#bdDue').value, df = $('#bdDueFrom').value, dto = $('#bdDueTo').value,
     tk = $('#bdToko').value.trim().toLowerCase(), q = $('#bdQ').value.trim().toLowerCase();
-  return returns.filter(r => (f === null || r.ts >= f) && (t === null || r.ts <= t) && (!st || r.status === st) && (!mp || r.mp === mp) && (!du || r.dueT === du) && ((!df && !dto) || (r.dueT === 'Tanggal' && r.due && (!df || r.due >= df) && (!dto || r.due <= dto))) && (!ad || r.adm === ad)
+  return returns.filter(r => mine(r) && (f === null || r.ts >= f) && (t === null || r.ts <= t) && (!st || r.status === st) && (!mp || r.mp === mp) && (!du || r.dueT === du) && ((!df && !dto) || (r.dueT === 'Tanggal' && r.due && (!df || r.due >= df) && (!dto || r.due <= dto)))
     && (!tk || (r.toko || '').toLowerCase().includes(tk)) && (!q || [r.resi, r.oid, r.tiket, r.desk, r.ket].join(' ').toLowerCase().includes(q))).sort((x, y) => y.ts - x.ts);
 }
 const bdTbl = list => `<div class="tw"><table style="min-width:1300px"><thead><tr><th>No</th><th>Tanggal Input</th><th>Resi Pengembalian</th><th>ID Pesanan</th><th>No Tiket</th><th>Deskripsi</th><th>Due Date</th><th>Status</th><th>Nama Toko</th><th>Marketplace</th><th>Keterangan</th><th>Admin</th><th></th></tr></thead><tbody>${list.map((r, i) => `<tr data-bdrow="${r.id}" title="Klik untuk melihat detail">
@@ -1582,7 +1714,7 @@ $('#waNum').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preven
 function bdHead(rows) {
   const f = dtVal('#bdFrom'), t = dtVal('#bdTo', true);
   const tgl = !f && !t ? 'Semua tanggal' : f && t ? fDT(f) + ' s/d ' + fDT(t) : f ? 'Mulai ' + fDT(f) : 'Sampai ' + fDT(t);
-  return { title: 'Laporan Retur', tgl: 'Tanggal & Jam Input: ' + tgl, asal: 'Marketplace: ' + ($('#bdMp').value || 'Semua'), adm: 'Nama Admin: ' + admHead('#bdAdm', rows || []) };
+  return { title: 'Laporan Retur', tgl: 'Tanggal & Jam Input: ' + tgl, asal: 'Marketplace: ' + ($('#bdMp').value || 'Semua'), adm: 'Nama Admin: ' + admHead(rows || []) };
 }
 const bdAsc = () => bdFiltered().sort((a, b) => a.ts - b.ts);
 $('#bdXls').onclick = () => {
@@ -1595,7 +1727,7 @@ $('#bdXls').onclick = () => {
   ws['!merges'] = [0, 1, 2, 3].map(r => ({ s: { r, c: 0 }, e: { r, c: 12 } }));
   ws['!cols'] = [5, 12, 8, 20, 20, 16, 30, 14, 12, 18, 13, 36, 14].map(w => ({ wch: w }));
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Laporan Retur');
-  const fn = fileName($('#bdMp').value, admFile('#bdAdm', rows), 'LAPORAN RETUR', 'xlsx'); XLSX.writeFile(wb, fn);
+  const fn = fileName($('#bdMp').value, admFile(rows), 'LAPORAN RETUR', 'xlsx'); XLSX.writeFile(wb, fn);
   logDl({ form: 'BANDING', fmt: 'Excel', fname: fn, src: $('#bdMp').value, title: H.title, tgl: H.tgl, cols: aoa[5], rows: aoa.slice(6) });
 };
 $('#bdPdf').onclick = () => {
@@ -1607,7 +1739,7 @@ $('#bdPdf').onclick = () => {
   doc.setFontSize(16); doc.text(H.title, 14, 15);
   doc.setFontSize(10); doc.text(H.tgl, 14, 22); doc.text(H.asal + '     ' + H.adm, 14, 28);
   doc.autoTable({ startY: 33, styles: { fontSize: 7 }, headStyles: { fillColor: [74, 123, 208] }, head: [cols], body });
-  const fn = fileName($('#bdMp').value, admFile('#bdAdm', rows), 'LAPORAN RETUR', 'pdf'); doc.save(fn);
+  const fn = fileName($('#bdMp').value, admFile(rows), 'LAPORAN RETUR', 'pdf'); doc.save(fn);
   logDl({ form: 'BANDING', fmt: 'PDF', fname: fn, src: $('#bdMp').value, title: H.title, tgl: H.tgl, cols, rows: body });
 };
 
@@ -1730,7 +1862,7 @@ $('#usFile').onchange = e => {
   rd.readAsArrayBuffer(f);
 };
 function renderUs() {
-  const q = $('#usSearch').value, L = pstock.filter(e => tokOk(e.prod + ' ' + (e.vn || '') + ' ' + String(e.ket || '').toUpperCase(), q)).sort((a, b) => b.ts - a.ts), V = L.slice(0, 200);
+  const q = $('#usSearch').value, L = pstock.filter(e => mine(e) && tokOk(e.prod + ' ' + (e.vn || '') + ' ' + String(e.ket || '').toUpperCase(), q)).sort((a, b) => b.ts - a.ts), V = L.slice(0, 200);
   const usT = sumK2(L, e => e.qty);
   $('#usList').innerHTML = sumBar([stag('Total data', NF(L.length)), stag('Total item', NF(usT) + ' pcs')]) + (V.length
     ? `<div class="tw"><table style="min-width:760px"><thead><tr><th>No</th><th>Waktu</th><th>Produk</th><th>Varian</th><th>Qty</th><th>Keterangan</th><th>Admin</th><th></th></tr></thead><tbody>${V.map((e, i) => `<tr>
@@ -1827,11 +1959,11 @@ $('#brSubmit').onclick = () => {
 };
 
 /* ---------- BARANG RETUR BERMASALAH (daftar + filter, edit, hapus) ---------- */
-const BRF = ['#brFromD', '#brFromT', '#brToD', '#brToT', '#brFCond', '#brFAdm', '#brFQ'];
+const BRF = ['#brFromD', '#brFromT', '#brToD', '#brToT', '#brFCond', '#brFQ'];
 const brCondOf = e => e.cond || 'Baik'; // data lama tanpa kondisi dianggap layak pakai
 function brFiltered() {
-  const f = dtv(dtVal('#brFrom')), t = dtv(dtVal('#brTo', true), true), c = $('#brFCond').value, a = $('#brFAdm').value, q = $('#brFQ').value;
-  return rgoods.filter(e => e.qty > 0 && (f === null || e.ts >= f) && (t === null || e.ts <= t) && (!c || brCondOf(e) === c) && (!a || e.adm === a)
+  const f = dtv(dtVal('#brFrom')), t = dtv(dtVal('#brTo', true), true), c = $('#brFCond').value, q = $('#brFQ').value;
+  return rgoods.filter(e => e.qty > 0 && mine(e) && (f === null || e.ts >= f) && (t === null || e.ts <= t) && (!c || brCondOf(e) === c)
     && (!q.trim() || tokOk(e.name + ' ' + (e.vn || '') + ' ' + String(e.ket || '').toUpperCase(), q))).sort((x, y) => y.ts - x.ts);
 }
 function renderBr() {
@@ -2227,12 +2359,12 @@ function renderWho() {
   $('#who').textContent = me ? '👤 ' + me.name + ' · ' + roleName() : '👤 Tamu';
   $('#who').title = (me ? 'Role ' + roleName() + ': ' : 'Tamu: ') + descOf(roleName()) + (me ? ' (klik untuk keluar)' : ' (klik untuk masuk / daftar)');
 }
-function setMe(m) { me = m; store.set('pp_session', m ? { username: m.username, name: m.name, role: m.role } : { guest: true }); $('#auth').hidden = true; renderWho(); applyRole() }
+function setMe(m) { me = m; store.set('pp_session', m ? { username: m.username, name: m.name, role: m.role } : { guest: true }); $('#auth').hidden = true; renderWho(); applyRole(); refresh() }
 $$('.atabs button').forEach(b => b.onclick = () => authTab(b.dataset.a));
 $('#who').onclick = () => {
   if (!me) return showAuth('in');
   if (!confirm('Keluar dari akun ' + me.name + '?')) return;
-  store.set('pp_session', null); me = null; renderWho(); showAuth('in');
+  store.set('pp_session', null); me = null; renderWho(); refresh(); showAuth('in');
 };
 $('#guestBtn').onclick = () => setMe(null); // masuk tanpa akun: nama admin tidak terisi
 $('#fLogin').onsubmit = async e => {
@@ -2498,7 +2630,7 @@ $('#gCode').addEventListener('keydown', e => { if (e.key === 'Enter') tryOw() })
 $('#owLock').onclick = lockOw;
 $$('.otabs button').forEach(b => b.onclick = () => { owTab = b.dataset.o; roleDirty = false; renderOw() });
 ['#owPer', '#owFrom', '#owTo', '#owSrc'].forEach(x => { $(x).addEventListener('input', renderOw); $(x).addEventListener('change', renderOw) });
-function forceLogout(note) { store.set('pp_session', null); me = null; renderWho(); applyRole(); showAuth('in'); authMsg(note || '') }
+function forceLogout(note) { store.set('pp_session', null); me = null; renderWho(); applyRole(); refresh(); showAuth('in'); authMsg(note || '') }
 let rpUser = null;
 $('#owBody').addEventListener('click', e => {
   const m = e.target.closest('[data-owmore]'), r = e.target.closest('[data-owreset]'), d = e.target.closest('[data-owdel]');

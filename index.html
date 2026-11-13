@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Purchasing Barang</title>
-<link rel="stylesheet" href="style.css?v=41">
+<link rel="stylesheet" href="style.css?v=44">
 </head>
 <body>
 
@@ -61,6 +61,7 @@
           </div>
         </div>
         <div class="f"><label>Asal Barang</label><select id="pgSrc" data-src="Pilih asal barang"></select></div>
+        <div class="f"><label>Pengajuan</label><select id="pgTh" data-th="Pilih tahap"></select></div>
       </div>
       <div class="gdhint" id="pgGd" hidden></div>
       <div class="foot"><div class="msg" id="pgMsg"></div><button class="btn" id="pgSubmit">Submit</button></div>
@@ -71,8 +72,9 @@
       <div class="exf">
         <div><label>Dari tanggal &amp; jam</label><div class="dt"><input type="date" id="xFromD"><input class="tm24" id="xFromT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
         <div><label>Sampai tanggal &amp; jam</label><div class="dt"><input type="date" id="xToD"><input class="tm24" id="xToT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
-        <div><label>Nama Admin</label><select id="xAdm" data-adm="Semua"></select></div>
+        <div><label>Pengajuan</label><select id="xTh" data-th="Semua"></select></div>
         <div><label>Asal</label><select id="xSrc" data-src="Semua"></select></div>
+        <div class="ownadm" hidden><label>Nama Admin</label><select id="xAdm" data-adm="Semua"></select></div>
         <div><label>Produk</label><input id="xProd" placeholder="Cari produk" autocomplete="off"></div>
         <div><label>Status</label><select id="xSt"><option value="">Semua</option><option value="Menunggu">Menunggu</option><option value="Sebagian">Sebagian</option><option value="Selesai">Selesai</option></select></div>
         <div class="xb"><button class="btn ghost sm" id="xReset" type="button">Reset filter</button><button class="btn ghost sm" data-rwgo="PENGAJUAN" type="button">Riwayat</button><button class="btn ghost sm" id="pgXls" type="button">Export Excel</button><button class="btn ghost sm" id="pgPdf" type="button">Export PDF</button></div>
@@ -86,13 +88,14 @@
     <div class="card">
       <div class="inh">
         <div><label>Nomor Surat Jalan</label><input id="sj" placeholder="Contoh: SJ/2026/10-001"></div>
-        <div><label>Nama Admin</label><select id="inAdm" data-adm="Semua"></select></div>
+        <div><label>Pengajuan</label><select id="inTh" data-th="Semua"></select></div>
         <div><label>Asal Barang</label><select id="inSrc" data-src="Semua"></select></div>
         <div class="rsb"><button class="btn ghost" id="inReset" type="button">Reset filter</button></div>
         <div class="dtw"><label>Dari tanggal &amp; jam (opsional)</label><div class="dt"><input type="date" id="iFromD"><input class="tm24" id="iFromT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
         <div class="dtw"><label>Sampai tanggal &amp; jam (opsional)</label><div class="dt"><input type="date" id="iToD"><input class="tm24" id="iToT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
+      <div class="ownadm admw" hidden><label>Nama Admin</label><select id="inAdm" data-adm="Semua"></select></div>
       </div>
-      <div class="hint2">Tanpa filter tanggal, menu ini hanya membaca pengajuan <b>hari ini</b>. Isi tanggal &amp; jam untuk memunculkan lagi pengajuan hari sebelumnya yang belum diinput. Pilih nama admin, asal barang, atau tanggal untuk menampilkan semua pengajuannya sekaligus; kosongkan semua filter untuk mencari produk manual.</div>
+      <div class="hint2">Tanpa filter tanggal, menu ini hanya membaca pengajuan <b>hari ini</b>. Isi tanggal &amp; jam untuk memunculkan lagi pengajuan hari sebelumnya yang belum diinput. Pilih tahap pengajuan, asal barang, atau tanggal untuk menampilkan semua pengajuannya sekaligus; kosongkan semua filter untuk mencari produk manual.</div>
       <div id="autoQBox" hidden><input id="autoQ" placeholder="Cari produk dalam daftar..." autocomplete="off"><div class="hint2" id="autoCnt"></div></div>
       <div id="auto" hidden></div>
       <div id="blocks"></div>
@@ -122,7 +125,8 @@
           <div><label>No. Surat Jalan</label><input id="fqSj" placeholder="Cari no. SJ"></div>
           <div><label>Varian</label><select id="fqVar"></select></div>
           <div><label>Asal</label><select id="fqSrc" data-src="Semua"></select></div>
-          <div><label>Nama Admin</label><select id="fqAdm" data-adm="Semua"></select></div>
+          <div class="ownadm" hidden><label>Nama Admin</label><select id="fqAdm" data-adm="Semua"></select></div>
+          <div><label>Pengajuan</label><select id="fqTh" data-th="Semua"></select></div>
           <div><label>Status</label><select id="fqSt"><option value="">Semua</option><option value="ok">Lengkap</option><option value="bad">Kurang</option></select></div>
           <div class="rs"><button class="btn ghost" id="reset">Reset filter</button></div>
         </div>
@@ -144,8 +148,9 @@
       <div class="exf">
         <div><label>Dari tanggal &amp; jam</label><div class="dt"><input type="date" id="dlFromD"><input class="tm24" id="dlFromT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
         <div><label>Sampai tanggal &amp; jam</label><div class="dt"><input type="date" id="dlToD"><input class="tm24" id="dlToT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
-        <div><label>Nama Admin (yang download)</label><select id="dlAdm" data-adm="Semua"></select></div>
+        <div><label>Pengajuan</label><select id="dlTh" data-th="Semua"></select></div>
         <div><label>Asal Barang</label><select id="dlSrc" data-src="Semua"></select></div>
+        <div class="ownadm" hidden><label>Nama Admin</label><select id="dlAdm" data-adm="Semua"></select></div>
         <div><label>Format</label><select id="dlFmt"><option value="">Semua</option><option value="Excel">Excel</option><option value="PDF">PDF</option></select></div>
         <div><label>Jenis</label><select id="dlForm"><option value="">Semua</option><option value="PENGAJUAN">Pengajuan</option><option value="PURCHASE">Purchase</option><option value="BANDING">Laporan Retur</option></select></div>
         <div><label>Nama file</label><input id="dlFile" placeholder="Cari nama file" autocomplete="off"></div>
@@ -180,7 +185,7 @@
         <div><label>Sampai tanggal &amp; jam</label><div class="dt"><input type="date" id="rwToD"><input class="tm24" id="rwToT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
         <div><label>Menu</label><select id="rwMenu"><option value="">Semua</option><option value="PENGAJUAN">Pengajuan</option><option value="PURCHASE">Purchase</option><option value="DOWNLOAD">Download</option><option value="RETUR">Retur</option><option value="UPLOAD STOK">Upload Stok</option><option value="BARANG GUDANG">Barang Gudang</option></select></div>
         <div><label>Aksi</label><select id="rwAct"><option value="">Semua</option><option value="edit">Diedit</option><option value="hapus">Dihapus</option></select></div>
-        <div><label>Nama Admin</label><select id="rwAdm" data-adm="Semua"></select></div>
+        <div><label>Pengajuan</label><select id="rwTh" data-th="Semua"></select></div>
         <div><label>Status</label><select id="rwSt"><option value="">Semua</option><option value="aktif">Belum dipulihkan</option><option value="pulih">Sudah dipulihkan</option></select></div>
         <div><label>Cari</label><input id="rwQ" placeholder="Produk / file / perubahan" autocomplete="off"></div>
         <div class="xb"><button class="btn ghost sm" id="rwReset" type="button">Reset filter</button></div>
@@ -241,7 +246,6 @@
         <div><label>Jenis Due Date</label><select id="bdDue"><option value="">Semua</option><option>Cek Berkala</option><option>Tanggal</option></select></div>
         <div><label>Due date dari tanggal</label><input type="date" id="bdDueFrom"></div>
         <div><label>Due date sampai tanggal</label><input type="date" id="bdDueTo"></div>
-        <div><label>Nama Admin</label><select id="bdAdm" data-adm="Semua"></select></div>
         <div><label>Nama toko</label><input id="bdToko" placeholder="Cari nama toko" autocomplete="off"></div>
         <div class="xb"><button class="btn ghost sm" id="bdReset" type="button">Reset filter</button><button class="btn ghost sm" id="bdXls" type="button">Export Excel</button><button class="btn ghost sm" id="bdPdf" type="button">Export PDF</button><button class="btn ghost sm" data-rwgo="RETUR" type="button">Riwayat</button></div>
       </div>
@@ -277,7 +281,6 @@
         <div><label>Dari tanggal &amp; jam</label><div class="dt"><input type="date" id="brFromD"><input class="tm24" id="brFromT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
         <div><label>Sampai tanggal &amp; jam</label><div class="dt"><input type="date" id="brToD"><input class="tm24" id="brToT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
         <div><label>Kondisi</label><select id="brFCond"><option value="">Semua</option><option>Baik</option><option>Kurang</option><option>Rusak</option><option>Lecet</option></select></div>
-        <div><label>Nama Admin</label><select id="brFAdm" data-adm="Semua"></select></div>
         <div><label>Cari</label><input id="brFQ" placeholder="CARI NAMA BARANG, VARIAN, KETERANGAN..." autocomplete="off"></div>
         <div class="xb"><button class="btn ghost sm" id="brFReset" type="button">Reset filter</button></div>
       </div>
@@ -397,6 +400,7 @@
     <div><label>Diminta (pcs)</label><input type="number" id="rMin" min="1" inputmode="numeric"></div>
   </div>
   <label>Asal</label><select id="rSrc" data-src="Pilih asal barang"></select>
+  <label>Pengajuan</label><select id="rTh" data-th="Pilih tahap"></select>
   <label>Nama Admin</label><select id="rAdm" data-adm="Pilih nama admin"></select>
   <div class="row">
     <div><label>Tanggal</label><input type="date" id="rD"></div>
@@ -573,6 +577,31 @@
   <div class="acts"><button class="btn ghost" id="eCancel">Batal</button><button class="btn" id="eSave">Simpan</button></div>
 </div></div>
 
+<!-- MODAL EDIT GRUP PURCHASE -->
+<div class="modal" id="gpmdl" hidden><div class="box">
+  <h3>Edit Grup Purchase</h3>
+  <div class="hint2" id="gpInfo"></div>
+  <label>No. Surat Jalan</label><input id="gpSj" autocomplete="off">
+  <div class="row">
+    <div><label>Tanggal</label><input type="date" id="gpD"></div>
+    <div><label>Jam</label><input class="tm24" id="gpT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div>
+  </div>
+  <label>Foto Surat Jalan</label>
+  <div class="pbtns">
+    <button class="btn ghost sm" type="button" data-cam>📷 Ambil Foto</button>
+    <button class="btn ghost sm" type="button" data-up>📁 Upload</button>
+    <button class="btn ghost sm" type="button" data-clr hidden>Hapus foto</button>
+  </div>
+  <input type="file" accept="image/*" class="fUp" hidden>
+  <input type="file" accept="image/*" capture="environment" class="fCam" hidden>
+  <img class="pv" alt="">
+  <label>Kode 6 digit <span style="font-weight:400">(wajib jika tanggal / jam diubah)</span></label><input id="gpCode" type="password" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="••••••">
+  <label>Barang dalam grup</label>
+  <div id="gpList"></div>
+  <div class="msg" id="gpMsg"></div>
+  <div class="acts"><button class="btn ghost" id="gpCancel" type="button">Batal</button><button class="btn" id="gpSave" type="button">Simpan</button></div>
+</div></div>
+
 <!-- MODAL EDIT UPLOAD STOK / BARANG RETUR -->
 <div class="modal" id="sgmdl" hidden><div class="box">
   <h3 id="sgTitle"></h3>
@@ -619,6 +648,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
-<script src="script.js?v=65"></script>
+<script src="script.js?v=71"></script>
 </body>
 </html>

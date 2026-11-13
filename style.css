@@ -349,3 +349,24 @@ tbody tr:hover td{background:var(--soft)}
 .hv{text-align:right;font-size:12px;white-space:nowrap}
 .hv small{color:var(--mute);font-weight:600}
 @media(max-width:700px){.hc{grid-template-columns:96px 1fr 84px}.hv{font-size:11px}}
+/* grup Purchase (satu kali Input) */
+details.gp{margin:8px 8px 10px;border-radius:10px;background:var(--inp)}
+details.gp>summary{background:var(--card);flex-wrap:wrap;align-items:flex-start;font-weight:500;padding:11px 14px}
+details.gp>summary::before{margin-top:2px}
+.gp .gi{flex:1;min-width:220px;display:flex;flex-direction:column;gap:6px}
+.gp .gt{display:flex;flex-wrap:wrap;gap:6px}
+.gp .ga{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.gp .gpb{padding:4px 0 8px}
+.gp .gph{padding:8px 14px 0;font-size:13px;color:var(--mute);display:flex;align-items:center;gap:8px}
+.gpi{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+/* semua tombol Hapus dibuat merah & berbeda dari tombol lain agar tidak asal terklik */
+.btn.dng,.btn[data-del],.btn[data-bddel],.btn[data-usdel],.btn[data-brdel],.btn[data-rwdel],.btn[data-gddel],.btn[data-gdgdel],.btn[data-dldel],.btn[data-hdel],.btn[data-p],.blk .bh .btn.x,#vBox .btn,#pEVars .btn{background:#fde8e8;color:var(--bad);border:1px solid #f1b4b4}
+.btn.dng:hover,.btn[data-del]:hover,.btn[data-bddel]:hover,.btn[data-usdel]:hover,.btn[data-brdel]:hover,.btn[data-rwdel]:hover,.btn[data-gddel]:hover,.btn[data-gdgdel]:hover,.btn[data-dldel]:hover,.btn[data-hdel]:hover,.btn[data-p]:hover,.blk .bh .btn.x:hover,#vBox .btn:hover,#pEVars .btn:hover{background:var(--bad);color:#fff;filter:none}
+.btn.dng.gsep{margin-left:14px;background:var(--bad);color:#fff;border-color:var(--bad)}
+.btn.dng.gsep:hover{filter:brightness(1.1)}
+@media(max-width:700px){.btn.dng.gsep{margin-left:auto}}
+.gp .gtm{font-size:11px;font-weight:500;color:var(--mute);margin-left:2px}
+.gp .gn{font-size:15px}
+.ownadm[hidden]{display:none!important}
+.inh .admw{grid-column:1/2}
+@media(max-width:700px){.inh .admw{grid-column:auto}}
