@@ -284,10 +284,13 @@ $$('select[data-src]').forEach(s => {
 // pembatasan data per admin: hanya Owner & Retur yang boleh melihat data semua admin; role lain hanya melihat data miliknya sendiri
 const seeAll = () => { const r = roleName(); return r === 'Owner' || r === 'Retur' };
 const mine = x => seeAll() || (x.adm || '') === (me ? me.name : '');
+const retRole = () => roleName() === 'Retur' || roleName() === 'Owner'; // filter Nama Admin di menu Retur: role Retur (dan Owner)
+const retAdmF = id => retRole() ? $(id).value : '';
 const admF = id => roleName() === 'Owner' ? $(id).value : ''; // filter Nama Admin hanya berlaku untuk Owner
 function fillAdm() { // daftar nama admin = akun terdaftar + nama yang sudah tercatat di data (non-Owner/Retur: hanya namanya sendiri)
   const names = seeAll() ? [...new Set(admins.map(a => a.name).concat(reqs.map(r => r.adm), records.map(r => r.adm), downloads.map(r => r.adm), hlog.map(r => r.adm), returns.map(r => r.adm), rgoods.map(r => r.adm)).filter(Boolean))].sort((a, b) => a.localeCompare(b)) : (me && me.name ? [me.name] : []);
   $$('.ownadm').forEach(w => w.hidden = roleName() !== 'Owner');
+  $$('.retadm').forEach(w => w.hidden = !retRole());
   $$('select[data-adm]').forEach(s => {
     const v = s.value;
     s.innerHTML = `<option value="">${s.dataset.adm}</option>` + names.map(x => `<option>${esc(x)}</option>`).join('');
@@ -1567,11 +1570,11 @@ $('#tImpFile').onchange = e => {
   rd.readAsArrayBuffer(f);
 };
 // Laporan Retur
-const BDF = ['#bdFromD', '#bdFromT', '#bdToD', '#bdToT', '#bdSt', '#bdMp', '#bdDue', '#bdDueFrom', '#bdDueTo', '#bdToko', '#bdQ'];
+const BDF = ['#bdFromD', '#bdFromT', '#bdToD', '#bdToT', '#bdSt', '#bdMp', '#bdAdm', '#bdDue', '#bdDueFrom', '#bdDueTo', '#bdToko', '#bdQ'];
 function bdFiltered() {
-  const f = dtv(dtVal('#bdFrom')), t = dtv(dtVal('#bdTo', true), true), st = $('#bdSt').value, mp = $('#bdMp').value, du = $('#bdDue').value, df = $('#bdDueFrom').value, dto = $('#bdDueTo').value,
+  const f = dtv(dtVal('#bdFrom')), t = dtv(dtVal('#bdTo', true), true), st = $('#bdSt').value, mp = $('#bdMp').value, am = retAdmF('#bdAdm'), du = $('#bdDue').value, df = $('#bdDueFrom').value, dto = $('#bdDueTo').value,
     tk = $('#bdToko').value.trim().toLowerCase(), q = $('#bdQ').value.trim().toLowerCase();
-  return returns.filter(r => mine(r) && (f === null || r.ts >= f) && (t === null || r.ts <= t) && (!st || r.status === st) && (!mp || r.mp === mp) && (!du || r.dueT === du) && ((!df && !dto) || (r.dueT === 'Tanggal' && r.due && (!df || r.due >= df) && (!dto || r.due <= dto)))
+  return returns.filter(r => mine(r) && (f === null || r.ts >= f) && (t === null || r.ts <= t) && (!st || r.status === st) && (!mp || r.mp === mp) && (!am || (r.adm || '') === am) && (!du || r.dueT === du) && ((!df && !dto) || (r.dueT === 'Tanggal' && r.due && (!df || r.due >= df) && (!dto || r.due <= dto)))
     && (!tk || (r.toko || '').toLowerCase().includes(tk)) && (!q || [r.resi, r.oid, r.tiket, r.desk, r.ket].join(' ').toLowerCase().includes(q))).sort((x, y) => y.ts - x.ts);
 }
 const bdTbl = list => `<div class="tw"><table style="min-width:1300px"><thead><tr><th>No</th><th>Tanggal Input</th><th>Resi Pengembalian</th><th>ID Pesanan</th><th>No Tiket</th><th>Deskripsi</th><th>Due Date</th><th>Status</th><th>Nama Toko</th><th>Marketplace</th><th>Keterangan</th><th>Admin</th><th></th></tr></thead><tbody>${list.map((r, i) => `<tr data-bdrow="${r.id}" title="Klik untuk melihat detail">
@@ -1994,11 +1997,11 @@ $('#brSubmit').onclick = () => {
 };
 
 /* ---------- BARANG RETUR BERMASALAH (daftar + filter, edit, hapus) ---------- */
-const BRF = ['#brFromD', '#brFromT', '#brToD', '#brToT', '#brFCond', '#brFQ'];
+const BRF = ['#brFromD', '#brFromT', '#brToD', '#brToT', '#brFCond', '#brFAdm', '#brFQ'];
 const brCondOf = e => e.cond || 'Baik'; // data lama tanpa kondisi dianggap layak pakai
 function brFiltered() {
-  const f = dtv(dtVal('#brFrom')), t = dtv(dtVal('#brTo', true), true), c = $('#brFCond').value, q = $('#brFQ').value;
-  return rgoods.filter(e => e.qty > 0 && mine(e) && (f === null || e.ts >= f) && (t === null || e.ts <= t) && (!c || brCondOf(e) === c)
+  const f = dtv(dtVal('#brFrom')), t = dtv(dtVal('#brTo', true), true), c = $('#brFCond').value, q = $('#brFQ').value, am = retAdmF('#brFAdm');
+  return rgoods.filter(e => e.qty > 0 && mine(e) && (f === null || e.ts >= f) && (t === null || e.ts <= t) && (!c || brCondOf(e) === c) && (!am || (e.adm || '') === am)
     && (!q.trim() || tokOk(e.name + ' ' + (e.vn || '') + ' ' + String(e.ket || '').toUpperCase(), q))).sort((x, y) => y.ts - x.ts);
 }
 function renderBr() {
