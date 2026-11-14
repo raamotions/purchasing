@@ -581,25 +581,8 @@
 <div class="modal" id="gpmdl" hidden><div class="box">
   <h3>Edit Grup Purchase</h3>
   <div class="hint2" id="gpInfo"></div>
-  <label>No. Surat Jalan</label><input id="gpSj" autocomplete="off">
-  <div class="row">
-    <div><label>Tanggal</label><input type="date" id="gpD"></div>
-    <div><label>Jam</label><input class="tm24" id="gpT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div>
-  </div>
-  <label>Foto Surat Jalan</label>
-  <div class="pbtns">
-    <button class="btn ghost sm" type="button" data-cam>📷 Ambil Foto</button>
-    <button class="btn ghost sm" type="button" data-up>📁 Upload</button>
-    <button class="btn ghost sm" type="button" data-clr hidden>Hapus foto</button>
-  </div>
-  <input type="file" accept="image/*" class="fUp" hidden>
-  <input type="file" accept="image/*" capture="environment" class="fCam" hidden>
-  <img class="pv" alt="">
-  <label>Kode 6 digit <span style="font-weight:400">(wajib jika tanggal / jam diubah)</span></label><input id="gpCode" type="password" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="••••••">
-  <label>Barang dalam grup</label>
   <div id="gpList"></div>
-  <div class="msg" id="gpMsg"></div>
-  <div class="acts"><button class="btn ghost" id="gpCancel" type="button">Batal</button><button class="btn" id="gpSave" type="button">Simpan</button></div>
+  <div class="acts"><button class="btn ghost" id="gpCancel" type="button">Tutup</button></div>
 </div></div>
 
 <!-- MODAL EDIT GRUP PENGAJUAN -->
@@ -656,6 +639,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
-<script src="script.js?v=73"></script>
+<script src="script.js?v=74"></script>
 </body>
 </html>

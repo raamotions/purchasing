@@ -964,8 +964,8 @@ function puInfo() {
 }
 const gotOf = r => { const p = PI || puInfo(); return r.id in p.got ? p.got[r.id] : (Number(r.ada) || 0) };
 const isFull = r => { const p = PI || puInfo(); return r.id in p.full ? p.full[r.id] : r.ada === r.min };
-// kunci grup: satu kali submit Input (gid) per tahap; data lama tanpa gid dikelompokkan dari waktu input + no. SJ + admin yang sama
-const gKey = r => (r.gid || 'x' + r.ts + '|' + (r.sj || '') + '|' + (r.adm || '')) + '|' + (r.tahap || 0);
+// kunci grup Purchase: hari + tahap + asal barang, jadi input satu-satu pada hari yang sama tetap masuk satu grup
+const gKey = r => dayWIB(r.ts) + '|' + (r.tahap || 0) + '|' + (r.src || '');
 const gItems = k => records.filter(r => mine(r) && gKey(r) === k);
 // nomor urut per BULAN berdasarkan urutan masuk (terlama = 1), mulai dari 1 lagi setiap ganti bulan; tidak berubah oleh filter
 const seqMap = () => {
@@ -982,7 +982,7 @@ function renderTable() {
   const rows = filtered(), filt = FIL.some(s => $(s).value), now = ymd(Date.now());
   const photoCell = pid => !pid || photos[pid] === '' ? '-' : photos[pid] ? `<img class="thumb" src="${photos[pid]}" alt="Surat jalan">` : `<button class="btn ghost sm" data-photo="${esc(pid)}" type="button">📷 Lihat</button>`;
   const rowHtml = r => `<tr>
-    <td>${seq[r.id]}</td><td>${esc(r.prod)}</td><td>${sw(r.vc, r.vn)}</td>
+    <td>${seq[r.id]}</td><td class="nw">${hm(r.ts)}</td><td>${esc(r.sj || '-')}</td><td>${esc(r.prod)}</td><td>${sw(r.vc, r.vn)}</td>
     <td>${gotOf(r)} / ${r.min} pcs</td><td>${stat(isFull(r) ? 1 : 0, 1)}</td><td><span class="tag">${esc(r.src)}</span></td>
     <td class="nw"><button class="btn ghost sm" data-edit="${r.id}" type="button">Edit</button> <button class="btn ghost sm dng" data-del="${r.id}" type="button" title="Hapus satu barang ini saja">Hapus barang</button></td></tr>`;
   const tbl = list => { // satu kali Input (satu tahap) = satu grup; klik untuk membuka daftar barangnya
@@ -993,11 +993,11 @@ function renderTable() {
       const ts0 = Math.min(...L.map(r => r.ts)), srcs = [...new Set(L.map(r => r.src))], adms = admList(L), pid = (L.find(r => r.pid) || {}).pid || '', sjs = [...new Set(L.map(r => r.sj).filter(Boolean))];
       const full = L.every(isFull), tot = sumK2(L, gotOf), kk = 'g' + k;
       return `<details class="gp" data-k="${esc(kk)}" ${openState[kk] ? 'open' : ''}><summary>
-        <span class="gi"><span class="gn"><b>Purchase</b> <small class="gtm">${hm(ts0)}</small></span> · ${L.length} barang · ${NF(tot)} pcs
+        <span class="gi"><span class="gn"><b>Purchase</b> <small class="gtm">${hm(ts0) === hm(Math.max(...L.map(r => r.ts))) ? hm(ts0) : hm(ts0) + ' – ' + hm(Math.max(...L.map(r => r.ts)))}</small></span> · ${L.length} barang · ${NF(tot)} pcs
           <span class="gt">${sjs.length ? '<span class="tag">SJ ' + esc(sjs.join(', ')) + '</span>' : ''}${L[0].tahap ? '<span class="tag">' + thLbl(L[0].tahap) + '</span>' : ''}${srcs.map(s => '<span class="tag">' + esc(s) + '</span>').join('')}<span class="tag">${esc(adms.join(', ') || '-')}</span><span class="tag ${full ? 'in' : 'out'}">${full ? 'Lengkap' : 'Kurang'}</span></span></span>
         <span class="ga"><button class="btn ghost sm" data-gdl="${esc(k)}" type="button" title="Download grup ini sebagai Excel">Download Excel</button><button class="btn ghost sm" data-gpdf="${esc(k)}" type="button" title="Download grup ini sebagai PDF">Download PDF</button><button class="btn ghost sm" data-gedit="${esc(k)}" type="button">Edit</button><button class="btn sm dng gsep" data-gdel="${esc(k)}" type="button" title="Hapus SEMUA barang dalam grup ini">Hapus grup</button></span></summary>
-        <div class="gpb"><div class="gph">Foto surat jalan: ${photoCell(pid)}</div>
-        <div class="tw"><table><thead><tr><th>No</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Status</th><th>Asal</th><th></th></tr></thead><tbody>${L.map(rowHtml).join('')}</tbody></table></div></div></details>`;
+        <div class="gpb"><div class="gph">Foto surat jalan: ${(() => { const ps = [...new Set(L.map(r => r.pid).filter(Boolean))]; return ps.length ? ps.map(p => '<span>' + esc((L.find(r => r.pid === p) || {}).sj || '') + ' ' + photoCell(p) + '</span>').join(' ') : '-' })()}</div>
+        <div class="tw"><table><thead><tr><th>No</th><th>Jam</th><th>No. SJ</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Status</th><th>Asal</th><th></th></tr></thead><tbody>${L.map(rowHtml).join('')}</tbody></table></div></div></details>`;
     }).join('');
   };
   const isOpen = (k, cur) => k in openState ? openState[k] : (filt || cur);
@@ -1053,47 +1053,22 @@ function delGroup(k) {
     commit(ops); renderTable();
   });
 }
-let gEd = null, gFoto;
-const gPF = photoField($('#gpmdl'), d => { gFoto = d });
+let gEd = null;
 function gpItems() {
   if (!gEd) return;
   puInfo();
-  const L = gItems(gEd.k).sort((a, b) => a.prod.localeCompare(b.prod, 'id') || (a.vn || '').localeCompare(b.vn || '', 'id'));
-  $('#gpList').innerHTML = L.map(r => `<div class="gpi"><span>${r.vc ? sw(r.vc, r.vn) + ' ' : ''}<b>${esc(r.prod)}</b>${r.vn ? ' · ' + esc(r.vn) : ''} · ${gotOf(r)} / ${r.min} pcs</span><button class="btn ghost sm" data-gpe="${r.id}" type="button">Edit barang</button></div>`).join('');
+  const L = gItems(gEd.k).sort((a, b) => a.ts - b.ts || a.prod.localeCompare(b.prod, 'id'));
+  $('#gpList').innerHTML = L.map(r => `<div class="gpi"><span>${r.vc ? sw(r.vc, r.vn) + ' ' : ''}<b>${esc(r.prod)}</b>${r.vn ? ' · ' + esc(r.vn) : ''} · ${gotOf(r)} / ${r.min} pcs <small class="tm">${hm(r.ts)}${r.sj ? ' · SJ ' + esc(r.sj) : ''}</small></span><button class="btn ghost sm" data-gpe="${r.id}" type="button">Edit barang</button></div>`).join('');
 }
 function openGEdit(k) {
   const L = gItems(k); if (!L.length) return;
-  const ts0 = Math.min(...L.map(r => r.ts)), pid = (L.find(r => r.pid) || {}).pid || '';
-  gEd = { k, ts0, pid }; gFoto = undefined;
-  $('#gpInfo').textContent = 'Perubahan No. Surat Jalan, tanggal / jam, dan foto berlaku untuk SEMUA ' + L.length + ' barang dalam grup ini. Ubah jumlah atau produk per barang lewat tombol "Edit barang".';
-  $('#gpSj').value = [...new Set(L.map(r => r.sj).filter(Boolean))][0] || ''; $('#gpD').value = ymd(ts0); $('#gpT').value = hm(ts0); $('#gpCode').value = ''; msg('#gpMsg', '');
-  gPF.set(photos[pid]);
-  if (pid && photos[pid] === undefined) photoLoad(pid, d => { if (gEd && gEd.k === k && gFoto === undefined && !$('#gpmdl').hidden) gPF.set(d) });
+  gEd = { k };
+  $('#gpInfo').textContent = 'Purchase ' + (L[0].tahap ? thLbl(L[0].tahap) + ' · ' : '') + L[0].src + ' · ' + dLong(L[0].ts) + ' · ' + L.length + ' barang. Pilih barang yang ingin diedit (jumlah, No. Surat Jalan, tanggal / jam, foto).';
   gpItems(); $('#gpmdl').hidden = false;
 }
 const closeGEdit = () => { $('#gpmdl').hidden = true; gEd = null };
 $('#gpCancel').onclick = closeGEdit;
 $('#gpmdl').onclick = e => { if (e.target.id === 'gpmdl') closeGEdit(); const b = e.target.closest('[data-gpe]'); if (b) { const id = b.dataset.gpe; closeGEdit(); openEdit(id) } };
-$('#gpSave').onclick = () => {
-  if (!gEd) return;
-  const d = $('#gpD').value, tv = $('#gpT').value.trim(), L = gItems(gEd.k);
-  if (!d) return msg('#gpMsg', 'Isi tanggal.');
-  if (tv && !T24.test(tv)) return msg('#gpMsg', 'Isi jam dengan format 24 jam, mis. 14:30.');
-  if (!L.length) return closeGEdit();
-  const chT = d !== ymd(gEd.ts0) || (tv || hm(gEd.ts0)) !== hm(gEd.ts0);
-  if (chT && !codeOk('#gpCode')) return msg('#gpMsg', 'Mengubah tanggal / jam wajib memakai kode 6 digit yang benar.');
-  const nts = chT ? new Date(d + 'T' + (tv || hm(gEd.ts0))).getTime() : null, sj = $('#gpSj').value.trim(), olds = [...new Set(L.map(r => r.pid).filter(Boolean))], ops = [], docs = [];
-  let npid = null;
-  if (gFoto !== undefined) { if (gFoto) { npid = uid(); photos[npid] = gFoto; ops.push(['photos', 'set', { id: npid, d: gFoto }]) } else npid = '' }
-  L.forEach(r => {
-    const b = cl(r); r.sj = sj; if (nts !== null) r.ts = nts; if (npid !== null) r.pid = npid;
-    if (JSON.stringify(b) !== JSON.stringify(r)) { ops.push(['records', 'set', r]); docs.push({ c: 'records', b, a: cl(r) }) }
-  });
-  if (docs.length) ops.push(logH('PURCHASE', 'edit', 'Grup input · ' + gLab(L) + (sj ? ' · SJ ' + sj : ''), docs));
-  if (npid !== null) olds.forEach(p => { if (p !== npid && !records.some(x => x.pid === p) && !hKeep(p)) { ops.push(['photos', 'del', p]); delete photos[p] } });
-  if (ops.length && !commit(ops)) return msg('#gpMsg', 'Penyimpanan penuh. Coba foto yang lebih kecil.');
-  closeGEdit(); renderTable();
-};
 
 /* ---------- edit (popup) ---------- */
 let eRec = null, eFoto, eList = [];
