@@ -373,3 +373,25 @@ details.gp>summary::before{margin-top:2px}
 .gp .gjm{font-size:13px;font-weight:500;color:var(--mute);margin-left:6px}
 .gp .gdt{display:block;margin:0}
 .retadm[hidden]{display:none!important}
+
+/* Gabung Data (menu gembok) */
+.mgdrop{border:2px dashed var(--line);border-radius:14px;padding:22px 16px;text-align:center;background:var(--inp);display:flex;flex-direction:column;gap:8px;align-items:center;margin-top:6px}
+.mgdrop.over{border-color:var(--pri);background:var(--soft)}
+.mgdrop small{color:var(--mute);font-size:12px}
+.mgf{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--inp);margin-top:8px}
+.mgf small{display:block;color:var(--mute);font-size:12px;margin-top:2px}
+.mgf.bad{border-color:#f1b4b4;background:#fdf0f0}
+.mgf.bad small{color:var(--bad)}
+.mgk{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.mgsec{margin-top:20px}
+.mgsec .mgh{font-size:13px;line-height:1.7}
+.mgsec .mgh b{display:block;font-size:17px}
+.mgsec table{min-width:760px}
+.mgx{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}
+.mgx .btn:disabled{opacity:.5;cursor:not-allowed}
+.mgfill{background:#e1f4ea;font-weight:600}
+.mgrep{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--inp);margin-bottom:14px;font-size:13px;line-height:1.6}
+.mgrep details{margin-top:8px}
+.mgrep summary{cursor:pointer;font-weight:600;color:var(--pri2)}
+.mgbad{padding:6px 0;border-top:1px solid var(--line)}
+.mgbad small{display:block;color:var(--bad)}

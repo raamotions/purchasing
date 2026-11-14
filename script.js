@@ -446,7 +446,7 @@ const pgRow = (r, n) => `<tr>
 const pgTbl = list => { // satu hari -> grup per tahap + asal barang; tiap grup punya tombol Download & Edit
   const gs = new Map();
   list.forEach(r => { const k = igKey(r); (gs.get(k) || gs.set(k, []).get(k)).push(r) });
-  return [...gs.entries()].sort((x, y) => (x[1][0].tahap || 99) - (y[1][0].tahap || 99) || String(x[1][0].src).localeCompare(String(y[1][0].src))).map(([k, L]) => {
+  return [...gs.entries()].sort((x, y) => (x[1][0].tahap || 99) - (y[1][0].tahap || 99) || String(x[1][0].src).localeCompare(String(y[1][0].src)) || String(x[1][0].adm || '').localeCompare(String(y[1][0].adm || ''))).map(([k, L]) => {
     L = L.slice().sort((p, q) => p.ts - q.ts || (p.id < q.id ? -1 : 1));
     const R = igRange(L), st = igStat(L), kk = 'ig' + k;
     return `<details class="gp" data-k="${esc(kk)}" ${openState[kk] ? 'open' : ''}><summary>
@@ -719,7 +719,7 @@ $('#xReset').onclick = () => {
 };
 
 /* ---------- GRUP PENGAJUAN di bawah form Input: per hari > per tahap; hari yang lewat otomatis masuk Riwayat ---------- */
-const igKey = r => dayWIB(r.ts) + '|' + (r.tahap || 0) + '|' + (r.src || '');
+const igKey = r => dayWIB(r.ts) + '|' + (r.tahap || 0) + '|' + (r.src || '') + '|' + (r.adm || ''); // hari + tahap + asal barang + nama admin
 const igItems = k => reqs.filter(r => mine(r) && igKey(r) === k);
 const igLong = t => { const d = dayWIB(t).split('-'); return +d[2] + ' ' + BLN[+d[1] - 1] + ' ' + d[0] };
 const igRange = L => { const a = Math.min(...L.map(r => r.ts)), b = Math.max(...L.map(r => r.ts)); return { a, b, txt: hm(a) === hm(b) ? hm(a) : hm(a) + ' – ' + hm(b) } };
@@ -757,7 +757,7 @@ function igPdf(k) {
 let igEd = null;
 function openIgEdit(k) {
   const L = igItems(k).sort((a, b) => a.ts - b.ts); if (!L.length) return;
-  igEd = k; $('#igInfo').textContent = 'Pengajuan ' + (L[0].tahap ? thLbl(L[0].tahap) + ' · ' : '') + L[0].src + ' · ' + igLong(L[0].ts) + ' · ' + L.length + ' barang. Pilih barang yang ingin diedit.';
+  igEd = k; $('#igInfo').textContent = 'Pengajuan ' + (L[0].tahap ? thLbl(L[0].tahap) + ' · ' : '') + L[0].src + ' · Admin ' + (L[0].adm || '-') + ' · ' + igLong(L[0].ts) + ' · ' + L.length + ' barang. Pilih barang yang ingin diedit.';
   $('#igList').innerHTML = L.map(r => `<div class="gpi"><span>${r.vc ? sw(r.vc, r.vn) + ' ' : ''}<b>${esc(r.prod)}</b>${r.vn ? ' · ' + esc(r.vn) : ''} · ${r.ada} / ${r.min} pcs <small class="tm">${hm(r.ts)}</small></span><button class="btn ghost sm" data-ige="${r.id}" type="button">Edit barang</button></div>`).join('');
   $('#igmdl').hidden = false;
 }
@@ -2650,11 +2650,306 @@ function tabChart(D) {
   H.push(hch('Stok per produk (pcs, seluruh waktu)', '10 produk dengan stok terbanyak (varian digabung).', aggBy(stock, g => g.prod, g => [g.qty]), { la: 'Stok', unit: 'pcs', max: 10 }));
   return H.join('');
 }
+/* ---------- GABUNG DATA (menu gembok): gabungkan beberapa file PDF / Excel hasil export menjadi satu laporan ---------- */
+const MG = { files: [], opts: { mode: 'sections', sort: 'date', dedupe: true }, busy: 0 };
+const MG_WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const mgDate = s => { const m = String(s || '').match(/(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?:\D+(\d{1,2})[:.](\d{2}))?/); return m ? new Date(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0)).getTime() : null };
+const mgUniq = a => [...new Set(a.filter(Boolean))];
+const mgT = t => t == null ? 1e18 : t;
+
+// Baris mentah (hasil baca Excel / PDF) -> daftar bagian tabel. Pola: beberapa baris judul, lalu baris judul kolom (kolom pertama "No."), lalu baris data.
+function mgSections(rows, fname) {
+  const out = []; let pend = [], cur = null;
+  rows.forEach(raw => {
+    const r = raw.map(c => String(c == null ? '' : c).replace(/\s+/g, ' ').trim()), n = r.filter(Boolean).length;
+    if (!n) { cur = null; pend = []; return } // baris kosong = pemisah antar tabel
+    if (/^no\.?$/i.test(r[0]) && n >= 3) { // baris judul kolom
+      let e = r.length; while (e && !r[e - 1]) e--;
+      if (cur && !pend.length) return; // judul kolom berulang di halaman PDF berikutnya: tabel yang sama berlanjut
+      cur = { file: fname, cols: r.slice(0, e), head: pend.slice(-6), rows: [] }; pend = []; out.push(cur); return;
+    }
+    if (cur) {
+      if (/^\d+$/.test(r[0]) && n >= 2) { const c = r.slice(0, cur.cols.length); while (c.length < cur.cols.length) c.push(''); cur.rows.push({ c }); return }
+      if (!r[0] && cur.rows.length) { // lanjutan teks sel yang turun ke baris berikutnya
+        const l = cur.rows[cur.rows.length - 1].c; r.forEach((x, i) => { if (x && i < l.length) l[i] = (l[i] + ' ' + x).trim() }); return;
+      }
+      cur = null;
+    }
+    pend.push(r.filter(Boolean).join(' ')); // baris teks judul (Laporan Purchase, Tanggal & Jam, Asal Barang, Pengajuan)
+  });
+  out.forEach(mgMeta);
+  return out.filter(s => s.rows.length);
+}
+function mgMeta(s) {
+  const pick = re => { for (const h of s.head) { const m = h.match(re); if (m) return m[1].trim() } return '' };
+  s.tglTxt = pick(/^Tanggal[^:]*:\s*(.*)$/i);
+  s.asal = pick(/Asal Barang\s*:\s*(.*?)\s*(?:Nama Admin\s*:|$)/i);
+  s.adm = pick(/Nama Admin\s*:\s*(.*)$/i);
+  s.th = pick(/^Pengajuan\s*:\s*(.*)$/i);
+  s.title = s.head.find(h => !/^(Tanggal[^:]*|Asal Barang|Nama Admin|Pengajuan)\s*:/i.test(h)) || (s.cols.some(c => /surat jalan/i.test(c)) ? 'Laporan Purchase' : 'Laporan Gabungan');
+  const di = s.cols.findIndex(c => /^tanggal/i.test(c)), si = s.cols.findIndex(c => /^asal$/i.test(c));
+  s.rows.forEach(r => { r.ts = di >= 0 ? mgDate(r.c[di]) : null });
+  if (!s.asal && si >= 0) s.asal = mgUniq(s.rows.map(r => r.c[si])).join(', ');
+  const T = s.rows.map(r => r.ts).filter(x => x != null);
+  s.t0 = T.length ? Math.min(...T) : null; s.t1 = T.length ? Math.max(...T) : null;
+  s.num = /^no\.?$/i.test(s.cols[0]);
+}
+
+// ---- pembaca file ----
+function mgFromXls(buf, name, ext) {
+  if (!window.XLSX) throw new Error('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
+  const wb = ext === 'csv' ? XLSX.read(new TextDecoder('utf-8').decode(buf), { type: 'string' }) : XLSX.read(buf, { type: 'array' });
+  let S = [];
+  wb.SheetNames.forEach(n => { S = S.concat(mgSections(XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: false, defval: '' }), name)) });
+  return S;
+}
+// PDF teks (hasil export aplikasi ini): kata dikelompokkan per baris lewat posisi Y, lalu per kolom lewat posisi X judul kolom
+function mgPdfRows(pages) { // pages: [[{s, x, y, w}]] -> baris mentah
+  const rows = []; let colX = null;
+  pages.forEach(items => {
+    items = items.filter(i => i.s && i.s.trim()).map(i => ({ s: i.s.trim(), x: i.x, y: i.y, w: i.w || 0 })).sort((a, b) => b.y - a.y || a.x - b.x);
+    const lines = [];
+    items.forEach(it => { const L = lines[lines.length - 1]; if (L && Math.abs(L.y - it.y) <= 2.5) L.it.push(it); else lines.push({ y: it.y, it: [it] }) });
+    lines.forEach(L => {
+      const m = [];
+      L.it.sort((a, b) => a.x - b.x).forEach(it => { const p = m[m.length - 1]; if (p && it.x - (p.x + p.w) < 1.2) { p.s += (it.x - (p.x + p.w) > 0.4 ? ' ' : '') + it.s; p.w = it.x + it.w - p.x } else m.push(Object.assign({}, it)) });
+      if (/^no\.?$/i.test(m[0].s) && m.length >= 3) { colX = m.map(i => i.x); rows.push(m.map(i => i.s)); return }
+      if (!colX) { rows.push([m.map(i => i.s).join(' ')]); return }
+      const r = colX.map(() => '');
+      m.forEach(it => { let c = 0; colX.forEach((x, i) => { if (x <= it.x + 2) c = i }); r[c] = (r[c] ? r[c] + ' ' : '') + it.s });
+      rows.push(r);
+    });
+  });
+  return rows;
+}
+async function mgFromPdf(buf, name) {
+  if (!window.pdfjsLib) throw new Error('Library pembaca PDF gagal dimuat. Pastikan terhubung ke internet.');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = MG_WORKER;
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise, pages = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const tc = await (await pdf.getPage(p)).getTextContent();
+    pages.push(tc.items.map(i => ({ s: i.str, x: i.transform[4], y: i.transform[5], w: i.width })));
+  }
+  return mgSections(mgPdfRows(pages), name);
+}
+async function mgReadFile(file) {
+  const ext = (file.name.split('.').pop() || '').toLowerCase(), buf = await file.arrayBuffer();
+  if (ext === 'pdf') return mgFromPdf(buf, file.name);
+  if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') return mgFromXls(buf, file.name, ext);
+  throw new Error('Format .' + ext + ' tidak didukung. Gunakan PDF, Excel (.xlsx / .xls), atau CSV.');
+}
+async function mgAdd(list) {
+  for (const f of list) {
+    const rec = { name: f.name, sections: [], err: '' };
+    MG.busy++; mgRender();
+    try {
+      rec.sections = await mgReadFile(f);
+      if (!rec.sections.length) rec.err = 'Tabel tidak ditemukan. Gunakan file hasil export Purchase / Pengajuan (kolom pertama "No."). PDF hasil scan atau foto tidak bisa dibaca.';
+    } catch (e) { console.error('gabung', e); rec.err = (e && e.message) || String(e) }
+    MG.busy--; MG.files.push(rec); try { mgEnrich() } catch (e) { console.error('cocokkan', e) } mgRender();
+  }
+}
+
+// ---- isi kolom "Ada" yang kosong (export Pengajuan) dari data Pengajuan / Input / Purchase / Riwayat ----
+// Hanya diisi bila cocok PERSIS satu pengajuan (produk, varian, asal, tahap, admin, jam input, dan jumlah diminta) dan angkanya sama dengan data Purchase. Selain itu dibiarkan kosong + dilaporkan.
+const mgNorm = s => String(s || '').replace(/\s+/g, ' ').trim().toUpperCase();
+const mgVn = s => { s = mgNorm(s); return s === '-' ? '' : s };
+const mgTh = s => { const m = String(s || '').match(/(\d+)/); return m ? +m[1] : 0 };
+const mgMin = t => Math.floor(t / 60000);
+function mgPool() {
+  const out = [], seen = new Set(), live = new Map(reqs.map(r => [r.id, r])), rec = {};
+  records.forEach(x => { if (x.rid) rec[x.rid] = Math.max(rec[x.rid] || 0, Number(x.ada) || 0) });
+  const add = (s, r, from) => {
+    const k = [mgNorm(s.prod), mgVn(s.vn), mgNorm(s.src), Number(s.tahap) || 0].join('|'), u = r.id + '#' + k + '#' + mgNorm(s.adm);
+    if (seen.has(u)) return; seen.add(u);
+    out.push({ k, adm: mgNorm(s.adm), r, from, rec: from === 'Riwayat (dihapus)' ? null : (rec[r.id] || 0) });
+  };
+  reqs.forEach(r => add(r, r, 'Pengajuan'));
+  const gone = new Map(); // pengajuan yang sudah dihapus: ambil kondisi terakhir dari Riwayat
+  hlog.slice().sort((a, b) => a.ts - b.ts).forEach(e => {
+    let D; try { D = JSON.parse(e.docs) } catch (x) { return }
+    D.forEach(d => {
+      if (d.c !== 'requests') return;
+      [d.b, d.a].forEach(s => { if (s && s.id && s.prod && live.has(s.id)) add(s, live.get(s.id), 'Riwayat (nama lama)') }); // nama / asal lama pada pengajuan yang masih ada
+      const s = e.act === 'hapus' ? d.b : (d.a || d.b);
+      if (s && s.id && s.prod && !live.has(s.id)) gone.set(s.id, s);
+    });
+  });
+  gone.forEach(s => add(s, s, 'Riwayat (dihapus)'));
+  const idx = new Map(); out.forEach(c => { (idx.get(c.k) || idx.set(c.k, []).get(c.k)).push(c) });
+  return idx;
+}
+function mgFillSec(s, idx) {
+  const C = s.cols, f = re => C.findIndex(c => re.test(c)), qi = f(/ada\s*\/\s*diminta/i), pi = f(/produk/i), vi = f(/^varian/i), si = f(/^asal$/i), ti = f(/^pengajuan$/i), di = f(/^tanggal/i);
+  s.qi = qi; if (qi < 0 || pi < 0 || di < 0) return;
+  const admF = s.adm && s.adm !== '-' && !s.adm.includes(',') ? mgNorm(s.adm) : '';
+  s.rows.forEach(r => {
+    if (r.fx) r.c[qi] = r.fx.orig; // pencocokan ulang: mulai dari isi asli file
+    const m = String(r.c[qi]).match(/^\/\s*(\d+)\s*(?:pcs)?$/i);
+    if (!m) { r.fx = null; return }
+    const min = +m[1], fx = r.fx = { orig: r.c[qi], st: 'none', note: '' };
+    if (r.ts == null) { fx.note = 'Tanggal pada baris tidak terbaca'; return }
+    const src = si >= 0 ? r.c[si] : s.asal, th = ti >= 0 ? mgTh(r.c[ti]) : mgTh(s.th), rm = mgMin(r.ts);
+    const cands = (idx.get([mgNorm(r.c[pi]), mgVn(vi >= 0 ? r.c[vi] : ''), mgNorm(src), th].join('|')) || []).filter(c => !admF || c.adm === admF);
+    const hit = new Map(); // id pengajuan -> {c, a: Set jumlah ada}
+    cands.forEach(c => {
+      const E = reqEntries(c.r), put = a => { const h = hit.get(c.r.id) || hit.set(c.r.id, { c, a: new Set() }).get(c.r.id); h.a.add(a) };
+      E.forEach((e, j) => {
+        if (mgMin(e.ts) !== rm) return;
+        let n = 0, a = 0;
+        for (let k = j; k < E.length; k++) { n += E[k].n; a += E[k].a; if (n === min) { put(a); break } if (n > min) break }
+      });
+      if (mgMin(c.r.ts) === rm && Number(c.r.min) === min) put(Number(c.r.ada) || 0); // pengajuan utuh (jam input pertama)
+    });
+    if (!hit.size) { fx.note = 'Tidak ada pengajuan yang cocok (produk, varian, asal, tahap, jam input, dan jumlah diminta ' + min + ')'; return }
+    if (hit.size > 1) { fx.st = 'ambig'; fx.note = hit.size + ' pengajuan sama persis (kemungkinan beda admin / dobel), tidak dipilihkan'; return }
+    const h = [...hit.values()][0];
+    if (h.a.size > 1) { fx.st = 'ambig'; fx.note = 'Angka ada tidak tunggal pada data pengajuan'; return }
+    const a = [...h.a][0], tot = Number(h.c.r.ada) || 0;
+    if (h.c.rec !== null && h.c.rec !== tot) { fx.st = 'conflict'; fx.note = 'Data Pengajuan menunjukkan ada ' + tot + ', tetapi Purchase mencatat ' + h.c.rec + '. Periksa manual'; return }
+    r.c[qi] = a + ' / ' + min + ' pcs'; fx.st = 'ok'; fx.from = h.c.from; fx.note = 'Dari ' + h.c.from;
+  });
+}
+function mgEnrich() {
+  const idx = mgPool();
+  MG.files.forEach(f => f.sections.forEach(s => mgFillSec(s, idx)));
+}
+
+// ---- penggabungan ----
+function mgBuild() {
+  const o = MG.opts, S = [];
+  MG.files.forEach((f, fi) => f.sections.forEach((s, si) => S.push({ s, fi, si })));
+  S.sort(o.sort === 'date' ? (a, b) => mgT(a.s.t0) - mgT(b.s.t0) || a.fi - b.fi || a.si - b.si : (a, b) => a.fi - b.fi || a.si - b.si);
+  const sig = s => s.cols.join('|').toLowerCase(), G = new Map(), f_name = i => MG.files[i].name;
+  S.forEach(({ s, fi }) => {
+    const k = o.mode === 'sections' ? 'k' + G.size : o.mode === 'group' ? [sig(s), s.asal, s.adm, s.th].join('#') : sig(s);
+    let g = G.get(k); if (!g) G.set(k, g = { cols: s.cols, num: s.num, qi: s.qi, parts: [], rows: [] });
+    g.parts.push(s); s.rows.forEach(r => g.rows.push({ c: r.c, ts: r.ts, fi, adm: s.adm, th: s.th, fx: r.fx, fname: f_name(fi) }));
+  });
+  let dups = 0, total = 0; const seen = new Map();
+  const sections = [...G.values()].map(g => {
+    if (o.dedupe) g.rows = g.rows.filter(r => { // baris sama persis yang muncul di file lain dibuang (di file yang sama dibiarkan)
+      const k = sig(g) + '#' + r.adm + '#' + r.th + '#' + r.c.slice(g.num ? 1 : 0).join('|'), f0 = seen.get(k);
+      if (f0 === undefined) { seen.set(k, r.fi); return true }
+      if (f0 === r.fi) return true; dups++; return false;
+    });
+    return g;
+  }).filter(g => g.rows.length);
+  sections.forEach(g => {
+    if (o.mode !== 'sections' && o.sort === 'date') g.rows.sort((a, b) => mgT(a.ts) - mgT(b.ts)); // urutan stabil: baris dengan jam sama tetap berurut seperti aslinya
+    if (g.num) g.rows = g.rows.map((r, i) => Object.assign({}, r, { c: [String(i + 1)].concat(r.c.slice(1)) }));
+    const P = g.parts, t = g.rows.map(r => r.ts).filter(x => x != null);
+    g.srcs = mgUniq(P.flatMap(p => (p.asal || '').split(/\s*,\s*/))); g.adms = mgUniq(P.map(p => p.adm));
+    const tgl = P.length === 1 && P[0].tglTxt ? P[0].tglTxt : t.length ? dLong(Math.min(...t)) + ' - ' + dLong(Math.max(...t)) : (mgUniq(P.map(p => p.tglTxt)).join(' ; ') || '-');
+    g.head = [P[0].title, 'Tanggal & Jam: ' + tgl, 'Asal Barang: ' + (g.srcs.join(', ') || '-') + '     Nama Admin: ' + (g.adms.join(', ') || '-')];
+    if (P.some(p => p.th)) g.head.push('Pengajuan : ' + (mgUniq(P.map(p => p.th)).join(', ') || '-'));
+    total += g.rows.length;
+  });
+  return { sections, dups, total };
+}
+const mgFn = (R, ext) => { const A = mgUniq(R.sections.flatMap(s => s.srcs)), M = mgUniq(R.sections.flatMap(s => s.adms)); return fileName(A.length === 1 ? A[0] : '', M.length === 1 ? M[0] : 'SEMUA', 'GABUNG', ext) };
+function mgExcel() { // format sama dengan export Purchase: tiap bagian = judul + tabel, jarak 5 baris kosong
+  if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
+  const R = mgBuild(); if (!R.sections.length) return alert('Belum ada data untuk diexport.');
+  const aoa = [], merges = [], W = [];
+  R.sections.forEach((s, i) => {
+    if (i) for (let n = 0; n < 5; n++) aoa.push([]);
+    s.head.forEach(h => { merges.push({ s: { r: aoa.length, c: 0 }, e: { r: aoa.length, c: s.cols.length - 1 } }); aoa.push([h]) });
+    aoa.push(s.cols); s.rows.forEach(r => aoa.push(r.c));
+    s.cols.forEach((c, j) => { W[j] = Math.max(W[j] || 0, c.length, ...s.rows.map(r => (r.c[j] || '').length)) });
+  });
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges'] = merges; ws['!cols'] = W.map(w => ({ wch: Math.min(40, Math.max(8, w + 2)) }));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Gabungan');
+  XLSX.writeFile(wb, mgFn(R, 'xlsx'));
+}
+function mgPdf() {
+  if (!window.jspdf) return alert('Library PDF gagal dimuat. Pastikan terhubung ke internet.');
+  const R = mgBuild(); if (!R.sections.length) return alert('Belum ada data untuk diexport.');
+  const doc = new jspdf.jsPDF({ orientation: 'landscape' }), H = doc.internal.pageSize.getHeight();
+  let y = 15;
+  R.sections.forEach((s, i) => {
+    if (i) y += 30; // jarak 5 baris
+    if (y + 50 > H - 10) { doc.addPage(); y = 15 }
+    doc.setFontSize(16); doc.setFont(undefined, 'bold'); doc.text(s.head[0], 14, y);
+    doc.setFontSize(10); doc.setFont(undefined, 'normal');
+    s.head.slice(1).forEach((h, j) => doc.text(h, 14, y + 7 + j * 6));
+    doc.autoTable({ startY: y + 7 + (s.head.length - 1) * 6 + 3, headStyles: { fillColor: [74, 123, 208] }, head: [s.cols], body: s.rows.map(r => r.c) });
+    y = doc.lastAutoTable.finalY;
+  });
+  doc.save(mgFn(R, 'pdf'));
+}
+
+// ---- tampilan ----
+function tabMerge() {
+  const o = MG.opts, sl = (a, b) => a === b ? ' selected' : '';
+  return `<div id="mgRoot">
+  <div class="card">
+    <h3>Gabung Data</h3>
+    <p class="hint">Upload dua file atau lebih (PDF atau Excel) hasil export Purchase / Pengajuan, pilih cara gabungnya, lalu export ke PDF atau Excel dengan format laporan yang sama seperti export Purchase. PDF harus PDF teks hasil export aplikasi ini; PDF hasil scan atau foto tidak bisa dibaca.</p>
+    <div class="mgdrop" id="mgDrop"><b>Tarik file ke sini</b><span>atau</span><button class="btn sm" type="button" data-mgpick>Pilih file</button><small>PDF, XLSX, XLS, CSV. Boleh pilih banyak file sekaligus.</small><input type="file" id="mgFile" accept=".pdf,.xlsx,.xls,.csv" multiple hidden></div>
+    <div id="mgList"></div>
+  </div>
+  <div class="card">
+    <h3>Pilihan gabung</h3>
+    <div class="exf">
+      <div><label>Cara gabung</label><select id="mgMode"><option value="sections"${sl(o.mode, 'sections')}>Tiap bagian tetap terpisah (berurutan, seperti file aslinya)</option><option value="group"${sl(o.mode, 'group')}>Satukan bagian dengan Asal + Admin + Pengajuan yang sama</option><option value="one"${sl(o.mode, 'one')}>Satu tabel saja (semua baris digabung)</option></select></div>
+      <div><label>Urutan</label><select id="mgSort"><option value="date"${sl(o.sort, 'date')}>Tanggal (terlama dulu)</option><option value="file"${sl(o.sort, 'file')}>Urutan file yang diupload</option></select></div>
+      <div><label>Data dobel</label><select id="mgDup"><option value="1"${sl(o.dedupe ? '1' : '0', '1')}>Buang baris yang sama persis antar file</option><option value="0"${sl(o.dedupe ? '1' : '0', '0')}>Biarkan semua baris</option></select></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Hasil gabungan</h3>
+    <div id="mgPrev"></div>
+    <div class="mgx"><button class="btn" type="button" data-mgx="xls">Export Excel</button><button class="btn" type="button" data-mgx="pdf">Export PDF</button><button class="btn ghost" type="button" data-mgx="fill">Cocokkan ulang kolom Ada</button><button class="btn ghost" type="button" data-mgx="clr">Kosongkan semua file</button></div>
+  </div>
+  </div>`;
+}
+function mgRender() {
+  const L = $('#mgList'), P = $('#mgPrev'); if (!L || !P) return;
+  const cnt = f => f.sections.reduce((a, s) => a + s.rows.length, 0);
+  L.innerHTML = MG.files.map((f, i) => `<div class="mgf${f.err ? ' bad' : ''}"><div><b>${esc(f.name)}</b><small>${f.err ? esc(f.err) : f.sections.length + ' bagian tabel, ' + NF(cnt(f)) + ' baris'}</small></div><button class="btn ghost sm dng" type="button" data-mgdel="${i}">Hapus</button></div>`).join('') + (MG.busy ? '<p class="hint">Membaca file...</p>' : '');
+  const R = mgBuild(), ok = R.sections.length > 0;
+  $$('#mgRoot [data-mgx="xls"],#mgRoot [data-mgx="pdf"]').forEach(b => b.disabled = !ok);
+  $$('#mgRoot [data-mgx="clr"],#mgRoot [data-mgx="fill"]').forEach(b => b.disabled = !MG.files.length);
+  if (!ok) { P.innerHTML = '<p class="hint">Belum ada hasil. Upload file di atas, hasilnya langsung tampil di sini.</p>'; return }
+  let left = 200;
+  const FX = []; MG.files.forEach(f => f.sections.forEach(s => s.rows.forEach(r => { if (r.fx) FX.push({ f: f.name, s, r }) })));
+  const okN = FX.filter(x => x.r.fx.st === 'ok').length, bad = FX.filter(x => x.r.fx.st !== 'ok'), pi = s => s.cols.findIndex(c => /produk/i.test(c)), vi = s => s.cols.findIndex(c => /^varian/i.test(c));
+  const rep = !FX.length ? '' : `<div class="mgrep"><b>Kolom "Ada" yang kosong di file: ${NF(FX.length)} baris</b><div>Terisi otomatis dan cocok persis: <b>${NF(okN)}</b> (disorot hijau). Dibiarkan kosong karena belum pasti: <b>${NF(bad.length)}</b>.</div>${reqs.length ? '' : '<div class="hint">Data Pengajuan belum termuat. Tunggu sinkron lalu klik "Cocokkan ulang kolom Ada".</div>'}${bad.length ? '<details><summary>Lihat baris yang tidak diisi</summary>' + bad.slice(0, 60).map(x => '<div class="mgbad">' + esc(x.f) + ' · ' + esc(x.r.c[pi(x.s)] || '') + (x.r.c[vi(x.s)] && x.r.c[vi(x.s)] !== '-' ? ' ' + esc(x.r.c[vi(x.s)]) : '') + ' · ' + esc(x.r.c[1] || '') + '<small>' + esc(x.r.fx.note) + '</small></div>').join('') + (bad.length > 60 ? '<p class="hint">+ ' + (bad.length - 60) + ' baris lain.</p>' : '') + '</details>' : ''}</div>`;
+  P.innerHTML = rep + `<div class="mgk">${kpi('File terbaca', MG.files.filter(f => f.sections.length).length)}${kpi('Bagian tabel', R.sections.length)}${kpi('Total baris', NF(R.total))}${kpi('Dobel dibuang', NF(R.dups), '', R.dups ? 'mid' : 'ok')}</div>` +
+    R.sections.map(s => {
+      const take = s.rows.slice(0, Math.max(0, left)); left -= take.length;
+      return `<div class="mgsec"><div class="mgh"><b>${esc(s.head[0])}</b>${s.head.slice(1).map(h => '<div>' + esc(h) + '</div>').join('')}</div><div class="tw"><table class="mgt"><thead><tr>${s.cols.map(c => '<th>' + esc(c) + '</th>').join('')}</tr></thead><tbody>${take.map(r => '<tr>' + r.c.map((x, j) => '<td' + (r.fx && r.fx.st === 'ok' && j === s.qi ? ' class="mgfill" title="' + esc(r.fx.note) + '"' : '') + '>' + esc(x) + '</td>').join('') + '</tr>').join('')}</tbody></table></div>${take.length < s.rows.length ? '<p class="hint">+ ' + NF(s.rows.length - take.length) + ' baris lain tidak ditampilkan di pratinjau, tetap ikut diexport.</p>' : ''}</div>`;
+    }).join('');
+}
+{
+  const ow = $('#owBody');
+  ow.addEventListener('change', e => {
+    const t = e.target;
+    if (t.id === 'mgFile') { const fs = [...t.files]; t.value = ''; mgAdd(fs) }
+    if (t.id === 'mgMode') { MG.opts.mode = t.value; mgRender() }
+    if (t.id === 'mgSort') { MG.opts.sort = t.value; mgRender() }
+    if (t.id === 'mgDup') { MG.opts.dedupe = t.value === '1'; mgRender() }
+  });
+  ow.addEventListener('click', e => {
+    if (e.target.closest('[data-mgpick]')) $('#mgFile').click();
+    const d = e.target.closest('[data-mgdel]'); if (d) { MG.files.splice(+d.dataset.mgdel, 1); mgRender() }
+    const x = e.target.closest('[data-mgx]');
+    if (x) { const k = x.dataset.mgx; if (k === 'xls') mgExcel(); else if (k === 'pdf') mgPdf(); else if (k === 'fill') { mgEnrich(); mgRender() } else { MG.files = []; mgRender() } }
+  });
+  ow.addEventListener('dragover', e => { const z = e.target.closest('#mgDrop'); if (z) { e.preventDefault(); z.classList.add('over') } });
+  ow.addEventListener('dragleave', e => { const z = e.target.closest('#mgDrop'); if (z) z.classList.remove('over') });
+  ow.addEventListener('drop', e => { const z = e.target.closest('#mgDrop'); if (z) { e.preventDefault(); z.classList.remove('over'); mgAdd([...e.dataTransfer.files]) } });
+}
+
 function renderOw() {
   if (!owOk) return;
   $$('.otabs button').forEach(b => b.classList.toggle('on', b.dataset.o === owTab));
+  const fx = $('#ow .exf'); if (fx) fx.style.display = owTab === 'merge' ? 'none' : ''; // filter periode tidak berlaku untuk Gabung Data
+  if (owTab === 'merge') { if (!$('#mgRoot')) $('#owBody').innerHTML = tabMerge(); mgRender(); return } // jangan digambar ulang tiap data masuk, supaya file yang sudah diupload tidak hilang
   const D = owData();
-  $('#owBody').innerHTML = { sum: tabSum, chart: tabChart, prod: tabProd, adm: tabAdm, rec: tabReco, role: tabRole }[owTab](D);
+  $('#owBody').innerHTML = { sum: tabSum, chart: tabChart, prod: tabProd, adm: tabAdm, rec: tabReco, role: tabRole, merge: tabMerge }[owTab](D);
 }
 // ---- gerbang kode & kontrol akses ----
 function openOw() { if (owOk) return go('ow'); $('#gCode').value = ''; msg('#gMsg', ''); $('#gmdl').hidden = false; $('#gCode').focus() }
@@ -2662,7 +2957,7 @@ function tryOw() {
   if ($('#gCode').value.trim() !== OW_CODE) return msg('#gMsg', 'Kode salah.');
   owOk = true; $('#gmdl').hidden = true; go('ow');
 }
-function lockOw() { owOk = false; $('#owBody').innerHTML = ''; go('pg') }
+function lockOw() { owOk = false; MG.files = []; $('#owBody').innerHTML = ''; go('pg') }
 $('#lockBtn').onclick = openOw; $('#gOk').onclick = tryOw; $('#gCancel').onclick = () => $('#gmdl').hidden = true;
 $('#gCode').addEventListener('keydown', e => { if (e.key === 'Enter') tryOw() });
 $('#owLock').onclick = lockOw;
@@ -2715,5 +3010,19 @@ pgVarUI(); addBlock(); startSync();
 if (!db) ensureSuper(); // mode lokal
 if (!db && admFixN) { commit(); store.set('pp_admins', Object.fromEntries(admins.map(a => [a.username, a]))) } // simpan nama admin yang sudah dikapitalkan (mode lokal)
 applyRole();
+/* filter selalu kosong saat halaman dibuka atau di-refresh (browser suka mengembalikan isian filter / nama admin terakhir setelah refresh) */
+const FIL_SEL = '.exf input,.exf select,#fl input,#fl select,.inh input,.inh select,.bds input,#stSearch,#pSearch,#gdSearch,#usSearch';
+$$(FIL_SEL).forEach(el => el.setAttribute('autocomplete', 'off')); // autocomplete=off: browser tidak menyimpan isian ini untuk dipulihkan saat refresh berikutnya
+function clearFilters() {
+  $$(FIL_SEL).forEach(el => {
+    if (el.type === 'file' || el.type === 'checkbox' || el.type === 'button') return;
+    if (el.tagName === 'SELECT') el.selectedIndex = 0; else el.value = '';
+    el._upd && el._upd();
+  });
+  refresh();
+}
+clearFilters();
+window.addEventListener('load', () => setTimeout(clearFilters, 0)); // pemulihan isian oleh browser bisa terjadi setelah script ini berjalan
+window.addEventListener('pageshow', e => { if (e.persisted) clearFilters() });
 /* popup welcome: tampil saat web dibuka; klik di mana saja (atau tanda silang) untuk menutup */
 $('#wlc').addEventListener('click', () => { $('#wlc').hidden = true });
