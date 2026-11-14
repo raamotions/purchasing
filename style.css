@@ -370,3 +370,5 @@ details.gp>summary::before{margin-top:2px}
 .ownadm[hidden]{display:none!important}
 .inh .admw{grid-column:1/2}
 @media(max-width:700px){.inh .admw{grid-column:auto}}
+.gp .gjm{font-size:13px;font-weight:500;color:var(--mute);margin-left:6px}
+.gp .gdt{display:block;margin:0}

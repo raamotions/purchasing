@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Purchasing Barang</title>
-<link rel="stylesheet" href="style.css?v=44">
+<link rel="stylesheet" href="style.css?v=46">
 </head>
 <body>
 
@@ -68,7 +68,7 @@
     </div>
     <div class="card">
       <h3>Daftar Pengajuan</h3>
-      <p class="hint">Pengajuan hari ini tampil di atas. Setelah pukul 00.00 WIB, pengajuan hari itu otomatis masuk ke Riwayat dan dikelompokkan per tahun &amp; bulan (tertutup, klik untuk membuka). Filter tanggal &amp; jam yang dikosongkan berarti semua tanggal, termasuk untuk export. Data penerimaan tetap tersimpan di menu Purchase.</p>
+      <p class="hint">Pengajuan hari ini tampil di atas, dikelompokkan per tahap dan asal barang (klik grupnya untuk melihat barang; tombol Download ada di tiap grup). Setelah pukul 00.00 WIB, pengajuan hari itu otomatis masuk ke Riwayat dan dikelompokkan per tahun &amp; bulan (tertutup, klik untuk membuka). Filter tanggal &amp; jam yang dikosongkan berarti semua tanggal, termasuk untuk export. Data penerimaan tetap tersimpan di menu Purchase.</p>
       <div class="exf">
         <div><label>Dari tanggal &amp; jam</label><div class="dt"><input type="date" id="xFromD"><input class="tm24" id="xFromT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
         <div><label>Sampai tanggal &amp; jam</label><div class="dt"><input type="date" id="xToD"><input class="tm24" id="xToT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
@@ -602,6 +602,14 @@
   <div class="acts"><button class="btn ghost" id="gpCancel" type="button">Batal</button><button class="btn" id="gpSave" type="button">Simpan</button></div>
 </div></div>
 
+<!-- MODAL EDIT GRUP PENGAJUAN -->
+<div class="modal" id="igmdl" hidden><div class="box">
+  <h3>Edit Grup Pengajuan</h3>
+  <div class="hint2" id="igInfo"></div>
+  <div id="igList"></div>
+  <div class="acts"><button class="btn ghost" id="igClose" type="button">Tutup</button></div>
+</div></div>
+
 <!-- MODAL EDIT UPLOAD STOK / BARANG RETUR -->
 <div class="modal" id="sgmdl" hidden><div class="box">
   <h3 id="sgTitle"></h3>
@@ -648,6 +656,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
-<script src="script.js?v=71"></script>
+<script src="script.js?v=73"></script>
 </body>
 </html>

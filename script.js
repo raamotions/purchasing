@@ -440,7 +440,19 @@ const pgRow = (r, n) => `<tr>
     <td>${r.ada} / ${r.min} pcs${r.part ? '<div class="tm">sesuai filter · total ' + r.tot + ' pcs</div>' : ''}</td><td><span class="tag">${esc(r.src)}</span></td><td>${thLbl(r.tahap)}</td><td>${esc(r.adm || '-')}</td>
     <td>${reqStat(r)}</td>
     <td class="nw"><button class="btn ghost sm" data-redit="${r.id}">Edit</button> <button class="btn ghost sm" data-del="${r.id}">Hapus</button></td></tr>${histRow(r)}`;
-const pgTbl = list => `<div class="tw"><table><thead><tr><th>No</th><th>Tanggal</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Asal</th><th>Pengajuan</th><th>Admin</th><th>Status</th><th></th></tr></thead><tbody>${list.map(pgRow).join('')}</tbody>${pgFoot(list)}</table></div>`;
+const pgTbl = list => { // satu hari -> grup per tahap + asal barang; tiap grup punya tombol Download & Edit
+  const gs = new Map();
+  list.forEach(r => { const k = igKey(r); (gs.get(k) || gs.set(k, []).get(k)).push(r) });
+  return [...gs.entries()].sort((x, y) => (x[1][0].tahap || 99) - (y[1][0].tahap || 99) || String(x[1][0].src).localeCompare(String(y[1][0].src))).map(([k, L]) => {
+    L = L.slice().sort((p, q) => p.ts - q.ts || (p.id < q.id ? -1 : 1));
+    const R = igRange(L), st = igStat(L), kk = 'ig' + k;
+    return `<details class="gp" data-k="${esc(kk)}" ${openState[kk] ? 'open' : ''}><summary>
+      <span class="gi"><span class="gn"><b>Pengajuan</b> <span class="gjm">${R.txt}</span></span><small class="gtm gdt">${igLong(L[0].ts)}</small>
+        <span class="gt">${L[0].tahap ? '<span class="tag">' + thLbl(L[0].tahap) + '</span>' : ''}<span class="tag">${esc(L[0].src)}</span><span class="tag">${L.length} barang · ${NF(sumK2(L, r => r.min))} pcs</span><span class="tag">${esc(admList(L).join(', ') || '-')}</span><span class="tag ${st === 'Selesai' ? 'in' : 'out'}">${st}</span></span></span>
+      <span class="ga"><button class="btn ghost sm" data-igxls="${esc(k)}" type="button" title="Download grup ini sebagai Excel">Download Excel</button><button class="btn ghost sm" data-igpdf="${esc(k)}" type="button" title="Download grup ini sebagai PDF">Download PDF</button><button class="btn ghost sm" data-igedit="${esc(k)}" type="button">Edit</button></span></summary>
+      <div class="gpb"><div class="tw"><table><thead><tr><th>No</th><th>Tanggal</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Asal</th><th>Pengajuan</th><th>Admin</th><th>Status</th><th></th></tr></thead><tbody>${L.map(pgRow).join('')}</tbody>${pgFoot(L)}</table></div></div></details>`;
+  }).join('');
+};
 function renderReqs() { // hari ini tampil di atas; hari-hari sebelumnya otomatis masuk riwayat per tahun > bulan (tertutup)
   const all = pgFiltered(), today = dayWIB(Date.now()), filt = PGF.some(x => $(x).value);
   const tr = all.filter(r => dayWIB(r.ts) === today), hr = all.filter(r => dayWIB(r.ts) !== today), g = {};
@@ -456,8 +468,10 @@ function renderReqs() { // hari ini tampil di atas; hari-hari sebelumnya otomati
   }
   $('#pgGrp').innerHTML = html;
 }
-$('#pgGrp').addEventListener('click', e => { const s = e.target.closest('summary'); if (s) { const d = s.parentElement; openState[d.dataset.k] = !d.open } });
+$('#pgGrp').addEventListener('click', e => { if (e.target.closest('button')) return; const s = e.target.closest('summary'); if (s) { const d = s.parentElement; openState[d.dataset.k] = !d.open } });
 $('#pgGrp').onclick = e => {
+  const gb = e.target.closest('[data-igxls],[data-igpdf],[data-igedit]');
+  if (gb) return gb.dataset.igxls ? igExcel(gb.dataset.igxls) : gb.dataset.igpdf ? igPdf(gb.dataset.igpdf) : openIgEdit(gb.dataset.igedit);
   const hb = e.target.closest('[data-hist]');
   if (hb) { // buka/tutup daftar jam input produk yang sama
     const id = hb.dataset.hist; openHist[id] = !openHist[id];
@@ -701,6 +715,52 @@ $('#xReset').onclick = () => {
   $('#xProd')._upd && $('#xProd')._upd(); renderReqs();
 };
 
+/* ---------- GRUP PENGAJUAN di bawah form Input: per hari > per tahap; hari yang lewat otomatis masuk Riwayat ---------- */
+const igKey = r => dayWIB(r.ts) + '|' + (r.tahap || 0) + '|' + (r.src || '');
+const igItems = k => reqs.filter(r => mine(r) && igKey(r) === k);
+const igLong = t => { const d = dayWIB(t).split('-'); return +d[2] + ' ' + BLN[+d[1] - 1] + ' ' + d[0] };
+const igRange = L => { const a = Math.min(...L.map(r => r.ts)), b = Math.max(...L.map(r => r.ts)); return { a, b, txt: hm(a) === hm(b) ? hm(a) : hm(a) + ' – ' + hm(b) } };
+const igStat = L => L.every(r => r.ada >= r.min) ? 'Selesai' : L.some(r => r.ada > 0) ? 'Sebagian' : 'Menunggu';
+// export per grup: satu header + satu tabel (format sama dengan export menu Pengajuan)
+const IG_COLS = ['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Pengajuan', 'Status'];
+function igData(k) {
+  const L = igItems(k).sort(azSort); if (!L.length) return null;
+  const R = igRange(L), srcs = [...new Set(L.map(r => r.src))];
+  return { L, src: srcs.length === 1 ? srcs[0] : '', th: L[0].tahap ? String(L[0].tahap) : '',
+    head: ['Permintaan Pengajuan Barang', 'Tanggal & Jam: ' + igLong(R.a) + '   ' + R.txt.replace(' – ', ' - '), 'Asal Barang: ' + srcs.join(', ') + '     Nama Admin: ' + admHead(L), 'Pengajuan : ' + (L[0].tahap ? thLbl(L[0].tahap) : '-')],
+    rows: L.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', SL + r.min + ' pcs', r.src, thLbl(r.tahap), '\u2610']),
+    subs: L.map(r => reqHist(r).length > 1 ? reqEntries(r).map(x => [tsFmt(x.ts), x.a, x.n]) : null) };
+}
+function igLog(D, fm, fn) { logDl({ form: 'PENGAJUAN', fmt: fm, fname: fn, src: D.src, th: D.th, subs: D.subs, title: D.head[0], tgl: D.head[1] + ' | ' + D.head[3], cols: IG_COLS, rows: D.rows }) }
+function igExcel(k) {
+  if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
+  const D = igData(k); if (!D) return;
+  const aoa = D.head.map(h => [h]).concat([IG_COLS], D.rows), ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges'] = [0, 1, 2, 3].map(r => ({ s: { r, c: 0 }, e: { r, c: 7 } })); ws['!cols'] = [5, 17, 28, 16, 18, 10, 11, 8].map(w => ({ wch: w }));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Pengajuan');
+  const fn = fileName(D.src, admFile(D.L), 'PENGAJUAN', 'xlsx'); XLSX.writeFile(wb, fn); igLog(D, 'Excel', fn);
+}
+function igPdf(k) {
+  if (!window.jspdf) return alert('Library PDF gagal dimuat. Pastikan terhubung ke internet.');
+  const D = igData(k); if (!D) return;
+  const doc = new jspdf.jsPDF({ orientation: 'landscape' });
+  doc.setFontSize(16); doc.text(D.head[0], 14, 15);
+  doc.setFontSize(10); doc.text(D.head[1], 14, 22); doc.text(D.head[2], 14, 28); doc.text(D.head[3], 14, 34);
+  doc.autoTable({ startY: 39, headStyles: { fillColor: [74, 123, 208] }, head: [IG_COLS], body: D.rows.map(x => x.slice(0, 7).concat('')),
+    didDrawCell: d => { if (d.section === 'body' && d.column.index === 7) { const s = 4.5; doc.setDrawColor(60); doc.setLineWidth(.3); doc.rect(d.cell.x + (d.cell.width - s) / 2, d.cell.y + (d.cell.height - s) / 2, s, s) } } });
+  const fn = fileName(D.src, admFile(D.L), 'PENGAJUAN', 'pdf'); doc.save(fn); igLog(D, 'PDF', fn);
+}
+// Edit grup: daftar barang pada grup itu; tiap barang diedit lewat popup edit pengajuan yang sudah ada
+let igEd = null;
+function openIgEdit(k) {
+  const L = igItems(k).sort((a, b) => a.ts - b.ts); if (!L.length) return;
+  igEd = k; $('#igInfo').textContent = 'Pengajuan ' + (L[0].tahap ? thLbl(L[0].tahap) + ' · ' : '') + L[0].src + ' · ' + igLong(L[0].ts) + ' · ' + L.length + ' barang. Pilih barang yang ingin diedit.';
+  $('#igList').innerHTML = L.map(r => `<div class="gpi"><span>${r.vc ? sw(r.vc, r.vn) + ' ' : ''}<b>${esc(r.prod)}</b>${r.vn ? ' · ' + esc(r.vn) : ''} · ${r.ada} / ${r.min} pcs <small class="tm">${hm(r.ts)}</small></span><button class="btn ghost sm" data-ige="${r.id}" type="button">Edit barang</button></div>`).join('');
+  $('#igmdl').hidden = false;
+}
+const closeIgEdit = () => { $('#igmdl').hidden = true; igEd = null };
+$('#igClose').onclick = closeIgEdit;
+$('#igmdl').onclick = e => { if (e.target.id === 'igmdl') closeIgEdit(); const b = e.target.closest('[data-ige]'); if (b) { const id = b.dataset.ige; closeIgEdit(); openREdit(id) } };
 /* ---------- INPUT ---------- */
 let blocks = [], photo = '';
 // cakupan pengajuan di menu Input: bawaan hanya hari ini (WIB). Jika filter tanggal & jam diisi, pengajuan pada rentang itu muncul lagi.
