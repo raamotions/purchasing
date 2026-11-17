@@ -208,7 +208,7 @@
           <div id="tDueW" hidden style="margin-top:8px"><input type="date" id="tDue"></div></div>
         <div><label>Status</label><select id="tStatus"><option>On Progress</option><option>Failed</option><option>Done</option><option>Review</option></select></div>
         <div><label>Nama Toko</label><input id="tToko" autocomplete="off" maxlength="60" placeholder="Nama toko"></div>
-        <div></div>
+        <div><label>Kompensasi (Rp)</label><input id="tKomp" type="text" value="" disabled placeholder="Diisi nanti di Laporan Retur (Edit)" title="Hanya bisa diisi di Laporan Retur saat Edit"></div>
         <div class="full"><label>Deskripsi</label><textarea id="tDesk" rows="2" placeholder="Deskripsi singkat masalah"></textarea></div>
         <div class="full"><label>Keterangan</label><textarea id="tKet" rows="4" placeholder="Keterangan lengkap / catatan tambahan"></textarea></div>
       </div>
@@ -533,6 +533,7 @@
   <label>Status</label><select id="tmSt"><option>On Progress</option><option>Failed</option><option>Done</option><option>Review</option></select>
   <label>Nama Toko</label><input id="tmToko" autocomplete="off" maxlength="60">
   <label>Marketplace</label><select id="tmMp"><option value="">Pilih marketplace</option><option>Shopee</option><option>Tiktokshop</option><option>Lazada</option></select>
+  <label>Kompensasi (Rp) <span style="font-weight:400">(boleh minus atau 0)</span></label><input id="tmKomp" type="number" step="any" inputmode="decimal" placeholder="0">
   <label>Keterangan</label><textarea id="tmKet" rows="4"></textarea>
   <div class="msg" id="tmMsg"></div>
   <div class="acts"><button class="btn ghost" id="tmCancel" type="button">Batal</button><button class="btn" id="tmSave" type="button">Simpan</button></div>
