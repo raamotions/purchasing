@@ -969,7 +969,7 @@ function puInfo() {
 const gotOf = r => { const p = PI || puInfo(); return r.id in p.got ? p.got[r.id] : (Number(r.ada) || 0) };
 const isFull = r => { const p = PI || puInfo(); return r.id in p.full ? p.full[r.id] : r.ada === r.min };
 // kunci grup Purchase: hari + tahap + asal barang, jadi input satu-satu pada hari yang sama tetap masuk satu grup
-const gKey = r => dayWIB(r.ts) + '|' + (r.tahap || 0) + '|' + (r.src || '') + '|' + (r.adm || ''); // hari + tahap + asal barang + nama admin
+const gKey = r => dayWIB(r.ts) + '|' + (Number(r.tahap) || 0) + '|' + String(r.src || '').trim().toUpperCase() + '|' + UN(r.adm); // satu grup = satu hari + satu tahap + satu asal barang + satu nama admin // hari + tahap + asal barang + nama admin
 const gItems = k => records.filter(r => mine(r) && gKey(r) === k);
 // nomor urut per BULAN berdasarkan urutan masuk (terlama = 1), mulai dari 1 lagi setiap ganti bulan; tidak berubah oleh filter
 const seqMap = () => {
@@ -983,7 +983,7 @@ function renderTable() {
   const cols = [...new Map(records.filter(r => r.vc && mine(r)).map(r => [r.vc, r.vn])).entries()], cur = $('#fqVar').value;
   $('#fqVar').innerHTML = '<option value="">Semua</option>' + cols.map(([c, n]) => `<option value="${c}">${esc(n)}</option>`).join('');
   $('#fqVar').value = cur;
-  const rows = filtered(), filt = FIL.some(s => $(s).value), now = ymd(Date.now());
+  const rows = filtered(), filt = FIL.some(s => $(s).value), now = dayWIB(Date.now());
   const photoCell = pid => !pid || photos[pid] === '' ? '-' : photos[pid] ? `<img class="thumb" src="${photos[pid]}" alt="Surat jalan">` : `<button class="btn ghost sm" data-photo="${esc(pid)}" type="button">📷 Lihat</button>`;
   const rowHtml = r => `<tr>
     <td>${seq[r.id]}</td><td class="nw">${hm(r.ts)}</td><td>${esc(r.sj || '-')}</td><td>${esc(r.prod)}</td><td>${sw(r.vc, r.vn)}</td>
@@ -1006,11 +1006,11 @@ function renderTable() {
   };
   const isOpen = (k, cur) => k in openState ? openState[k] : (filt || cur);
   const g = {};
-  rows.forEach(r => { const d = ymd(r.ts), y = d.slice(0, 4), m = d.slice(5, 7); ((g[y] = g[y] || {})[m] = g[y][m] || []).push(r) });
+  rows.forEach(r => { const d = dayWIB(r.ts), y = d.slice(0, 4), m = d.slice(5, 7); ((g[y] = g[y] || {})[m] = g[y][m] || []).push(r) });
   $('#grp').innerHTML = (rows.length ? sumBar([stag('Total grup', NF(new Set(rows.map(gKey)).size)), stag('Total data', NF(rows.length)), stag('Total item', NF(sumK2(latestRec(rows), r => r.ada)) + ' pcs')]) : '') + (rows.length ? Object.keys(g).sort().reverse().map(y => {
     const ms = Object.keys(g[y]).sort().reverse(), cnt = ms.reduce((s, m) => s + g[y][m].length, 0), ky = 'y' + y;
     return `<details class="yr" data-k="${ky}" ${isOpen(ky, y === now.slice(0, 4)) ? 'open' : ''}><summary>${y} <span class="tag">${cnt} data</span></summary>` +
-      ms.map(m => { const km = 'm' + y + m; return `<details class="mo" data-k="${km}" ${isOpen(km, y + '-' + m === now.slice(0, 7)) ? 'open' : ''}><summary>${BLN[+m - 1]} ${y} <span class="tag">${g[y][m].length} data</span></summary>${dayBlocks(g[y][m], ymd, 'd', isOpen, d => d === now, tbl)}</details>` }).join('') + '</details>';
+      ms.map(m => { const km = 'm' + y + m; return `<details class="mo" data-k="${km}" ${isOpen(km, y + '-' + m === now.slice(0, 7)) ? 'open' : ''}><summary>${BLN[+m - 1]} ${y} <span class="tag">${g[y][m].length} data</span></summary>${dayBlocks(g[y][m], dayWIB, 'd', isOpen, d => d === now, tbl)}</details>` }).join('') + '</details>';
   }).join('') : '<div class="empty">Belum ada data purchase.</div>');
 }
 $('#grp').addEventListener('click', e => { if (e.target.closest('button')) return; const s = e.target.closest('summary'); if (s) { const d = s.parentElement; openState[d.dataset.k] = !d.open } });
