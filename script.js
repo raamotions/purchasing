@@ -397,7 +397,7 @@ $('#pgSubmit').onclick = () => {
   if (!src) return msg('#pgMsg', 'Pilih asal barang.');
   const th = parseInt($('#pgTh').value, 10);
   if (!(th >= 1 && th <= TAHAP_MAX)) return msg('#pgMsg', 'Pilih tahap pengajuan (wajib).');
-  if (!tahapOk(th, adm, dayWIB(Date.now()))) return msg('#pgMsg', tahapErr(th));
+  if (!tahapOk(th, adm, src, dayWIB(Date.now()))) return msg('#pgMsg', tahapErr(th, adm, src));
   const ops = []; let np = null, nvAdded = null;
   if (!prod) { // produk baru: langsung masuk ke database produk
     np = prod = { id: uid(), name: typed, variants: [] }; products.push(np);
@@ -428,8 +428,9 @@ $('#pgSubmit').onclick = () => {
     : nvAdded ? 'Varian "' + nvAdded + '" ditambahkan ke produk ' + prod.name + ', pengajuan tersimpan.' : 'Pengajuan tersimpan.', true);
   renderReqs(); renderProducts();
 };
-const tahapOk = (n, adm, day, selfId) => n <= 1 || reqs.some(x => x.id !== selfId && (x.adm || '') === (adm || '') && dayWIB(x.ts) === day && x.tahap === n - 1);
-const tahapErr = n => 'Tahap ' + n + ' ditolak: belum ada pengajuan Tahap ' + (n - 1) + ' hari ini. Ajukan Tahap ' + (n - 1) + ' dulu (Tahap 1 boleh langsung, dan Tahap yang sama boleh diajukan berulang).';
+// Tahap harus berurutan PER ADMIN + PER ASAL BARANG (per hari): Tahap 1 boleh langsung, Tahap 2 hanya jika admin itu sudah punya Tahap 1 untuk asal barang yang sama, Tahap 3 hanya jika sudah ada Tahap 2, dst.
+const tahapOk = (n, adm, src, day, selfId) => n <= 1 || reqs.some(x => x.id !== selfId && (x.adm || '') === (adm || '') && (x.src || '') === (src || '') && dayWIB(x.ts) === day && Number(x.tahap) === n - 1);
+const tahapErr = (n, adm, src) => 'Tahap ' + n + ' ditolak: ' + (adm ? 'admin ' + adm + ', ' : '') + 'asal barang ' + (src || '-') + ' belum punya pengajuan Tahap ' + (n - 1) + ' hari ini. Ajukan Tahap ' + (n - 1) + ' untuk asal barang ini dulu (Tahap 1 boleh langsung, dan Tahap yang sama boleh diajukan berulang).';
 const todayReqs = () => reqs.filter(r => mine(r) && dayWIB(r.ts) === dayWIB(Date.now()));
 const openHist = {}; // id pengajuan -> daftar jam input sedang dibuka
 const histLab = (r, x) => ymd(x.ts) === ymd(r.ts) ? hm(x.ts) : tsFmt(x.ts);
@@ -544,7 +545,7 @@ $('#rSave').onclick = () => {
   if (!(m >= 1)) return msg('#rMsg', 'Isi jumlah diminta dengan angka.');
   const rth = parseInt($('#rTh').value, 10);
   if (r.tahap && !rth) return msg('#rMsg', 'Pilih tahap pengajuan (wajib).');
-  if (rth && (rth !== r.tahap || $('#rAdm').value !== (r.adm || '')) && !tahapOk(rth, $('#rAdm').value, dayWIB(r.ts), r.id)) return msg('#rMsg', tahapErr(rth).replace('hari ini', 'pada hari pengajuan ini'));
+  if (rth && (rth !== r.tahap || $('#rSrc').value !== (r.src || '') || $('#rAdm').value !== (r.adm || '')) && !tahapOk(rth, $('#rAdm').value, $('#rSrc').value, dayWIB(r.ts), r.id)) return msg('#rMsg', tahapErr(rth, $('#rAdm').value, $('#rSrc').value).replace('hari ini', 'pada hari pengajuan ini'));
   if (m < r.ada) return msg('#rMsg', 'Jumlah diminta tidak boleh kurang dari barang yang sudah ada (' + r.ada + ').');
   if (!$('#rSrc').value) return msg('#rMsg', 'Pilih asal barang.');
   const bR = cl(r), bRec = records.filter(x => x.rid === r.id).map(cl), rT = $('#rT').value.trim();
