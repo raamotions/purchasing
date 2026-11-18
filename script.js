@@ -2661,10 +2661,42 @@ function hch(title, hint, items, o) {
 }
 const shd = t => `<h3 class="sh">${t}</h3>`;
 const hrWIB = ts => (new Date(ts).getUTCHours() + 7) % 24;
+// Diagram garis: pengajuan seharusnya (diminta) vs pengajuan berhasil (terpenuhi) vs jumlah barang retur, per hari (per bulan bila rentang > 62 hari)
+function lineChart(D) {
+  const { E, f, t } = D, rgs = rgoods.filter(x => x.qty > 0 && inR(x.ts, f, t));
+  const end = t || Date.now(), tsAll = E.map(e => e.ts).concat(rgs.map(x => x.ts));
+  const start = f !== null ? f : (tsAll.length ? Math.min(...tsAll) : end - 29 * 864e5);
+  const days = [], last = new Date(dayWIB(end) + 'T00:00:00Z').getTime();
+  for (let d = new Date(dayWIB(start) + 'T00:00:00Z').getTime(); d <= last; d += 864e5) days.push(new Date(d).toISOString().slice(0, 10));
+  const mon = days.length > 62, kOf = d => mon ? d.slice(0, 7) : d, keys = [...new Set(days.map(kOf))], m = {};
+  keys.forEach(k => m[k] = { n: 0, a: 0, r: 0 });
+  E.forEach(e => { const o = m[kOf(dayWIB(e.ts))]; if (o) { o.n += e.n || 0; o.a += e.a || 0 } });
+  rgs.forEach(x => { const o = m[kOf(dayWIB(x.ts))]; if (o) o.r += Number(x.qty) || 0 });
+  const tn = keys.reduce((s, k) => s + m[k].n, 0), ta = keys.reduce((s, k) => s + m[k].a, 0), tr = keys.reduce((s, k) => s + m[k].r, 0);
+  const head = `<div class="card hcard"><h3>Perbandingan: pengajuan seharusnya vs berhasil vs barang retur</h3><p class="hint">Per ${mon ? 'bulan' : 'hari'}, mengikuti Periode di atas. <b>Seharusnya</b> = pcs yang diminta di pengajuan; <b>Berhasil</b> = pcs pengajuan yang terpenuhi; <b>Barang retur</b> = pcs barang retur yang masuk (retur tidak punya asal barang, jadi tidak ikut filter Asal Barang).</p>`;
+  if (!tn && !ta && !tr) return head + '<div class="empty">Belum ada data pada periode / filter ini.</div></div>';
+  const mx = Math.max(1, ...keys.map(k => Math.max(m[k].n, m[k].a, m[k].r))), W = 700, H = 270, pl = 44, pr = 14, pt = 12, pb = 28, ph = H - pt - pb, pw = W - pl - pr, N = keys.length;
+  const X = i => pl + (N === 1 ? pw / 2 : i * pw / (N - 1)), Y = v => pt + ph - ph * v / mx, st = Math.ceil(N / 9), step = N === 1 ? pw : pw / (N - 1);
+  const lbl = k => mon ? monLbl(k) : k.slice(8) + '/' + k.slice(5, 7), tip = k => mon ? monLbl(k) : k.split('-').reverse().join('-');
+  let g = [0, .25, .5, .75, 1].map(q => { const y = Y(mx * q); return `<line x1="${pl}" x2="${W - pr}" y1="${y}" y2="${y}" class="gl"/><text x="${pl - 6}" y="${y + 4}" text-anchor="end" class="tx">${nf(Math.round(mx * q))}</text>` }).join('');
+  [['n', 'l1', 'd1'], ['a', 'l2', 'd2'], ['r', 'l3', 'd3']].forEach(([f2, lc, dc]) => {
+    g += `<polyline class="${lc}" points="${keys.map((k, i) => X(i).toFixed(1) + ',' + Y(m[k][f2]).toFixed(1)).join(' ')}"/>`;
+    g += keys.map((k, i) => `<circle class="${dc}" cx="${X(i).toFixed(1)}" cy="${Y(m[k][f2]).toFixed(1)}" r="${N > 40 ? 2 : 3.5}"/>`).join('');
+  });
+  keys.forEach((k, i) => {
+    g += `<g><title>${tip(k)}: seharusnya ${nf(m[k].n)} pcs, berhasil ${nf(m[k].a)} pcs, barang retur ${nf(m[k].r)} pcs</title><rect x="${X(i) - step / 2}" y="${pt}" width="${step}" height="${ph}" fill="transparent"/></g>`;
+    if (i % st === 0) g += `<text x="${X(i)}" y="${H - 8}" text-anchor="middle" class="tx">${lbl(k)}</text>`;
+  });
+  return head + sumBar([stag('Total seharusnya', nf(tn) + ' pcs'), stag('Total berhasil', nf(ta) + ' pcs (' + pc(ta, tn) + '%)', 'in'), stag('Total barang retur', nf(tr) + ' pcs', 'del')]) +
+    `<div class="lg"><span><i style="background:var(--pri)"></i>Pengajuan seharusnya</span><span><i class="ok"></i>Pengajuan berhasil</span><span><i class="bad"></i>Barang retur</span></div>` +
+    `<svg viewBox="0 0 ${W} ${H}" class="ch" role="img" aria-label="Diagram garis pengajuan seharusnya, pengajuan berhasil, dan barang retur">${g}</svg></div>`;
+}
 function tabChart(D) {
   const { R, E, lead, f, t } = D, fin = x => inR(x.ts, f, t), H = [];
   const rets = returns.filter(fin), rgs = rgoods.filter(x => x.qty > 0 && fin(x)), stock = stockRows();
   H.push(`<div class="card hcard"><h3>Grafik</h3><p class="hint">Mengikuti Periode dan Asal Barang di atas (Stok Produk selalu seluruh waktu; Retur tidak punya asal barang).</p></div>`);
+  H.push(shd('Perbandingan'));
+  H.push(lineChart(D));
   H.push(shd('Pengajuan'));
   const P = grp(R, r => r.prod, lead);
   H.push(hch('Produk teratas: diminta vs terpenuhi (pcs)', '10 produk dengan pcs diminta terbanyak.', P.map(g => ({ k: g.k, a: g.min, b: g.ada })), { la: 'Diminta', lb: 'Terpenuhi', unit: 'pcs', max: 10 }));

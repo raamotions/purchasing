@@ -395,3 +395,5 @@ details.gp>summary::before{margin-top:2px}
 .mgrep summary{cursor:pointer;font-weight:600;color:var(--pri2)}
 .mgbad{padding:6px 0;border-top:1px solid var(--line)}
 .mgbad small{display:block;color:var(--bad)}
+.ch .l1,.ch .l2,.ch .l3{fill:none;stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round}.ch .l1{stroke:var(--pri)}.ch .l2{stroke:var(--ok)}.ch .l3{stroke:var(--bad)}
+.ch .d1{fill:var(--pri)}.ch .d2{fill:var(--ok)}.ch .d3{fill:var(--bad)}
