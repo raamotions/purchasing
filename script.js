@@ -1159,7 +1159,10 @@ function puSections(rows) {
     return { t0, src: srcs.length === 1 ? srcs[0] : '', th: L[0].tahap ? String(L[0].tahap) : '',
       head: ['Laporan Purchase', 'Tanggal & Jam: ' + dLong(t0) + ' - ' + dLong(t1), 'Asal Barang: ' + srcs.join(', ') + '     Nama Admin: ' + admHead(L), 'Pengajuan : ' + (L[0].tahap ? thLbl(L[0].tahap) : '-')],
       rows: L.map((r, i) => [i + 1, tsFmt(r.ts), r.sj || '-', r.prod, r.vn || '-', gotOf(r) + ' / ' + r.min + ' pcs', stDesc(r), r.src]) };
-  }).sort((a, b) => a.t0 - b.t0);
+  }).sort((a, b) => { // urut: asal barang (Kode A, Kode B, Aling, ...) -> hari -> Tahap 1, 2, 3, ...; ganti asal barang = mulai lagi dari Tahap 1
+    const si = x => { const i = SRC.indexOf(x.src); return i < 0 ? SRC.length : i };
+    return si(a) - si(b) || String(a.src).localeCompare(String(b.src)) || dayWIB(a.t0).localeCompare(dayWIB(b.t0)) || (Number(a.th) || 99) - (Number(b.th) || 99) || a.t0 - b.t0;
+  });
 }
 function puLog(rows, S, fmtName, fn) {
   const srcs = [...new Set(rows.map(r => r.src))], ths = [...new Set(S.map(s => s.th))];
