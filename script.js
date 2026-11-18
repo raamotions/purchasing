@@ -674,41 +674,64 @@ function pgHead(rows) {
   const tgl = !f && !t ? 'Semua tanggal' : f && t ? fDT(f) + ' s/d ' + fDT(t) : f ? 'Mulai ' + fDT(f) : 'Sampai ' + fDT(t);
   return { title: 'Permintaan Pengajuan Barang', tgl: 'Tanggal & Jam Pengajuan: ' + tgl, asal: 'Asal Barang: ' + ($('#xSrc').value || 'Semua'), adm: 'Nama Admin: ' + admHead(rows || []) };
 }
+// Export Pengajuan: format sama dengan export Purchase. Tiap grup (hari + tahap + asal barang + admin) = satu header + satu tabel sendiri,
+// urut: asal barang -> hari -> Tahap 1, 2, 3, ...; ganti asal barang = mulai lagi dari Tahap 1. Antar tabel diberi jarak 5 baris kosong.
+const PG_COLS = ['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Pengajuan', 'Status'];
+function pgSections(rows) {
+  const m = new Map(); rows.forEach(r => { const k = igKey(r); (m.get(k) || m.set(k, []).get(k)).push(r) });
+  const si = x => { const i = SRC.indexOf(x); return i < 0 ? SRC.length : i };
+  return [...m.values()].map(L => {
+    L = L.slice().sort(azSort);
+    const t0 = Math.min(...L.map(r => r.ts)), t1 = Math.max(...L.map(r => r.ts)), srcs = [...new Set(L.map(r => r.src))];
+    return { t0, src: srcs.length === 1 ? srcs[0] : '', th: L[0].tahap ? String(L[0].tahap) : '', tahap: Number(L[0].tahap) || 99, L,
+      head: ['Permintaan Pengajuan Barang', 'Tanggal & Jam: ' + dLong(t0) + ' - ' + dLong(t1), 'Asal Barang: ' + srcs.join(', ') + '     Nama Admin: ' + admHead(L), 'Pengajuan : ' + (L[0].tahap ? thLbl(L[0].tahap) : '-')],
+      rows: L.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', SL + r.min + ' pcs', r.src, thLbl(r.tahap), '\u2610']),
+      subs: L.map(r => reqHist(r).length > 1 ? reqEntries(r).map(x => [tsFmt(x.ts), x.a, x.n]) : null) };
+  }).sort((a, b) => si(a.src) - si(b.src) || String(a.src).localeCompare(String(b.src)) || dayWIB(a.t0).localeCompare(dayWIB(b.t0)) || a.tahap - b.tahap || a.t0 - b.t0);
+}
+function pgLog(rows, S, fmtName, fn) {
+  logDl({ form: 'PENGAJUAN', fmt: fmtName, fname: fn, src: $('#xSrc').value, th: $('#xTh').value,
+    subs: S.reduce((a, s) => a.concat(s.subs), []), title: 'Permintaan Pengajuan Barang',
+    tgl: S.length + ' grup · ' + dLong(S[0].t0) + ' - ' + dLong(Math.max(...rows.map(r => r.ts))), cols: PG_COLS, rows: S.reduce((a, s) => a.concat(s.rows), []) });
+}
 $('#pgXls').onclick = () => {
   if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
-  const rows = pgFiltered().sort(azSort);
+  const rows = pgFiltered();
   if (!rows.length) return alert('Tidak ada pengajuan pada filter itu.');
-  const H = pgHead(rows);
-  const aoa = [[H.title], [H.tgl], [H.asal], [H.adm], [], ['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Pengajuan', 'Status']]
-    .concat(rows.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', SL + r.min + ' pcs', r.src, thLbl(r.tahap), '\u2610']));
+  const S = pgSections(rows), aoa = [], merges = [];
+  S.forEach((s, i) => {
+    if (i) for (let n = 0; n < 5; n++) aoa.push([]);
+    s.head.forEach(h => { merges.push({ s: { r: aoa.length, c: 0 }, e: { r: aoa.length, c: 7 } }); aoa.push([h]) });
+    aoa.push(PG_COLS); s.rows.forEach(x => aoa.push(x));
+  });
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!merges'] = [0, 1, 2, 3].map(r => ({ s: { r, c: 0 }, e: { r, c: 7 } }));
-  ws['!cols'] = [5, 17, 28, 16, 18, 10, 11, 8].map(w => ({ wch: w }));
+  ws['!merges'] = merges; ws['!cols'] = [5, 17, 28, 16, 18, 10, 11, 8].map(w => ({ wch: w }));
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Pengajuan');
   const fn = fileName($('#xSrc').value, admFile(rows), 'PENGAJUAN', 'xlsx'); XLSX.writeFile(wb, fn);
-  logDl({ form: 'PENGAJUAN', fmt: 'Excel', fname: fn, src: $('#xSrc').value, th: $('#xTh').value, subs: rows.map(r => reqHist(r).length > 1 ? reqEntries(r).map(x => [tsFmt(x.ts), x.a, x.n]) : null), title: H.title, tgl: H.tgl, cols: aoa[5], rows: aoa.slice(6) });
+  pgLog(rows, S, 'Excel', fn);
 };
 $('#pgPdf').onclick = () => {
   if (!window.jspdf) return alert('Library PDF gagal dimuat. Pastikan terhubung ke internet.');
-  const rows = pgFiltered().sort(azSort); if (!rows.length) return alert('Tidak ada pengajuan pada filter itu.');
-  const H = pgHead(rows);
-  const doc = new jspdf.jsPDF({ orientation: 'landscape' });
-  doc.setFontSize(16); doc.text(H.title, 14, 15);
-  doc.setFontSize(10); doc.text(H.tgl, 14, 22); doc.text(H.asal + '     ' + H.adm, 14, 28);
-  doc.autoTable({
-    startY: 33, headStyles: { fillColor: [74, 123, 208] },
-    head: [['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Pengajuan', 'Status']],
-    body: rows.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', SL + r.min + ' pcs', r.src, thLbl(r.tahap), '']),
-    didDrawCell: d => {
-      if (d.section !== 'body') return;
-      if (d.column.index === 7) { // kotak centang kosong
-        const s = 4.5; doc.setDrawColor(60); doc.setLineWidth(.3);
-        doc.rect(d.cell.x + (d.cell.width - s) / 2, d.cell.y + (d.cell.height - s) / 2, s, s);
-      }
-    }
+  const rows = pgFiltered(); if (!rows.length) return alert('Tidak ada pengajuan pada filter itu.');
+  const S = pgSections(rows), doc = new jspdf.jsPDF({ orientation: 'landscape' }), H = doc.internal.pageSize.getHeight();
+  let y = 15;
+  S.forEach((s, i) => {
+    if (i) y += 30; // jarak 5 baris
+    if (y + 50 > H - 10) { doc.addPage(); y = 15 }
+    doc.setFontSize(16); doc.setFont(undefined, 'bold'); doc.text(s.head[0], 14, y);
+    doc.setFontSize(10); doc.setFont(undefined, 'normal');
+    s.head.slice(1).forEach((h, j) => doc.text(h, 14, y + 7 + j * 6));
+    doc.autoTable({ startY: y + 7 + 3 * 6 + 3, headStyles: { fillColor: [74, 123, 208] }, head: [PG_COLS], body: s.rows.map(x => x.slice(0, 7).concat('')),
+      didDrawCell: d => {
+        if (d.section === 'body' && d.column.index === 7) { // kotak centang kosong
+          const z = 4.5; doc.setDrawColor(60); doc.setLineWidth(.3);
+          doc.rect(d.cell.x + (d.cell.width - z) / 2, d.cell.y + (d.cell.height - z) / 2, z, z);
+        }
+      } });
+    y = doc.lastAutoTable.finalY;
   });
   const fn = fileName($('#xSrc').value, admFile(rows), 'PENGAJUAN', 'pdf'); doc.save(fn);
-  logDl({ form: 'PENGAJUAN', fmt: 'PDF', fname: fn, src: $('#xSrc').value, th: $('#xTh').value, subs: rows.map(r => reqHist(r).length > 1 ? reqEntries(r).map(x => [tsFmt(x.ts), x.a, x.n]) : null), title: H.title, tgl: H.tgl, cols: ['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Pengajuan', 'Status'], rows: rows.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', SL + r.min + ' pcs', r.src, thLbl(r.tahap), '\u2610']) });
+  pgLog(rows, S, 'PDF', fn);
 };
 const PGF = ['#xFromD', '#xFromT', '#xToD', '#xToT', '#xSrc', '#xAdm', '#xTh', '#xProd', '#xSt'];
 function setPgToday() { $('#xFromD').value = $('#xToD').value = $('#xFromT').value = $('#xToT').value = '' } // filter tanggal kosong = semua data
