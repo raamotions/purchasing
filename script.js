@@ -631,6 +631,8 @@ const SL = '\u00A0'.repeat(8) + '/ '; // kolom Ada dikosongkan, garis miring tet
 // urutan export: abjad A-Z menurut nama produk, lalu varian (warna), lalu waktu
 const azSort = (a, b) => String(a.prod).localeCompare(String(b.prod), 'id', { sensitivity: 'base', numeric: true })
   || String(a.vn || '').localeCompare(String(b.vn || ''), 'id', { sensitivity: 'base', numeric: true }) || a.ts - b.ts;
+// kolom Ada / Diminta di export Pengajuan: hari ini dikosongkan (diisi manual), hari sebelumnya diisi jumlah barang yang sudah ada
+const adaTxt = r => dayWIB(r.ts) === dayWIB(Date.now()) ? SL + r.min + ' pcs' : (r.ada || 0) + ' / ' + r.min + ' pcs';
 // riwayat jam input pengajuan: setiap submit (termasuk yang digabung) dicatat {ts, n}. Data lama: hanya waktu pertama.
 const reqHist = r => (r.hist && r.hist.length) ? r.hist : [{ ts: r.ts, n: r.min }];
 // entri per input: {ts, n: jumlah diajukan, a: jumlah ada}. "Ada" dialokasikan berurutan dari input terlama; jika jumlah diminta diedit, selisih dimasukkan ke input terakhir.
@@ -685,7 +687,7 @@ function pgSections(rows) {
     const t0 = Math.min(...L.map(r => r.ts)), t1 = Math.max(...L.map(r => r.ts)), srcs = [...new Set(L.map(r => r.src))];
     return { t0, src: srcs.length === 1 ? srcs[0] : '', th: L[0].tahap ? String(L[0].tahap) : '', tahap: Number(L[0].tahap) || 99, L,
       head: ['Permintaan Pengajuan Barang', 'Tanggal & Jam: ' + dLong(t0) + ' - ' + dLong(t1), 'Asal Barang: ' + srcs.join(', ') + '     Nama Admin: ' + admHead(L), 'Pengajuan : ' + (L[0].tahap ? thLbl(L[0].tahap) : '-')],
-      rows: L.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', SL + r.min + ' pcs', r.src, thLbl(r.tahap), '\u2610']),
+      rows: L.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', adaTxt(r), r.src, thLbl(r.tahap), '\u2610']),
       subs: L.map(r => reqHist(r).length > 1 ? reqEntries(r).map(x => [tsFmt(x.ts), x.a, x.n]) : null) };
   }).sort((a, b) => si(a.src) - si(b.src) || String(a.src).localeCompare(String(b.src)) || dayWIB(a.t0).localeCompare(dayWIB(b.t0)) || a.tahap - b.tahap || a.t0 - b.t0);
 }
@@ -755,7 +757,7 @@ function igData(k) {
   const R = igRange(L), srcs = [...new Set(L.map(r => r.src))];
   return { L, src: srcs.length === 1 ? srcs[0] : '', th: L[0].tahap ? String(L[0].tahap) : '',
     head: ['Permintaan Pengajuan Barang', 'Tanggal & Jam: ' + igLong(R.a) + '   ' + R.txt.replace(' – ', ' - '), 'Asal Barang: ' + srcs.join(', ') + '     Nama Admin: ' + admHead(L), 'Pengajuan : ' + (L[0].tahap ? thLbl(L[0].tahap) : '-')],
-    rows: L.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', SL + r.min + ' pcs', r.src, thLbl(r.tahap), '\u2610']),
+    rows: L.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', adaTxt(r), r.src, thLbl(r.tahap), '\u2610']),
     subs: L.map(r => reqHist(r).length > 1 ? reqEntries(r).map(x => [tsFmt(x.ts), x.a, x.n]) : null) };
 }
 function igLog(D, fm, fn) { logDl({ form: 'PENGAJUAN', fmt: fm, fname: fn, src: D.src, th: D.th, subs: D.subs, title: D.head[0], tgl: D.head[1] + ' | ' + D.head[3], cols: IG_COLS, rows: D.rows }) }
