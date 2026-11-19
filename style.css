@@ -289,6 +289,8 @@ input[type=checkbox]{width:18px;height:18px;padding:0;accent-color:var(--pri);cu
 .nt.rr{background:#b0101b;color:#fff;border-color:#7a0810}
 .ntx{flex:none;width:26px;height:26px;border:0;border-radius:50%;background:rgba(0,0,0,.12);color:inherit;font-size:18px;line-height:1;cursor:pointer;padding:0}
 .ntx:hover{background:rgba(0,0,0,.25)}
+.ntall{pointer-events:auto;align-self:flex-end;border:0;border-radius:20px;padding:7px 14px;background:rgba(28,53,80,.88);color:#fff;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;box-shadow:0 6px 16px rgba(0,0,0,.28)}
+.ntall:hover{background:rgba(28,53,80,1)}
 .wch{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .wc{display:inline-flex;align-items:center;background:var(--soft);border-radius:20px;overflow:hidden}
 .wc button{border:0;background:none;color:var(--pri2);font:inherit;font-size:13px;font-weight:600;cursor:pointer;padding:6px 10px}

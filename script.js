@@ -1764,9 +1764,10 @@ function renderNotif() {
   if (rl !== 'Retur' && rl !== 'Owner') { box.innerHTML = ''; return }
   const L = returns.filter(r => r.status !== 'Done' && r.status !== 'Failed').map(r => ({ r, d: dueDiff(r) }))
     .filter(x => x.d !== null && x.d >= 0 && x.d <= 2 && !ntHide.has(x.r.id + ':' + x.d)).sort((a, b) => a.d - b.d || a.r.ts - b.r.ts);
-  box.innerHTML = L.map(({ r, d }) => `<div class="nt ${d === 2 ? 'y' : d === 1 ? 'r' : 'rr'}" data-nt="${r.id}"><div class="ntt"><b>${d === 0 ? 'HARI H · Deadline hari ini' : 'H-' + d + ' · Deadline ' + (d === 1 ? 'besok' : '2 hari lagi')}</b><span>${esc(r.toko || '-')} · Resi ${esc(r.resi)} · ID ${esc(r.oid)} · ${esc(dueTxt(r))}</span></div><button class="ntx" data-ntx="${r.id}:${d}" type="button" aria-label="Tutup notifikasi">×</button></div>`).join('');
+  box.innerHTML = L.map(({ r, d }) => `<div class="nt ${d === 2 ? 'y' : d === 1 ? 'r' : 'rr'}" data-nt="${r.id}"><div class="ntt"><b>${d === 0 ? 'HARI H · Deadline hari ini' : 'H-' + d + ' · Deadline ' + (d === 1 ? 'besok' : '2 hari lagi')}</b><span>${esc(r.toko || '-')} · Resi ${esc(r.resi)} · ID ${esc(r.oid)} · ${esc(dueTxt(r))}</span></div><button class="ntx" data-ntx="${r.id}:${d}" type="button" aria-label="Tutup notifikasi">×</button></div>`).join('') + (L.length > 1 ? `<button class="ntall" data-ntall type="button">Tutup semua (${L.length})</button>` : '');
 }
 $('#notif').addEventListener('click', e => {
+  if (e.target.closest('[data-ntall]')) { $('#notif').querySelectorAll('[data-ntx]').forEach(b => ntHide.add(b.dataset.ntx)); return renderNotif() } // tutup semua
   const x = e.target.closest('[data-ntx]'); if (x) { ntHide.add(x.dataset.ntx); return renderNotif() }
   const n = e.target.closest('[data-nt]'); if (n) openTDetail(n.dataset.nt);
 });
