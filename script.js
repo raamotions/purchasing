@@ -91,6 +91,7 @@ const PROJ = (() => { try { const p = localStorage.getItem('pp_proj'); return FI
 const FIREBASE_CONFIG = FIREBASE_PROJECTS[PROJ];
 const SESS = 'pp_session_' + PROJ; // sesi login dipisah per project
 
+const recPids = r => r ? (r.pids && r.pids.length ? r.pids : r.pid ? [r.pid] : []) : []; // semua id foto sebuah rekaman Purchase (data lama: hanya pid)
 let db = null, products = [], reqs = [], records = [], downloads = [], hlog = [], returns = [], rgoods = [], pstock = [], photos = {}, admins = [], me = null; // me: {username, name} atau null (tamu)
 const sk = k => k === 'pp_session' ? SESS : k; // sesi login terpisah per project
 const store = {
@@ -124,7 +125,7 @@ function fixAdm(c, arr, cache) { // data lama berhuruf kecil ikut dikapitalkan; 
 // ops: [['koleksi','set',objek] | ['koleksi','del',id]]
 function commit(ops = []) {
   if (!db) {
-    const used = new Set(records.map(r => r.pid).concat(...hlog.map(h => h.pids || [])));
+    const used = new Set([].concat(...records.map(recPids), ...hlog.map(h => h.pids || [])));
     Object.keys(photos).forEach(k => { if (!used.has(k)) delete photos[k] });
     const ok = store.set('pp_products', products) && store.set('pp_requests', reqs) && store.set('pp_records', records) && store.set('pp_photos', photos) && store.set('pp_downloads', downloads) && store.set('pp_hlog', hlog) && store.set('pp_returns', returns) && store.set('pp_rgoods', rgoods) && store.set('pp_pstock', pstock) && store.set('pp_roles', rolesCfg);
     if (!ok) loadLocal();
@@ -792,7 +793,8 @@ const closeIgEdit = () => { $('#igmdl').hidden = true; igEd = null };
 $('#igClose').onclick = closeIgEdit;
 $('#igmdl').onclick = e => { if (e.target.id === 'igmdl') closeIgEdit(); const b = e.target.closest('[data-ige]'); if (b) { const id = b.dataset.ige; closeIgEdit(); openREdit(id) } };
 /* ---------- INPUT ---------- */
-let blocks = [], photo = '';
+let blocks = [], pics = []; // pics: foto surat jalan di form Input (maks. 5)
+const MAXPIC = 5;
 // cakupan pengajuan di menu Input: bawaan hanya hari ini (WIB). Jika filter tanggal & jam diisi, pengajuan pada rentang itu muncul lagi.
 const IN_DT = ['#iFromD', '#iFromT', '#iToD', '#iToT'];
 const inRange = () => ({ f: dtv(dtVal('#iFrom')), t: dtv(dtVal('#iTo', true), true) });
@@ -942,9 +944,30 @@ function photoField(root, cb) {
   clr.onclick = () => { set(''); cb('') };
   return { set };
 }
-const inPF = photoField($('#in'), d => { photo = d });
+/* foto surat jalan di form Input: maksimal 5, tiap foto ada tombol x untuk menghapus */
+const inGal = $('#inGal'), inUp = $('#in .fUp'), inCam = $('#in .fCam');
+function renderPics() {
+  inGal.innerHTML = pics.map((d, i) => `<div class="pth"><img src="${d}" alt="Foto ${i + 1}" data-pi="${i}"><button class="px" type="button" data-px="${i}" title="Hapus foto ini" aria-label="Hapus foto ${i + 1}">×</button></div>`).join('');
+  $('#inPcnt').textContent = pics.length ? '(' + pics.length + ' / ' + MAXPIC + ')' : '';
+  const full = pics.length >= MAXPIC; $('#in [data-cam]').disabled = $('#in [data-up]').disabled = full;
+}
+inGal.onclick = e => {
+  const x = e.target.closest('[data-px]'), im = e.target.closest('[data-pi]');
+  if (x) { pics.splice(+x.dataset.px, 1); renderPics() } else if (im) { $('#lb img').src = im.src; $('#lb').hidden = false }
+};
+function addPics(files) { // foto diproses satu per satu agar urutannya sesuai pilihan
+  const room = MAXPIC - pics.length, list = [...files].filter(f => /^image\//.test(f.type) || !f.type);
+  if (!list.length) return;
+  if (list.length > room) alert('Maksimal ' + MAXPIC + ' foto. ' + (room > 0 ? 'Hanya ' + room + ' foto pertama yang dipakai.' : 'Hapus salah satu foto (tombol x) untuk menambah yang baru.'));
+  const take = list.slice(0, Math.max(0, room));
+  (function next(i) { if (i >= take.length) return renderPics(); compress(take[i], d => { if (pics.length < MAXPIC) pics.push(d); renderPics(); next(i + 1) }) })(0);
+}
+inUp.onchange = inCam.onchange = e => { const fs = e.target.files; addPics(fs); e.target.value = '' };
+$('#in [data-up]').onclick = () => { if (pics.length < MAXPIC) inUp.click() };
+$('#in [data-cam]').onclick = () => { if (pics.length >= MAXPIC) return; isMobile ? inCam.click() : webcam(d => { pics.push(d); renderPics() }) };
+renderPics();
 function resetInput() {
-  $('#sj').value = ''; photo = ''; inPF.set('');
+  $('#sj').value = ''; pics = []; renderPics();
   $('#blocks').innerHTML = ''; blocks = []; addBlock(); msg('#inMsg', '');
   autoVals = {}; renderAuto(true);
 }
@@ -957,14 +980,14 @@ $('#inSubmit').onclick = () => {
     if (r && scope.has(r.id)) lines.push([r, v]);
   }));
   if (!lines.length) return msg('#inMsg', 'Isi jumlah barang ada (boleh 0) minimal pada satu produk/varian.');
-  const ts = Date.now(), sj = $('#sj').value.trim(), pid = photo ? uid() : '', gid = uid(), ops = []; // gid = penanda satu kali submit Input (dikelompokkan di menu Purchase)
-  if (pid) { photos[pid] = photo; ops.push(['photos', 'set', { id: pid, d: photo }]) }
+  const ts = Date.now(), sj = $('#sj').value.trim(), pids = pics.map(() => uid()), pid = pids[0] || '', gid = uid(), ops = []; // gid = penanda satu kali submit Input (dikelompokkan di menu Purchase)
+  pids.forEach((id, i) => { photos[id] = pics[i]; ops.push(['photos', 'set', { id, d: pics[i] }]) });
   lines.forEach(([r, v]) => {
     r.ada += v;
-    const rec = { id: uid(), ts, sj, prod: r.prod, vn: r.vn, vc: r.vc, ada: r.ada, min: r.min, src: r.src, adm: r.adm || '', pid, rid: r.id, got: v, tahap: r.tahap || 0, gid }; // got = jumlah yang diterima pada input ini (boleh 0); ada = total kumulatif
+    const rec = { id: uid(), ts, sj, prod: r.prod, vn: r.vn, vc: r.vc, ada: r.ada, min: r.min, src: r.src, adm: r.adm || '', pid, pids: pids.slice(), rid: r.id, got: v, tahap: r.tahap || 0, gid }; // got = jumlah yang diterima pada input ini (boleh 0); ada = total kumulatif
     records.unshift(rec); ops.push(['requests', 'set', r], ['records', 'set', rec]);
   });
-  if (!commit(ops)) return msg('#inMsg', 'Penyimpanan penuh. Coba tanpa foto atau hapus data lama.');
+  if (!commit(ops)) return msg('#inMsg', 'Penyimpanan penuh. Coba kurangi jumlah foto atau hapus data lama.');
   resetInput(); go('pu');
 };
 
@@ -1026,7 +1049,7 @@ function renderTable() {
         <span class="gi"><span class="gn"><b>Purchase</b> <small class="gtm">${hm(ts0) === hm(Math.max(...L.map(r => r.ts))) ? hm(ts0) : hm(ts0) + ' – ' + hm(Math.max(...L.map(r => r.ts)))}</small></span> · ${L.length} barang · ${NF(tot)} pcs
           <span class="gt">${sjs.length ? '<span class="tag">SJ ' + esc(sjs.join(', ')) + '</span>' : ''}${L[0].tahap ? '<span class="tag">' + thLbl(L[0].tahap) + '</span>' : ''}${srcs.map(s => '<span class="tag">' + esc(s) + '</span>').join('')}<span class="tag">${esc(adms.join(', ') || '-')}</span><span class="tag ${full ? 'in' : 'out'}">${full ? 'Lengkap' : 'Kurang'}</span></span></span>
         <span class="ga"><button class="btn ghost sm" data-gdl="${esc(k)}" type="button" title="Download grup ini sebagai Excel">Download Excel</button><button class="btn ghost sm" data-gpdf="${esc(k)}" type="button" title="Download grup ini sebagai PDF">Download PDF</button><button class="btn ghost sm" data-gedit="${esc(k)}" type="button">Edit</button><button class="btn sm dng gsep" data-gdel="${esc(k)}" type="button" title="Hapus SEMUA barang dalam grup ini">Hapus grup</button></span></summary>
-        <div class="gpb"><div class="gph">Foto surat jalan: ${(() => { const ps = [...new Set(L.map(r => r.pid).filter(Boolean))]; return ps.length ? ps.map(p => '<span>' + esc((L.find(r => r.pid === p) || {}).sj || '') + ' ' + photoCell(p) + '</span>').join(' ') : '-' })()}</div>
+        <div class="gpb"><div class="gph">Foto surat jalan: ${(() => { const ps = [...new Set([].concat(...L.map(recPids)))]; return ps.length ? ps.map(p => '<span>' + esc((L.find(r => recPids(r).includes(p)) || {}).sj || '') + ' ' + photoCell(p) + '</span>').join(' ') : '-' })()}</div>
         <div class="tw"><table><thead><tr><th>No</th><th>Jam</th><th>No. SJ</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Status</th><th>Asal</th><th></th></tr></thead><tbody>${L.map(rowHtml).join('')}</tbody></table></div></div></details>`;
     }).join('');
   };
@@ -1057,7 +1080,7 @@ $('#grp').onclick = e => {
       const lop = logH('PURCHASE', 'hapus', r.prod + (r.vn ? ' · ' + r.vn : '') + ' · ' + r.ada + ' / ' + r.min + ' pcs · ' + r.src + (r.sj ? ' · SJ ' + r.sj : ''), [{ c: 'records', b: cl(r), a: null }]);
       records = records.filter(x => x !== r);
       const ops = [['records', 'del', r.id], lop];
-      if (r.pid && !records.some(x => x.pid === r.pid) && !hKeep(r.pid)) { ops.push(['photos', 'del', r.pid]); delete photos[r.pid] }
+      recPids(r).forEach(p => { if (!records.some(x => recPids(x).includes(p)) && !hKeep(p)) { ops.push(['photos', 'del', p]); delete photos[p] } });
       commit(ops); renderTable();
     });
   }
@@ -1077,9 +1100,9 @@ function delGroup(k) {
   askYN('HAPUS SEMUA BARANG DALAM GRUP INI? ' + L0.length + ' barang akan terhapus sekaligus: ' + L0.map(r => r.prod + (r.vn ? ' · ' + r.vn : '') + ' (' + gotOf(r) + ' pcs)').join('; ') + '. Untuk menghapus satu barang saja, buka grupnya lalu pakai tombol "Hapus barang".', () => {
     const L = gItems(k); if (!L.length) return;
     const lop = logH('PURCHASE', 'hapus', 'Grup input · ' + gLab(L) + (L[0].sj ? ' · SJ ' + L[0].sj : ''), L.map(r => ({ c: 'records', b: cl(r), a: null })));
-    const ids = new Set(L.map(r => r.id)), pids = [...new Set(L.map(r => r.pid).filter(Boolean))], ops = L.map(r => ['records', 'del', r.id]);
+    const ids = new Set(L.map(r => r.id)), pids = [...new Set([].concat(...L.map(recPids)))], ops = L.map(r => ['records', 'del', r.id]);
     ops.push(lop); records = records.filter(r => !ids.has(r.id));
-    pids.forEach(p => { if (!records.some(x => x.pid === p) && !hKeep(p)) { ops.push(['photos', 'del', p]); delete photos[p] } });
+    pids.forEach(p => { if (!records.some(x => recPids(x).includes(p)) && !hKeep(p)) { ops.push(['photos', 'del', p]); delete photos[p] } });
     commit(ops); renderTable();
   });
 }
@@ -1126,6 +1149,7 @@ function openEdit(id) {
   $('#eProd').innerHTML = names.map(n => `<option>${esc(n)}</option>`).join(''); $('#eProd').value = r.prod;
   fillEVar(r.prod, r.vn, r.vc);
   $('#eDate').value = ymd(r.ts); $('#eTime').value = hm(r.ts); $('#eAdm').value = r.adm || ''; $('#eSj').value = r.sj || ''; $('#eAda').value = r.ada; $('#eMin').value = r.min; $('#eSrc').value = r.src;
+  { const n = recPids(r).length, nt = $('#eFotoNote'); nt.hidden = n < 2; nt.textContent = n > 1 ? 'Rekaman ini punya ' + n + ' foto; yang tampil di sini foto pertama. Mengganti / menghapus di sini hanya memengaruhi foto pertama, foto lainnya tetap ada.' : '' }
   ePF.set(photos[r.pid]);
   if (r.pid && photos[r.pid] === undefined) photoLoad(r.pid, d => { if (eRec === r && eFoto === undefined && !$('#mdl').hidden) ePF.set(d) });
   $('#eCode').value = ''; msg('#eMsg', ''); $('#mdl').hidden = false;
@@ -1141,7 +1165,7 @@ $('#eSave').onclick = () => {
   if ($('#eTime').value && !T24.test($('#eTime').value)) return msg('#eMsg', 'Isi jam dengan format 24 jam, mis. 14:30.');
   if (isNaN(a) || a < 0 || !(m >= 1)) return msg('#eMsg', 'Isi quantity dengan angka yang benar.');
   if (a > m) return msg('#eMsg', 'Barang ada tidak boleh melebihi barang diminta.');
-  const r = records.find(x => x.id === eRec.id) || eRec, v = eList[$('#eVar').value], old = r.pid, ops = [];
+  const r = records.find(x => x.id === eRec.id) || eRec, v = eList[$('#eVar').value], oldP = recPids(r).slice(), ops = [];
   const sibs = records.filter(x => x.rid && x.rid === r.rid && x.id !== r.id), mx = Math.max(a, ...sibs.map(x => x.ada));
   if (r.rid && m < mx) return msg('#eMsg', 'Diminta tidak boleh kurang dari barang ada pada penerimaan terkait (' + mx + ').');
   if ((d !== ymd(r.ts) || ($('#eTime').value.trim() || hm(r.ts)) !== hm(r.ts)) && !codeOk('#eCode')) return msg('#eMsg', 'Mengubah tanggal / jam wajib memakai kode 6 digit yang benar.');
@@ -1155,12 +1179,13 @@ $('#eSave').onclick = () => {
     sibs.forEach(x => { Object.assign(x, f); ops.push(['records', 'set', x]) });
   }
   if (eFoto !== undefined) {
-    if (eFoto) { r.pid = uid(); photos[r.pid] = eFoto; ops.push(['photos', 'set', { id: r.pid, d: eFoto }]) } else r.pid = '';
+    const nid = eFoto ? uid() : ''; if (nid) { photos[nid] = eFoto; ops.push(['photos', 'set', { id: nid, d: eFoto }]) }
+    r.pids = (nid ? [nid] : []).concat(oldP.slice(1)); r.pid = r.pids[0] || '';
   }
   ops.push(['records', 'set', r]);
   ops.push(logH('PURCHASE', 'edit', bRec.prod + (bRec.vn ? ' · ' + bRec.vn : '') + (bRec.sj ? ' · SJ ' + bRec.sj : ''),
     [{ c: 'records', b: bRec, a: cl(r) }].concat(bRq ? [{ c: 'requests', b: bRq, a: cl(reqs.find(x => x.id === bRq.id)) }] : [], bSib.map(b => ({ c: 'records', b, a: cl(records.find(x => x.id === b.id)) })))));
-  if (old && old !== r.pid && !records.some(x => x.pid === old) && !hKeep(old)) { ops.push(['photos', 'del', old]); delete photos[old] }
+  oldP.forEach(p => { if (!recPids(r).includes(p) && !records.some(x => recPids(x).includes(p)) && !hKeep(p)) { ops.push(['photos', 'del', p]); delete photos[p] } });
   if (!commit(ops)) return msg('#eMsg', 'Penyimpanan penuh. Coba foto yang lebih kecil.');
   closeEdit(); renderTable(); renderReqs();
 };
@@ -1381,7 +1406,7 @@ function diffTxt(b, a) { // ringkasan perubahan: "Diminta: 10 → 15; Waktu: ...
 function logH(menu, act, label, docs) {
   docs = docs.filter(d => d && (d.b || d.a));
   const m = docs[0], e = { id: uid(), ts: Date.now(), menu, act, adm: me ? me.name : '', label, th: String(((m && (m.b || m.a)) || {}).tahap || ''), diff: m && m.b && m.a ? diffTxt(m.b, m.a) : '', docs: JSON.stringify(docs), rest: 0,
-    pids: docs.filter(d => d.c === 'records' && d.b && d.b.pid).map(d => d.b.pid) };
+    pids: [].concat(...docs.filter(d => d.c === 'records' && d.b).map(d => recPids(d.b))) };
   hlog.unshift(e);
   return ['hlog', 'set', e];
 }
@@ -1461,7 +1486,7 @@ function purgeH(id) {
   const h = hlog.find(x => x.id === id); if (!h) return;
   hlog = hlog.filter(x => x.id !== id);
   const ops = [['hlog', 'del', id]];
-  (h.pids || []).forEach(p => { if (p && !records.some(x => x.pid === p) && !hKeep(p)) { ops.push(['photos', 'del', p]); delete photos[p] } });
+  (h.pids || []).forEach(p => { if (p && !records.some(x => recPids(x).includes(p)) && !hKeep(p)) { ops.push(['photos', 'del', p]); delete photos[p] } });
   commit(ops); renderRw();
 }
 $('#rwGrp').addEventListener('click', e => {

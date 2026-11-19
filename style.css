@@ -397,3 +397,8 @@ details.gp>summary::before{margin-top:2px}
 .mgbad small{display:block;color:var(--bad)}
 .ch .l1,.ch .l2,.ch .l3{fill:none;stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round}.ch .l1{stroke:var(--pri)}.ch .l2{stroke:var(--ok)}.ch .l3{stroke:var(--bad)}
 .ch .d1{fill:var(--pri)}.ch .d2{fill:var(--ok)}.ch .d3{fill:var(--bad)}
+.pcnt{font-weight:400;color:var(--mute)}
+.pgal{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px}
+.pth{position:relative}
+.pth img{width:84px;height:84px;object-fit:cover;border-radius:10px;border:1px solid var(--line);display:block;cursor:pointer}
+.pth .px{position:absolute;top:-8px;right:-8px;width:24px;height:24px;padding:0;border:0;border-radius:50%;background:var(--bad);color:#fff;font:700 14px/24px system-ui,sans-serif;text-align:center;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.25)}

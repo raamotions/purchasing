@@ -100,15 +100,14 @@
       <div id="auto" hidden></div>
       <div id="blocks"></div>
       <button class="btn ghost" id="addBlk" type="button" style="margin-top:16px">+ Tambahkan produk lainnya</button>
-      <label>Foto Surat Jalan (jika ada)</label>
+      <label>Foto Surat Jalan (jika ada, maksimal 5 foto) <span class="pcnt" id="inPcnt"></span></label>
       <div class="pbtns">
         <button class="btn ghost sm" type="button" data-cam>📷 Ambil Foto</button>
         <button class="btn ghost sm" type="button" data-up>📁 Upload</button>
-        <button class="btn ghost sm" type="button" data-clr hidden>Hapus foto</button>
       </div>
-      <input type="file" accept="image/*" class="fUp" hidden>
+      <input type="file" accept="image/*" class="fUp" multiple hidden>
       <input type="file" accept="image/*" capture="environment" class="fCam" hidden>
-      <img class="pv" alt="">
+      <div class="pgal" id="inGal"></div>
       <div class="foot"><div class="msg" id="inMsg"></div><button class="btn" id="inSubmit">Submit</button></div>
     </div>
   </section>
@@ -567,6 +566,7 @@
   <label>Asal</label><select id="eSrc" data-src="Pilih asal barang"></select>
   <label>Nama Admin</label><select id="eAdm" data-adm="Pilih nama admin"></select>
   <label>Foto Surat Jalan</label>
+  <small class="hint" id="eFotoNote" hidden></small>
   <div class="pbtns">
         <button class="btn ghost sm" type="button" data-cam>📷 Ambil Foto</button>
         <button class="btn ghost sm" type="button" data-up>📁 Upload</button>
