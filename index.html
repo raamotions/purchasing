@@ -294,16 +294,19 @@
   <section class="sec" id="sc">
     <div class="card">
       <h3>Upload Data Scanner</h3>
-      <p class="hint">Upload file Excel hasil scan. Susunan kolom: <b>A = Resi</b>, <b>B = Jam Scan</b> (tanggal + jam), <b>C = PIC</b>. Baris judul (baris 1) dilewati otomatis, data dibaca mulai baris 2 sampai baris terakhir. Boleh tarik banyak file sekaligus.</p>
+      <p class="hint">Upload file Excel hasil scan. Boleh banyak file sekaligus, dan <b>semua sheet</b> di dalam file ikut dibaca. Setiap ekspedisi punya kolom sendiri: <b>B / C / D = JNT</b>, <b>F / G / H = LAZADA</b>, <b>J / K / L = SPX</b>, <b>N / O / P = MIX (CARGO)</b>, masing-masing berisi <b>Resi / Jam Scan / PIC</b>. Kolom nomor urut (A, E, I, M) dan baris judul dilewati otomatis. File 3 kolom lama (A = Resi, B = Jam Scan, C = PIC) tetap bisa diupload, ekspedisinya dikosongkan.</p>
       <ul class="hint" style="margin:0 0 12px;padding-left:20px">
-        <li>Jam scan dibaca sebagai waktu <b>WIB</b>. Format yang dikenali: sel tanggal Excel, <code>2026-11-20 14:05:33</code>, atau <code>20/11/2026 14:05</code>.</li>
-        <li>Resi yang sama dengan jam scan dan PIC yang sama dianggap duplikat dan dilewati, jadi file yang sama aman di-upload dua kali.</li>
-        <li>Sebelum disimpan akan ada konfirmasi jumlah data.</li>
+        <li>Jam scan dibaca sebagai waktu <b>WIB</b>. Format yang dikenali: sel tanggal Excel, <code>2026-11-20 14:05:33</code>, atau <code>20/11/2026 14:05</code>. Penulisan PIC dirapikan otomatis (mis. <code>YANA - RANI</code> menjadi <code>YANA-RANI</code>).</li>
+        <li>Setelah file dibaca, tampil <b>laporan status</b> dulu: <b>Baru</b>, <b>Double</b> (resi + jam scan yang sama, sudah ada di database atau dobel antar file / sheet), <b>Resi sama, jam beda</b>, dan <b>Ditolak</b>. Data baru baru disimpan setelah klik <b>Simpan</b>.</li>
+        <li>Karena double dilewati otomatis, file yang sama aman di-upload dua kali.</li>
       </ul>
       <div class="mgdrop" id="scDrop"><b>Tarik file ke sini</b><span>atau</span><button class="btn sm" type="button" data-scpick>Pilih file</button><small>XLSX, XLS, CSV. Boleh pilih banyak file sekaligus.</small><input type="file" id="scFile" accept=".xlsx,.xls,.csv" multiple hidden></div>
+      <label>Baris yang jam scan-nya kosong</label>
+      <select id="scNoTime"><option value="reject">Tolak dan laporkan (tidak disimpan)</option><option value="day">Simpan dengan tanggal sheet, jam 00:00:00</option></select>
       <label>Tanggal untuk baris yang jam scan-nya tanpa tanggal <span style="font-weight:400">(opsional, kosong = hari ini)</span></label>
       <input type="date" id="scDefD">
       <div class="msg" id="scMsg" style="margin-top:12px"></div>
+      <div id="scRep"></div>
     </div>
     <div class="card">
       <h3>Data Scanner</h3>
@@ -311,7 +314,7 @@
       <div class="exf">
         <div><label>Dari tanggal &amp; jam scan</label><div class="dt"><input type="date" id="scFromD"><input class="tm24" id="scFromT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
         <div><label>Sampai tanggal &amp; jam scan</label><div class="dt"><input type="date" id="scToD"><input class="tm24" id="scToT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
-        <div><label>PIC</label><select id="scPic"><option value="">Semua</option></select></div>
+        <div><label>PIC</label><select id="scPic"><option value="">Semua</option></select></div><div><label>Ekspedisi</label><select id="scEks"><option value="">Semua</option></select></div><div><label>Urutan tampilan</label><select id="scSort"><option value="grp">Ekspedisi → PIC → jam scan</option><option value="time">Jam scan (terbaru dulu)</option></select></div>
         <div class="xb"><button class="btn ghost sm" id="scReset" type="button">Reset filter</button><button class="btn ghost sm" id="scXls" type="button">Export Excel</button></div>
       </div>
       <div class="bds"><label for="scQ">Cari resi</label><input id="scQ" placeholder="Cari nomor resi (boleh tempel beberapa resi sekaligus)..." autocomplete="off" style="text-transform:uppercase"></div>
@@ -576,6 +579,17 @@
   <label>Kode Verifikasi</label><input id="dCode" type="password" inputmode="numeric" autocomplete="off" placeholder="Masukkan kode">
   <div class="msg" id="dMsg"></div>
   <div class="acts"><button class="btn ghost" id="dCancel" type="button">Batal</button><button class="btn" id="dOk" type="button">Hapus</button></div>
+</div></div>
+
+<!-- MODAL EDIT DATA SCANNER -->
+<div class="modal" id="scmdl" hidden><div class="box">
+  <h3>Edit Data Scan</h3>
+  <label>No Resi</label><input id="scEResi" autocomplete="off" style="text-transform:uppercase">
+  <label>Tanggal &amp; Jam Scan (24 jam)</label><div class="dt" style="grid-template-columns:1fr 110px"><input type="date" id="scED"><input id="scET" placeholder="HH:MM:SS" inputmode="numeric" maxlength="8" autocomplete="off" title="Format 24 jam, mis. 14:30:05"></div>
+  <label>Ekspedisi</label><input id="scEE" list="scEL" autocomplete="off" style="text-transform:uppercase"><datalist id="scEL"></datalist>
+  <label>PIC</label><input id="scEP" list="scPL" autocomplete="off" style="text-transform:uppercase"><datalist id="scPL"></datalist>
+  <div class="msg" id="scEMsg"></div>
+  <div class="acts"><button class="btn ghost" id="scECancel" type="button">Batal</button><button class="btn" id="scEOk" type="button">Simpan</button></div>
 </div></div>
 
 <!-- MODAL EDIT PURCHASE -->

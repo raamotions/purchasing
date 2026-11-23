@@ -258,7 +258,7 @@ function startSync() {
 }
 
 /* ---------- menu & hamburger ---------- */
-const TT = { pg: ['Pengajuan', 'Hari ini tampil di atas; hari sebelumnya masuk riwayat per bulan (ganti hari pukul 00.00 WIB)'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], rt: ['Input Retur', 'Form retur / pengembalian barang'], bd: ['Laporan Retur', 'Hasil input retur marketplace, bisa diedit'], rw: ['Riwayat', 'Riwayat edit & hapus; data lama bisa dipulihkan'], ow: ['Dashboard Khusus', 'Kontrol admin & analisa pemasaran (khusus pemilik)'], dl: ['Download', 'Riwayat export Excel / PDF, bisa difilter dan diexport gabungan'], pr: ['Database Produk', 'Stok produk (Purchase, Barang Retur, upload manual / massal); kelola produk dan varian warna'], gd: ['Barang Gudang', 'Cek barang retur / cancel yang tersedia sebelum mengajukan lagi'], br: ['Barang Retur', 'Input barang retur; otomatis masuk ke Barang Gudang'], sc: ['Data Scanner', 'Upload data scan dari Excel (resi, jam scan, PIC); hari ini tampil di atas, sebelumnya masuk riwayat'] };
+const TT = { pg: ['Pengajuan', 'Hari ini tampil di atas; hari sebelumnya masuk riwayat per bulan (ganti hari pukul 00.00 WIB)'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], rt: ['Input Retur', 'Form retur / pengembalian barang'], bd: ['Laporan Retur', 'Hasil input retur marketplace, bisa diedit'], rw: ['Riwayat', 'Riwayat edit & hapus; data lama bisa dipulihkan'], ow: ['Dashboard Khusus', 'Kontrol admin & analisa pemasaran (khusus pemilik)'], dl: ['Download', 'Riwayat export Excel / PDF, bisa difilter dan diexport gabungan'], pr: ['Database Produk', 'Stok produk (Purchase, Barang Retur, upload manual / massal); kelola produk dan varian warna'], gd: ['Barang Gudang', 'Cek barang retur / cancel yang tersedia sebelum mengajukan lagi'], br: ['Barang Retur', 'Input barang retur; otomatis masuk ke Barang Gudang'], sc: ['Data Scanner', 'Upload data scan dari Excel (ekspedisi, resi, jam scan, PIC); hari ini tampil di atas, sebelumnya masuk riwayat'] };
 function go(t) {
   if (!can(t)) { t = firstPage(); if (!t) return }
   $$('nav button[data-t]').forEach(b => b.classList.toggle('on', b.dataset.t === t));
@@ -2378,14 +2378,14 @@ async function adminCreate(rec) {
   }
 }
 /* ---------- DATA SCANNER (khusus Owner & Packing) ---------- */
-// Satu dokumen = satu hari (WIB), maksimal SC_CH baris. Data disimpan sebagai larik paralel r (resi), t (jam scan, ms), p (PIC):
+// Satu dokumen = satu hari (WIB), maksimal SC_CH baris. Data disimpan sebagai larik paralel r (resi), t (jam scan, ms), p (PIC), e (ekspedisi):
 // hemat kuota tulis (puluhan ribu scan hanya jadi beberapa dokumen) dan sesuai aturan Firestore (larik bersarang tidak boleh).
 const SC_CH = 4000, SC_STEP = 200, WIB_MS = 7 * 36e5;
 const scT = t => new Date(t + WIB_MS).toISOString().slice(11, 19); // jam scan HH:MM:SS (WIB)
 const scDtv = (s, end) => s ? Date.parse(s + (end ? ':59.999' : ':00') + '+07:00') : null; // tanggal+jam filter dibaca sebagai WIB
 const scAll = () => {
   if (scCache) return scCache;
-  const o = []; scans.forEach(d => { const r = d.r || [], t = d.t || [], p = d.p || []; for (let i = 0; i < r.length; i++) o.push({ resi: String(r[i]), ts: t[i], pic: p[i] || '' }) });
+  const o = []; scans.forEach(d => { const r = d.r || [], t = d.t || [], p = d.p || [], e = d.e || []; for (let i = 0; i < r.length; i++) o.push({ resi: String(r[i]), ts: t[i], pic: p[i] || '', e: e[i] || '' }) });
   return scCache = o.sort((a, b) => b.ts - a.ts);
 };
 function scTs(v, defDay) { // nilai sel Excel / teks -> timestamp (ms), jam dibaca sebagai WIB; null jika tidak terbaca
@@ -2408,98 +2408,272 @@ function scTs(v, defDay) { // nilai sel Excel / teks -> timestamp (ms), jam diba
   return Date.UTC(y, mo - 1, d, h, mi, se) - WIB_MS;
 }
 const scResi = v => (typeof v === 'number' ? (Number.isInteger(v) ? v.toLocaleString('fullwide', { useGrouping: false }) : String(v)) : String(v == null ? '' : v)).replace(/[\s'"`]+/g, '').toUpperCase();
+// ---- format Excel per ekspedisi: B/C/D = JNT, F/G/H = LAZADA, J/K/L = SPX, N/O/P = MIX / CARGO  (resi, jam scan, PIC) ----
+const SC_EKS = [[1, 2, 3, 'JNT'], [5, 6, 7, 'LAZADA'], [9, 10, 11, 'SPX'], [13, 14, 15, 'MIX']];
+const SC_EKH = ['JNT', 'LAZADA', 'SPX', 'MIX', 'CARGO'], SC_HDR = new Set(SC_EKH.concat(['NO', 'PIC', 'OPERATOR', 'C']));
+const scPic = v => UN(v).replace(/\s*-\s*/g, '-'); // "YANA - RANI" / "YANA- RANI" -> "YANA-RANI"
+const scDT = ts => dayWIB(ts).split('-').reverse().join('-') + ' ' + scT(ts);
+const scEksOrd = e => { const i = SC_EKS.findIndex(x => x[3] === e); return i < 0 ? 99 : i };
+const scCmp = (a, b) => scEksOrd(a.e) - scEksOrd(b.e) || (a.e || '').localeCompare(b.e || '') || (a.pic || '').localeCompare(b.pic || '') || a.ts - b.ts;
+const scIsEks = rows => SC_EKS.filter(g => rows.slice(0, 3).some(r => SC_EKH.includes(UN(r[g[0]])))).length >= 2; // judul JNT / LAZADA / SPX / MIX ada di baris atas
+function scParseSheet(rows, f, sh, defDay) { // satu sheet -> daftar baris mentah {f, sh, ln, e, resi, ts, pic, nt, bad, sd}
+  const out = [], days = {}, eks = scIsEks(rows);
+  const add = (ln, e, rr, rt, rp) => {
+    const resi = scResi(rr), blankT = rt === '' || rt == null, ts = blankT ? null : scTs(rt, defDay);
+    const it = { f, sh, ln, e, resi, ts, pic: scPic(rp), nt: false, bad: '', sd: '' };
+    if (!resi) it.bad = 'Resi kosong';
+    else if (blankT) it.nt = true;
+    else if (ts === null) it.bad = 'Jam scan "' + String(rt).slice(0, 25) + '" tidak terbaca';
+    if (ts !== null) { const d = dayWIB(ts); days[d] = (days[d] || 0) + 1 }
+    out.push(it);
+  };
+  rows.forEach((r, i) => {
+    const ln = i + 1;
+    if (eks) SC_EKS.forEach(([ci, ti, pi, name]) => {
+      const rr = r[ci], rt = r[ti];
+      if (rr === '' || rr == null) { if (rt !== '' && rt != null && scTs(rt, defDay) !== null) add(ln, name, rr, rt, r[pi]); return } // ada jam tapi resi kosong
+      if (typeof rr === 'string' && SC_HDR.has(UN(rr))) return; // sel judul (JNT, LAZADA, SPX, MIX, CARGO, NO, PIC, ...)
+      add(ln, name, rr, rt, r[pi]);
+    });
+    else { // file 3 kolom lama: A = Resi, B = Jam Scan, C = PIC (tanpa ekspedisi)
+      if (i === 0 && scTs(r[1], defDay) === null) return;
+      const rr = r[0], rt = r[1], rp = r[2];
+      if ((rr === '' || rr == null) && (rt === '' || rt == null) && !String(rp == null ? '' : rp).trim()) return;
+      add(ln, '', rr, rt, rp);
+    }
+  });
+  const sd = Object.keys(days).sort((a, b) => days[b] - days[a])[0] || ''; // tanggal terbanyak di sheet ini
+  out.forEach(it => it.sd = sd);
+  return out;
+}
+const SCU = { items: [], res: null, opt: { notime: 'reject' }, saved: false, errs: [] };
+let SC_NEW = new Set(); // kunci "ts|resi" data yang baru saja disimpan (disorot hijau di tabel)
+function scEval() { // beri status tiap baris: new / multi (resi sama, jam beda) / dbdup / dup / bad
+  const dbSeen = new Set(), dbResi = new Map();
+  scAll().forEach(r => { dbSeen.add(r.resi + '|' + r.ts); const s = dbResi.get(r.resi); if (s) s.add(r.ts); else dbResi.set(r.resi, new Set([r.ts])) });
+  const up = new Map(), upResi = new Map(), rows = [], n = { new: 0, multi: 0, dbdup: 0, dup: 0, bad: 0 };
+  SCU.items.forEach(it => {
+    const x = { it, ts: it.ts, st: '', note: '' };
+    if (it.bad) { x.st = 'bad'; x.note = it.bad }
+    else if (x.ts === null) {
+      if (SCU.opt.notime === 'day' && it.sd) { x.ts = Date.parse(it.sd + 'T00:00:00+07:00'); x.note = 'Jam scan kosong, dicatat 00:00:00 pada tanggal sheet' }
+      else { x.st = 'bad'; x.note = 'Jam scan kosong' }
+    }
+    if (!x.st) {
+      const k = it.resi + '|' + x.ts;
+      if (dbSeen.has(k)) { x.st = 'dbdup'; x.note = 'Sudah ada di database' }
+      else if (up.has(k)) { const p = up.get(k); x.st = 'dup'; x.note = 'Sama dengan ' + p.f + ' · sheet ' + p.sh + ' baris ' + p.ln }
+      else {
+        up.set(k, it);
+        const o = dbResi.get(it.resi), u = upResi.get(it.resi);
+        if (o || u) { x.st = 'multi'; x.note = (x.note ? x.note + '. ' : '') + 'Resi sama sudah tercatat dengan jam scan lain' } else x.st = 'new';
+        if (u) u.add(x.ts); else upResi.set(it.resi, new Set([x.ts]));
+      }
+    }
+    n[x.st]++; rows.push(x);
+  });
+  SCU.res = { rows, n, total: rows.length };
+}
+/*SC-PURE-END*/
 function scPlan(rows) { // gabungkan baris baru ke dokumen per hari; hasilnya belum disimpan
   const by = {}; rows.forEach(r => { (by[dayWIB(r.ts)] = by[dayWIB(r.ts)] || []).push(r) });
-  const docs = {}, ops = [], pic = {}; let added = 0, dup = 0;
+  const docs = {}, ops = []; let added = 0, dup = 0;
   Object.keys(by).sort().forEach(day => {
     const old = scans.filter(d => d.day === day), cur = [], seen = new Set();
-    old.forEach(d => (d.r || []).forEach((rs, i) => { const o = { resi: String(rs), ts: d.t[i], pic: (d.p || [])[i] || '' }; cur.push(o); seen.add(o.resi + '|' + o.ts + '|' + o.pic) }));
-    const fresh = by[day].filter(r => { const k = r.resi + '|' + r.ts + '|' + r.pic; if (seen.has(k)) { dup++; return false } seen.add(k); return true });
+    old.forEach(d => (d.r || []).forEach((rs, i) => { const o = { resi: String(rs), ts: d.t[i], pic: (d.p || [])[i] || '', e: (d.e || [])[i] || '' }; cur.push(o); seen.add(o.resi + '|' + o.ts) }));
+    const fresh = by[day].filter(r => { const k = r.resi + '|' + r.ts; if (seen.has(k)) { dup++; return false } seen.add(k); return true });
     if (!fresh.length) return;
-    added += fresh.length; fresh.forEach(r => pic[r.pic || '-'] = (pic[r.pic || '-'] || 0) + 1);
+    added += fresh.length;
     const all = cur.concat(fresh).sort((a, b) => a.ts - b.ts), nd = [];
     for (let i = 0, n = 0; i < all.length; i += SC_CH, n++) {
       const c = all.slice(i, i + SC_CH);
-      nd.push({ id: 'sc_' + day + '_' + n, day, ts: c[0].ts, n: c.length, r: c.map(x => x.resi), t: c.map(x => x.ts), p: c.map(x => x.pic), adm: me ? me.name : '' });
+      nd.push({ id: 'sc_' + day + '_' + n, day, ts: c[0].ts, n: c.length, r: c.map(x => x.resi), t: c.map(x => x.ts), p: c.map(x => x.pic), e: c.map(x => x.e || ''), adm: me ? me.name : '' });
     }
     docs[day] = nd; nd.forEach(d => ops.push(['scans', 'set', d]));
     old.filter(d => !nd.some(x => x.id === d.id)).forEach(d => ops.push(['scans', 'del', d.id]));
   });
-  return { docs, ops, added, dup, pic };
+  return { docs, ops, added, dup };
 }
+
+/* ---- upload: baca semua file & sheet -> laporan status -> simpan ---- */
+function scReset() { SCU.items = []; SCU.res = null; SCU.saved = false; SCU.errs = []; SC_NEW = new Set(); $('#scNoTime').disabled = false; scRep() }
 async function scFiles(files) {
   if (!can('sc')) return;
   files = files.filter(f => /\.(xlsx|xls|csv)$/i.test(f.name)); if (!files.length) return msg('#scMsg', 'Gunakan file Excel (.xlsx / .xls) atau CSV.');
   if (!window.XLSX) return msg('#scMsg', 'Library Excel gagal dimuat. Pastikan terhubung ke internet.');
-  msg('#scMsg', 'Membaca ' + files.length + ' file...', true);
-  const defDay = $('#scDefD').value || dayWIB(Date.now()), rows = [], bad = [], inFile = new Set();
-  let dupFile = 0, nRead = 0;
+  if (SCU.saved) scReset(); // laporan sebelumnya sudah disimpan: mulai laporan baru
+  const defDay = $('#scDefD').value || dayWIB(Date.now()); let k = 0;
   for (const f of files) {
+    msg('#scMsg', 'Membaca ' + f.name + ' (' + (++k) + '/' + files.length + ')...', true);
+    await new Promise(r => setTimeout(r, 30)); // beri kesempatan layar menampilkan pesan
     try {
       const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
-      const all = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '', blankrows: false });
-      all.forEach((r, i) => {
-        if (i === 0 && scTs(r[1], defDay) === null) return; // baris judul
-        const resi = scResi(r[0]), raw = r[1], pic = UN(r[2]);
-        if (!resi && (raw === '' || raw == null) && !pic) return; // baris kosong
-        nRead++; const ln = (files.length > 1 ? f.name + ' ' : '') + 'baris ' + (i + 1);
-        if (!resi) return bad.push(ln + ': resi kosong');
-        const ts = scTs(raw, defDay); if (ts === null) return bad.push(ln + ': jam scan "' + String(raw).slice(0, 25) + '" tidak terbaca');
-        const k = resi + '|' + ts + '|' + pic; if (inFile.has(k)) { dupFile++; return } inFile.add(k);
-        rows.push({ resi, ts, pic });
+      wb.SheetNames.forEach(sh => {
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[sh], { header: 1, raw: true, defval: '' });
+        for (const it of scParseSheet(rows, f.name, sh, defDay)) SCU.items.push(it);
       });
-    } catch (err) { console.error(err); bad.push(f.name + ': file tidak bisa dibaca') }
+    } catch (err) { console.error(err); SCU.errs.push(f.name + ': file tidak bisa dibaca') }
   }
-  const P = scPlan(rows), badTxt = bad.length ? ' Ditolak: ' + bad.slice(0, 4).join('; ') + (bad.length > 4 ? '; dst.' : '') + '.' : '';
-  const dupN = P.dup + dupFile, extra = (dupN ? ', ' + dupN + ' dilewati (duplikat)' : '') + (bad.length ? ', ' + bad.length + ' baris ditolak' : '');
-  if (!P.added) return msg('#scMsg', 'Tidak ada data baru yang bisa disimpan (' + nRead + ' baris terbaca' + extra + ').' + badTxt);
-  const days = Object.keys(P.docs).sort(), picTxt = Object.keys(P.pic).sort().map(k => k + ' ' + NF(P.pic[k])).join(', ');
-  if (!confirm('Simpan ' + NF(P.added) + ' data scan?\n\nTanggal: ' + days[0].split('-').reverse().join('-') + (days.length > 1 ? ' s/d ' + days[days.length - 1].split('-').reverse().join('-') + ' (' + days.length + ' hari)' : '') + '\nPIC: ' + picTxt + (dupN ? '\n' + dupN + ' dilewati (duplikat)' : '') + (bad.length ? '\n' + bad.length + ' baris ditolak' : ''))) return msg('#scMsg', 'Upload dibatalkan.');
-  const before = scans;
+  if (!SCU.items.length) { scRep(); return msg('#scMsg', 'Tidak ada baris data yang terbaca.' + (SCU.errs.length ? ' ' + SCU.errs.join('; ') : '')) }
+  scEval(); scRep();
+  const n = SCU.res.n;
+  msg('#scMsg', 'Selesai membaca: ' + NF(SCU.res.total) + ' baris. Siap disimpan ' + NF(n.new + n.multi) + ', double ' + NF(n.dbdup + n.dup) + ', ditolak ' + NF(n.bad) + '. Periksa laporan di bawah, lalu klik "Simpan".', true);
+}
+const scKpi = (l, v, s, t) => `<div class="kc ${t || ''}"><span>${l}</span><b>${v}</b><small>${s || ''}</small></div>`;
+function scRep() {
+  const box = $('#scRep'); if (!SCU.items.length || !SCU.res) { box.innerHTML = SCU.errs.length ? '<div class="msg">' + esc(SCU.errs.join('; ')) + '</div>' : ''; return }
+  const R = SCU.res, n = R.n, ok = n.new + n.multi, sv = SCU.saved, rows = R.rows, isOk = x => x.st === 'new' || x.st === 'multi', isDup = x => x.st === 'dbdup' || x.st === 'dup';
+  const bad = rows.filter(x => x.st === 'bad'), jk = bad.filter(x => x.note === 'Jam scan kosong').length, nt = rows.filter(x => isOk(x) && x.it.nt).length;
+  const okL = sv ? 'Berhasil disimpan' : 'Siap disimpan';
+  let h = `<div class="mgk">${scKpi('Baris terbaca', NF(R.total), NF(uniq(SCU.items.map(i => i.f + '|' + i.sh))) + ' sheet')}${scKpi(okL, NF(ok), sv ? '✓ tersimpan di Data Scanner' + (nt ? ' · ' + NF(nt) + ' tanpa jam (00:00:00)' : '') : 'belum disimpan' + (nt ? ' · ' + NF(nt) + ' tanpa jam (00:00:00)' : ''), 'ok')}${scKpi('Double dilewati', NF(n.dbdup + n.dup), NF(n.dbdup) + ' sudah ada di database · ' + NF(n.dup) + ' dobel antar file / sheet', n.dbdup + n.dup ? 'mid' : 'ok')}${scKpi('Resi sama, jam beda', NF(n.multi), 'tetap disimpan, mohon dicek', n.multi ? 'mid' : 'ok')}${scKpi('Ditolak', NF(n.bad), jk ? NF(jk) + ' jam scan kosong' + (bad.length - jk ? ' · ' + NF(bad.length - jk) + ' lainnya' : '') : bad.length ? 'resi / jam tidak terbaca' : 'tidak ada', n.bad ? 'bad' : 'ok')}</div>`;
+  // ringkasan Ekspedisi -> PIC
+  const eg = {}; rows.forEach(x => {
+    const e = x.it.e || '-', p = x.it.pic || '-', g = eg[e] = eg[e] || { n: 0, ok: 0, dup: 0, bad: 0, p: {} }, o = g.p[p] = g.p[p] || { n: 0, ok: 0, dup: 0, bad: 0 };
+    [g, o].forEach(a => { a.n++; if (isOk(x)) a.ok++; else if (isDup(x)) a.dup++; else a.bad++ });
+  });
+  const cell = a => `<td>${NF(a.n)}</td><td><b>${NF(a.ok)}</b></td><td>${a.dup ? '<span class="tag ed">' + NF(a.dup) + '</span>' : '0'}</td><td>${a.bad ? '<span class="tag del">' + NF(a.bad) + '</span>' : '0'}</td>`;
+  h += `<h4>Ringkasan per Ekspedisi &amp; PIC</h4><div class="tw"><table style="min-width:520px"><thead><tr><th>Ekspedisi / PIC</th><th>Terbaca</th><th>${okL}</th><th>Double</th><th>Ditolak</th></tr></thead><tbody>` +
+    Object.keys(eg).sort((a, b) => scEksOrd(a) - scEksOrd(b) || a.localeCompare(b)).map(e => `<tr class="scg"><td>${esc(e)}</td>${cell(eg[e])}</tr>` + Object.keys(eg[e].p).sort((a, b) => a.localeCompare(b)).map(p => `<tr class="scr"><td>${esc(p)}</td>${cell(eg[e].p[p])}</tr>`).join('')).join('') + '</tbody></table></div>';
+  // per file / sheet
+  const sg = {}; rows.forEach(x => { const k = x.it.f + ' · sheet ' + x.it.sh, o = sg[k] = sg[k] || { n: 0, ok: 0, dup: 0, bad: 0 }; o.n++; if (isOk(x)) o.ok++; else if (isDup(x)) o.dup++; else o.bad++ });
+  h += `<details style="margin-top:10px"><summary>Per file &amp; sheet (${NF(Object.keys(sg).length)})</summary><div class="tw"><table style="min-width:520px"><thead><tr><th>File · Sheet</th><th>Terbaca</th><th>${okL}</th><th>Double</th><th>Ditolak</th></tr></thead><tbody>${Object.keys(sg).map(k => `<tr><td>${esc(k)}</td>${cell(sg[k])}</tr>`).join('')}</tbody></table></div></details>`;
+  // daftar baris bermasalah
+  const line = x => `<div class="mgbad">${esc(x.it.e || '-')} · <b>${esc(x.it.resi || '(kosong)')}</b> · ${x.ts == null ? '-' : scDT(x.ts)} · ${esc(x.it.pic || '-')}<small>${esc(x.note)} (${esc(x.it.f)} · sheet ${esc(x.it.sh)} baris ${x.it.ln})</small></div>`;
+  const lst = (a, t) => a.length ? `<details style="margin-top:8px"><summary>${t} (${NF(a.length)})</summary>${a.slice(0, 60).map(line).join('')}${a.length > 60 ? '<p class="hint">+ ' + NF(a.length - 60) + ' baris lain.</p>' : ''}</details>` : '';
+  h += lst(rows.filter(x => x.st === 'dbdup'), 'Double: sudah ada di database') + lst(rows.filter(x => x.st === 'dup'), 'Double: sama dengan baris lain di file / sheet') + lst(rows.filter(x => x.st === 'multi'), 'Resi sama, jam scan beda (tetap disimpan)') + lst(bad, 'Ditolak');
+  h += `<div class="scx">${sv ? '<button class="btn ghost" data-scclr type="button">Tutup laporan</button>' : `<button class="btn" data-scsave type="button"${ok ? '' : ' disabled'}>Simpan ${NF(ok)} data</button><button class="btn ghost" data-scclr type="button">Batal / kosongkan</button>`}</div>`;
+  box.innerHTML = `<div class="mgrep" style="margin-top:14px">${h}</div>`;
+}
+function scSave() {
+  if (!can('sc') || !SCU.res || SCU.saved) return;
+  const rows = SCU.res.rows.filter(x => x.st === 'new' || x.st === 'multi').map(x => ({ resi: x.it.resi, ts: x.ts, pic: x.it.pic, e: x.it.e }));
+  if (!rows.length) return msg('#scMsg', 'Tidak ada data baru yang bisa disimpan.');
+  const P = scPlan(rows), before = scans;
+  if (!P.added) return msg('#scMsg', 'Tidak ada data baru yang bisa disimpan (semua sudah ada).');
   scans = scans.filter(d => !(d.day in P.docs)).concat(...Object.values(P.docs)); scCache = null;
   if (!commit(P.ops)) { scans = before; scCache = null; return msg('#scMsg', 'Penyimpanan penuh.') }
-  renderSc();
-  msg('#scMsg', NF(P.added) + ' data scan berhasil disimpan ke menu Data Scanner' + extra + '.' + badTxt, !bad.length);
+  SC_NEW = new Set(rows.map(r => r.ts + '|' + r.resi)); SCU.saved = true; $('#scNoTime').disabled = true;
+  scRep(); renderSc();
+  msg('#scMsg', '✓ ' + NF(P.added) + ' data scan berhasil disimpan ke menu Data Scanner' + (rows.length > P.added ? ' (' + NF(rows.length - P.added) + ' dilewati karena sudah ada)' : '') + '. Baris baru disorot hijau di tabel Data Scanner.', true);
 }
 $$('[data-scpick]').forEach(b => b.onclick = () => $('#scFile').click());
 $('#scFile').onchange = e => { const f = [...e.target.files]; e.target.value = ''; scFiles(f) };
 $('#scDrop').addEventListener('dragover', e => { e.preventDefault(); $('#scDrop').classList.add('over') });
 $('#scDrop').addEventListener('dragleave', () => $('#scDrop').classList.remove('over'));
 $('#scDrop').addEventListener('drop', e => { e.preventDefault(); $('#scDrop').classList.remove('over'); scFiles([...e.dataTransfer.files]) });
+$('#scNoTime').onchange = e => { SCU.opt.notime = e.target.value; if (SCU.items.length && !SCU.saved) { scEval(); scRep() } };
+$('#scRep').addEventListener('click', e => {
+  if (e.target.closest('[data-scsave]')) return scSave();
+  if (e.target.closest('[data-scclr]')) { const was = SCU.saved; scReset(); msg('#scMsg', ''); if (was) renderSc() }
+});
 
-const SCF = ['#scFromD', '#scFromT', '#scToD', '#scToT', '#scPic', '#scQ'];
-function scFiltered() {
-  const f = scDtv(dtVal('#scFrom')), t = scDtv(dtVal('#scTo', true), true), pic = $('#scPic').value, toks = $('#scQ').value.trim().toUpperCase().split(/[\s,;]+/).filter(Boolean);
-  return scAll().filter(r => (f === null || r.ts >= f) && (t === null || r.ts <= t) && (!pic || r.pic === pic) && (!toks.length || toks.some(k => r.resi.includes(k))));
+/* ---- edit & hapus satu baris ---- */
+// identitas baris = jam scan (ms) + resi; unik karena resi + jam yang sama selalu dianggap double
+const scSplitK = k => { const p = k.indexOf('|'); return [+k.slice(0, p), k.slice(p + 1)] };
+function scLoc(ts, resi) { for (const d of scans) { const r = d.r || [], t = d.t || []; for (let i = 0; i < r.length; i++) if (t[i] === ts && String(r[i]) === resi) return { d, i } } return null }
+function scNorm(d) { const r = (d.r || []).slice(), n = r.length, pad = a => Array.from({ length: n }, (_, i) => (a || [])[i] == null ? '' : a[i]); return Object.assign({}, d, { r, t: (d.t || []).slice(), p: pad(d.p), e: pad(d.e), n }) }
+function scRemoveFrom(d, i) { const c = scNorm(d); ['r', 't', 'p', 'e'].forEach(k => c[k].splice(i, 1)); c.n = c.r.length; if (!c.n) return null; c.ts = Math.min.apply(null, c.t); return c }
+function scEditRow(ts0, resi0, nw) { // mengembalikan teks galat, atau '' jika berhasil
+  const loc = scLoc(ts0, resi0); if (!loc) return 'Data tidak ditemukan (mungkin sudah diubah atau dihapus).';
+  if ((nw.resi !== resi0 || nw.ts !== ts0) && scLoc(nw.ts, nw.resi)) return 'Sudah ada data dengan resi dan jam scan yang sama.';
+  const before = scans, day0 = loc.d.day, day1 = dayWIB(nw.ts), ops = []; let next = scans.slice();
+  if (day0 === day1) { // tanggal tetap: ubah di dokumen yang sama
+    const c = scNorm(loc.d); c.r[loc.i] = nw.resi; c.t[loc.i] = nw.ts; c.p[loc.i] = nw.pic; c.e[loc.i] = nw.e; c.ts = Math.min.apply(null, c.t);
+    next = next.map(x => x === loc.d ? c : x); ops.push(['scans', 'set', c]);
+  } else { // pindah tanggal: keluarkan dari dokumen lama, masukkan ke dokumen hari baru
+    const c = scRemoveFrom(loc.d, loc.i); next = next.filter(x => x !== loc.d);
+    if (c) { next.push(c); ops.push(['scans', 'set', c]) } else ops.push(['scans', 'del', loc.d.id]);
+    const ix = x => +String(x.id).split('_').pop() || 0, tg = next.filter(x => x.day === day1).sort((a, b) => ix(a) - ix(b)), last = tg[tg.length - 1];
+    if (last && (last.r || []).length < SC_CH) { const z = scNorm(last); z.r.push(nw.resi); z.t.push(nw.ts); z.p.push(nw.pic); z.e.push(nw.e); z.n = z.r.length; z.ts = Math.min.apply(null, z.t); next = next.map(x => x === last ? z : x); ops.push(['scans', 'set', z]) }
+    else { const z = { id: 'sc_' + day1 + '_' + (tg.length ? ix(last) + 1 : 0), day: day1, ts: nw.ts, n: 1, r: [nw.resi], t: [nw.ts], p: [nw.pic], e: [nw.e], adm: me ? me.name : '' }; next.push(z); ops.push(['scans', 'set', z]) }
+  }
+  scans = next; scCache = null;
+  if (!commit(ops)) { scans = before; scCache = null; return 'Penyimpanan penuh.' }
+  return '';
 }
-const sumSc = L => sumBar([stag('Total scan', NF(L.length)), stag('Resi unik', NF(uniq(L.map(r => r.resi))))].concat(cTags(countBy(L, r => r.pic), 'PIC ')));
+function scDelRow(ts, resi) {
+  const loc = scLoc(ts, resi); if (!loc) return false;
+  const c = scRemoveFrom(loc.d, loc.i), before = scans;
+  scans = scans.filter(x => x !== loc.d).concat(c ? [c] : []); scCache = null;
+  if (!commit([c ? ['scans', 'set', c] : ['scans', 'del', loc.d.id]])) { scans = before; scCache = null; return false }
+  return true;
+}
+let scEdK = null;
+function scOpenEdit(ts, resi) {
+  const loc = scLoc(ts, resi); if (!loc) return alert('Data tidak ditemukan. Mungkin sudah diubah atau dihapus.');
+  scEdK = { ts, resi };
+  $('#scEResi').value = resi; $('#scED').value = dayWIB(ts); $('#scET').value = scT(ts); $('#scEE').value = (loc.d.e || [])[loc.i] || ''; $('#scEP').value = (loc.d.p || [])[loc.i] || '';
+  msg('#scEMsg', ''); $('#scmdl').hidden = false; $('#scEResi').focus();
+}
+$('#scET').addEventListener('input', e => { const d = e.target.value.replace(/\D/g, '').slice(0, 6); e.target.value = d.length > 4 ? d.slice(0, 2) + ':' + d.slice(2, 4) + ':' + d.slice(4) : d.length > 2 ? d.slice(0, 2) + ':' + d.slice(2) : d });
+$('#scECancel').onclick = () => { $('#scmdl').hidden = true; scEdK = null };
+$('#scmdl').addEventListener('mousedown', e => { if (e.target === $('#scmdl')) { $('#scmdl').hidden = true; scEdK = null } });
+$('#scEOk').onclick = () => {
+  if (!scEdK) return;
+  const resi = scResi($('#scEResi').value), d = $('#scED').value, t = $('#scET').value.trim(), e = UN($('#scEE').value), pic = scPic($('#scEP').value);
+  if (!resi) return msg('#scEMsg', 'No Resi wajib diisi.');
+  if (!d) return msg('#scEMsg', 'Pilih tanggal scan.');
+  const m = t.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/); if (!m || +m[1] > 23 || +m[2] > 59 || +(m[3] || 0) > 59) return msg('#scEMsg', 'Jam scan harus format 24 jam HH:MM:SS, mis. 14:30:05.');
+  const ts = scTs(d + ' ' + m[1] + ':' + m[2] + ':' + (m[3] || '00')); if (ts === null) return msg('#scEMsg', 'Tanggal / jam scan tidak valid.');
+  const er = scEditRow(scEdK.ts, scEdK.resi, { resi, ts, pic, e }); if (er) return msg('#scEMsg', er);
+  SC_NEW.delete(scEdK.ts + '|' + scEdK.resi); $('#scmdl').hidden = true; scEdK = null; renderSc(); msg('#scMsg', 'Data scan berhasil diperbarui.', true);
+};
+[$('#scEResi'), $('#scED'), $('#scET'), $('#scEE'), $('#scEP')].forEach(x => x.addEventListener('keydown', e => { if (e.key === 'Enter') $('#scEOk').click() }));
+
+/* ---- tampilan tabel ---- */
+const SCF = ['#scFromD', '#scFromT', '#scToD', '#scToT', '#scPic', '#scEks', '#scQ'];
+function scFiltered() {
+  const f = scDtv(dtVal('#scFrom')), t = scDtv(dtVal('#scTo', true), true), pic = $('#scPic').value, eks = $('#scEks').value, toks = $('#scQ').value.trim().toUpperCase().split(/[\s,;]+/).filter(Boolean);
+  return scAll().filter(r => (f === null || r.ts >= f) && (t === null || r.ts <= t) && (!pic || r.pic === pic) && (!eks || r.e === eks) && (!toks.length || toks.some(k => r.resi.includes(k))));
+}
+const sumSc = L => sumBar([stag('Total scan', NF(L.length)), stag('Resi unik', NF(uniq(L.map(r => r.resi))))].concat(cTags(countBy(L, r => r.e), 'Ekspedisi ')).concat(cTags(countBy(L, r => r.pic), 'PIC ')));
 function scTbl(list) {
-  const day = dayWIB(list[0].ts), lim = scLim[day] || SC_STEP, rest = list.length - lim;
-  return `<div class="sch"><button class="btn ghost sm" data-scdel="${day}" type="button">Hapus semua data tanggal ini</button></div><div class="tw"><table style="min-width:520px"><thead><tr><th>No</th><th>Resi</th><th>Jam Scan</th><th>PIC</th></tr></thead><tbody>${list.slice(0, lim).map((r, i) => `<tr><td>${i + 1}</td><td><b>${esc(r.resi)}</b></td><td class="nw">${scT(r.ts)}</td><td>${esc(r.pic || '-')}</td></tr>`).join('')}</tbody></table></div>` +
+  const day = dayWIB(list[0].ts), lim = scLim[day] || SC_STEP, rest = list.length - lim, grp = $('#scSort').value !== 'time';
+  const L = grp ? list.slice().sort(scCmp) : list, cnt = {}; let last = null, no = 0, rows = '';
+  if (grp) L.forEach(r => { const k = (r.e || '-') + '|' + (r.pic || '-'); cnt[k] = (cnt[k] || 0) + 1 });
+  L.slice(0, lim).forEach((r, i) => {
+    if (grp) { const k = (r.e || '-') + '|' + (r.pic || '-'); if (k !== last) { last = k; no = 0; rows += `<tr class="scg"><td colspan="6">${esc(r.e || '-')} <span class="tag">PIC: ${esc(r.pic || '-')}</span> <span class="tag">${NF(cnt[k])} data</span></td></tr>` } }
+    no = grp ? no + 1 : i + 1;
+    const k = r.ts + '|' + r.resi, nw = SC_NEW.has(k);
+    rows += `<tr${nw ? ' class="mgfill"' : ''}><td>${no}</td><td class="nw">${scDT(r.ts)}</td><td><b>${esc(r.resi)}</b>${nw ? ' <span class="tag in">Baru</span>' : ''}</td><td>${esc(r.e || '-')}</td><td>${esc(r.pic || '-')}</td><td class="nw"><button class="btn ghost sm" type="button" data-scedit="${esc(k)}">Edit</button> <button class="btn ghost sm dng" type="button" data-scrd="${esc(k)}">Hapus</button></td></tr>`;
+  });
+  return `<div class="sch"><button class="btn ghost sm" data-scdel="${day}" type="button">Hapus semua data tanggal ini</button></div><div class="tw"><table style="min-width:720px"><thead><tr><th>No</th><th>Tanggal &amp; Jam Scan</th><th>No Resi</th><th>Ekspedisi</th><th>PIC</th><th>Aksi</th></tr></thead><tbody>${rows}</tbody></table></div>` +
     (rest > 0 ? `<div class="sch"><button class="btn ghost sm" data-scmore="${day}" type="button">Tampilkan ${Math.min(SC_STEP, rest)} lagi</button><button class="btn ghost sm" data-scmore="${day}" data-all="1" type="button">Tampilkan semua (${NF(rest)} tersisa)</button></div>` : '');
 }
 function renderSc() {
-  const picSel = $('#scPic'), pv = picSel.value, pics = [...new Set(scAll().map(r => r.pic).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const all0 = scAll(), picSel = $('#scPic'), pv = picSel.value, pics = [...new Set(all0.map(r => r.pic).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   picSel.innerHTML = '<option value="">Semua</option>' + pics.map(x => `<option>${esc(x)}</option>`).join(''); picSel.value = pics.includes(pv) ? pv : '';
+  const eksSel = $('#scEks'), ev = eksSel.value, eks = [...new Set(all0.map(r => r.e).filter(Boolean))].sort((a, b) => scEksOrd(a) - scEksOrd(b) || a.localeCompare(b));
+  eksSel.innerHTML = '<option value="">Semua</option>' + eks.map(x => `<option>${esc(x)}</option>`).join(''); eksSel.value = eks.includes(ev) ? ev : '';
+  $('#scEL').innerHTML = SC_EKS.map(g => g[3]).concat(eks.filter(x => !SC_EKS.some(g => g[3] === x))).map(x => `<option value="${esc(x)}">`).join('');
+  $('#scPL').innerHTML = pics.map(x => `<option value="${esc(x)}">`).join('');
   const all = scFiltered(), today = dayWIB(Date.now()), filt = SCF.some(x => $(x).value), g = {};
   const tr = all.filter(r => dayWIB(r.ts) === today), hr = all.filter(r => dayWIB(r.ts) !== today);
   hr.forEach(r => { const d = dayWIB(r.ts), y = d.slice(0, 4), m = d.slice(5, 7); ((g[y] = g[y] || {})[m] = g[y][m] || []).push(r) });
   const isOpen = (k, dflt) => k in openState ? openState[k] : (filt || dflt);
-  let html = sumSc(all) + '<div class="dayh">Hari ini <span class="tag">' + NF(tr.length) + ' data</span></div>' + (tr.length ? scTbl(tr) : '<div class="empty">' + (scAll().length && filt ? 'Tidak ada data hari ini yang cocok dengan filter.' : 'Belum ada data scan hari ini.') + '</div>');
+  let html = sumSc(all) + '<div class="dayh">Hari ini <span class="tag">' + NF(tr.length) + ' data</span></div>' + (tr.length ? scTbl(tr) : '<div class="empty">' + (all0.length && filt ? 'Tidak ada data hari ini yang cocok dengan filter.' : 'Belum ada data scan hari ini.') + '</div>');
   if (hr.length) {
     html += '<div class="dayh" style="margin-top:24px">Riwayat <span class="tag">' + NF(hr.length) + ' data</span></div>' + Object.keys(g).sort().reverse().map(y => {
       const ms = Object.keys(g[y]).sort().reverse(), cnt = ms.reduce((n, m) => n + g[y][m].length, 0), ky = 'sy' + y;
       return `<details class="yr" data-k="${ky}" ${isOpen(ky, y === today.slice(0, 4)) ? 'open' : ''}><summary>${y} <span class="tag">${NF(cnt)} data</span></summary>` +
         ms.map(m => { const km = 'sm' + y + m; return `<details class="mo" data-k="${km}" ${isOpen(km, false) ? 'open' : ''}><summary>${BLN[+m - 1]} ${y} <span class="tag">${NF(g[y][m].length)} data</span></summary>${dayBlocks(g[y][m], dayWIB, 'sd', isOpen, d => false, scTbl)}</details>` }).join('') + '</details>';
     }).join('');
-  } else if (!tr.length && !all.length && scAll().length) html += '<div class="empty">Tidak ada data yang cocok dengan filter / pencarian.</div>';
-  if (!scAll().length) html += '<div class="empty">Belum ada data scanner. Upload file Excel di atas.</div>';
+  } else if (!tr.length && !all.length && all0.length) html += '<div class="empty">Tidak ada data yang cocok dengan filter / pencarian.</div>';
+  if (!all0.length) html += '<div class="empty">Belum ada data scanner. Upload file Excel di atas.</div>';
   $('#scGrp').innerHTML = html;
 }
 $('#scGrp').addEventListener('click', e => {
   const s = e.target.closest('summary'); if (s) { const d = s.parentElement; openState[d.dataset.k] = !d.open; return }
-  const mo = e.target.closest('[data-scmore]'), dl = e.target.closest('[data-scdel]');
+  const mo = e.target.closest('[data-scmore]'), dl = e.target.closest('[data-scdel]'), ed = e.target.closest('[data-scedit]'), rd = e.target.closest('[data-scrd]');
   if (mo) { const d = mo.dataset.scmore; scLim[d] = mo.dataset.all ? 1e9 : (scLim[d] || SC_STEP) + SC_STEP; return renderSc() }
+  if (ed) { const [ts, resi] = scSplitK(ed.dataset.scedit); return scOpenEdit(ts, resi) }
+  if (rd) {
+    const [ts, resi] = scSplitK(rd.dataset.scrd), loc = scLoc(ts, resi); if (!loc) return renderSc();
+    return askYN('Hapus data scan resi ' + resi + ' (' + scDT(ts) + ')? Data yang sudah dihapus tidak bisa dipulihkan.', () => {
+      if (!scDelRow(ts, resi)) return alert('Gagal menghapus.');
+      SC_NEW.delete(ts + '|' + resi); renderSc();
+    });
+  }
   if (dl) {
     const day = dl.dataset.scdel, docs = scans.filter(x => x.day === day), n = docs.reduce((a, x) => a + (x.r || []).length, 0);
     askYN('Hapus SEMUA ' + NF(n) + ' data scan tanggal ' + day.split('-').reverse().join('-') + '? Data yang sudah dihapus tidak bisa dipulihkan (upload ulang file Excel bila perlu).', () => {
@@ -2511,6 +2685,7 @@ $('#scGrp').addEventListener('click', e => {
 });
 let scTm = null;
 SCF.forEach(x => { $(x).addEventListener('input', () => { clearTimeout(scTm); scTm = setTimeout(renderSc, 180) }); $(x).addEventListener('change', renderSc) });
+$('#scSort').addEventListener('change', renderSc);
 $('#scReset').onclick = () => { SCF.forEach(x => $(x).value = ''); renderSc() };
 function scItems(q) { // saran ketikan resi
   if (!q || /\s/.test(q)) return []; const out = [], seen = new Set();
@@ -2520,9 +2695,9 @@ function scItems(q) { // saran ketikan resi
 bdSuggest($('#scQ'), scItems);
 $('#scXls').onclick = () => {
   if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
-  const rows = scFiltered().slice().sort((a, b) => a.ts - b.ts); if (!rows.length) return alert('Tidak ada data untuk diexport.');
-  const aoa = [['No', 'Resi', 'Tanggal', 'Jam Scan', 'PIC']].concat(rows.map((r, i) => [i + 1, r.resi, dayWIB(r.ts).split('-').reverse().join('-'), scT(r.ts), r.pic]));
-  const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols'] = [{ wch: 6 }, { wch: 26 }, { wch: 12 }, { wch: 10 }, { wch: 18 }];
+  const rows = scFiltered().slice().sort($('#scSort').value !== 'time' ? scCmp : (a, b) => a.ts - b.ts); if (!rows.length) return alert('Tidak ada data untuk diexport.');
+  const aoa = [['No', 'Tanggal & Jam Scan', 'No Resi', 'Ekspedisi', 'PIC']].concat(rows.map((r, i) => [i + 1, scDT(r.ts), r.resi, r.e, r.pic]));
+  const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols'] = [{ wch: 6 }, { wch: 21 }, { wch: 26 }, { wch: 12 }, { wch: 20 }];
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Data Scanner');
   const d = dayWIB(Date.now()).split('-'); XLSX.writeFile(wb, 'DATA SCANNER-' + d[2] + d[1] + d[0].slice(2) + '.xlsx');
 };

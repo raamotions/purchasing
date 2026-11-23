@@ -407,3 +407,10 @@ details.gp>summary::before{margin-top:2px}
 /* Data Scanner */
 .sch{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 12px}
 #sc .tw{margin:0}
+/* Data Scanner: laporan upload, baris grup Ekspedisi/PIC, tombol aksi */
+.scg td{background:var(--soft);font-weight:700;color:var(--pri2)}
+.scr td:first-child{padding-left:26px}
+.scx{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+#scRep h4{margin:18px 0 8px;font-size:14px}
+#scRep table .tag{padding:1px 8px}
+#sc td .btn.sm{padding:4px 10px;font-size:12px}
