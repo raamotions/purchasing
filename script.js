@@ -92,7 +92,8 @@ const FIREBASE_CONFIG = FIREBASE_PROJECTS[PROJ];
 const SESS = 'pp_session_' + PROJ; // sesi login dipisah per project
 
 const recPids = r => r ? (r.pids && r.pids.length ? r.pids : r.pid ? [r.pid] : []) : []; // semua id foto sebuah rekaman Purchase (data lama: hanya pid)
-let db = null, products = [], reqs = [], records = [], downloads = [], hlog = [], returns = [], rgoods = [], pstock = [], photos = {}, admins = [], me = null; // me: {username, name} atau null (tamu)
+let db = null, products = [], reqs = [], records = [], downloads = [], hlog = [], returns = [], rgoods = [], pstock = [], scans = [], photos = {}, admins = [], me = null; // me: {username, name} atau null (tamu)
+let scCache = null, scLim = {}; // Data Scanner: cache daftar baris & batas baris tampil per tanggal
 const sk = k => k === 'pp_session' ? SESS : k; // sesi login terpisah per project
 const store = {
   get(k, d) { try { const v = localStorage.getItem(sk(k)); return v ? JSON.parse(v) : d } catch (e) { return d } },
@@ -108,8 +109,8 @@ function loadLocal() {
     { id: 'p2', name: 'Tas Kanvas', variants: [] }
   ];
   reqs = store.get('pp_requests', []); records = store.get('pp_records', []); photos = store.get('pp_photos', {});
-  admins = Object.values(store.get('pp_admins', {})); downloads = store.get('pp_downloads', []); hlog = store.get('pp_hlog', []); returns = store.get('pp_returns', []); rgoods = store.get('pp_rgoods', []); pstock = store.get('pp_pstock', []); rolesCfg = store.get('pp_roles', null);
-  [['requests', reqs], ['records', records], ['downloads', downloads], ['hlog', hlog], ['returns', returns], ['rgoods', rgoods], ['pstock', pstock], ['admins', admins]].forEach(([c, a]) => fixAdm(c, a, true));
+  admins = Object.values(store.get('pp_admins', {})); downloads = store.get('pp_downloads', []); hlog = store.get('pp_hlog', []); returns = store.get('pp_returns', []); rgoods = store.get('pp_rgoods', []); pstock = store.get('pp_pstock', []); scans = store.get('pp_scans', []); scCache = null; rolesCfg = store.get('pp_roles', null);
+  [['requests', reqs], ['records', records], ['downloads', downloads], ['hlog', hlog], ['returns', returns], ['rgoods', rgoods], ['pstock', pstock], ['scans', scans], ['admins', admins]].forEach(([c, a]) => fixAdm(c, a, true));
 }
 // ---- nama admin diseragamkan: HURUF KAPITAL
 const UN = t => String(t == null ? '' : t).trim().replace(/\s+/g, ' ').toUpperCase();
@@ -127,7 +128,7 @@ function commit(ops = []) {
   if (!db) {
     const used = new Set([].concat(...records.map(recPids), ...hlog.map(h => h.pids || [])));
     Object.keys(photos).forEach(k => { if (!used.has(k)) delete photos[k] });
-    const ok = store.set('pp_products', products) && store.set('pp_requests', reqs) && store.set('pp_records', records) && store.set('pp_photos', photos) && store.set('pp_downloads', downloads) && store.set('pp_hlog', hlog) && store.set('pp_returns', returns) && store.set('pp_rgoods', rgoods) && store.set('pp_pstock', pstock) && store.set('pp_roles', rolesCfg);
+    const ok = store.set('pp_products', products) && store.set('pp_requests', reqs) && store.set('pp_records', records) && store.set('pp_photos', photos) && store.set('pp_downloads', downloads) && store.set('pp_hlog', hlog) && store.set('pp_returns', returns) && store.set('pp_rgoods', rgoods) && store.set('pp_pstock', pstock) && store.set('pp_scans', scans) && store.set('pp_roles', rolesCfg);
     if (!ok) loadLocal();
     return ok;
   }
@@ -221,6 +222,7 @@ function refresh() {
   if ($('#ow').classList.contains('on') && !(owTab === 'role' && roleDirty)) renderOw();
   if ($('#rw').classList.contains('on')) renderRw();
   if ($('#bd').classList.contains('on')) renderBd();
+  if ($('#sc').classList.contains('on')) renderSc();
   renderNotif();
 }
 function startSync() {
@@ -248,6 +250,7 @@ function startSync() {
     on('returns', (a, fc) => returns = fixAdm('returns', a, fc).sort((x, y) => y.ts - x.ts));
     on('rgoods', (a, fc) => rgoods = fixAdm('rgoods', a, fc).sort((x, y) => y.ts - x.ts));
     on('pstock', (a, fc) => pstock = fixAdm('pstock', a, fc).sort((x, y) => y.ts - x.ts));
+    on('scans', (a, fc) => { scans = fixAdm('scans', a, fc); scCache = null });
     on('settings', a => { rolesCfg = a.find(x => x.id === 'roles') || null; const w = a.find(x => x.id === 'wa'); if (w && Array.isArray(w.nums)) { waNums = w.nums; store.set('pp_wa', waNums) } applyRole() });
     on('downloads', (a, fc) => downloads = fixAdm('downloads', a, fc).sort((x, y) => y.ts - x.ts));
     on('hlog', (a, fc) => hlog = fixAdm('hlog', a, fc).sort((x, y) => y.ts - x.ts));
@@ -255,7 +258,7 @@ function startSync() {
 }
 
 /* ---------- menu & hamburger ---------- */
-const TT = { pg: ['Pengajuan', 'Hari ini tampil di atas; hari sebelumnya masuk riwayat per bulan (ganti hari pukul 00.00 WIB)'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], rt: ['Input Retur', 'Form retur / pengembalian barang'], bd: ['Laporan Retur', 'Hasil input retur marketplace, bisa diedit'], rw: ['Riwayat', 'Riwayat edit & hapus; data lama bisa dipulihkan'], ow: ['Dashboard Khusus', 'Kontrol admin & analisa pemasaran (khusus pemilik)'], dl: ['Download', 'Riwayat export Excel / PDF, bisa difilter dan diexport gabungan'], pr: ['Database Produk', 'Stok produk (Purchase, Barang Retur, upload manual / massal); kelola produk dan varian warna'], gd: ['Barang Gudang', 'Cek barang retur / cancel yang tersedia sebelum mengajukan lagi'], br: ['Barang Retur', 'Input barang retur; otomatis masuk ke Barang Gudang'] };
+const TT = { pg: ['Pengajuan', 'Hari ini tampil di atas; hari sebelumnya masuk riwayat per bulan (ganti hari pukul 00.00 WIB)'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], rt: ['Input Retur', 'Form retur / pengembalian barang'], bd: ['Laporan Retur', 'Hasil input retur marketplace, bisa diedit'], rw: ['Riwayat', 'Riwayat edit & hapus; data lama bisa dipulihkan'], ow: ['Dashboard Khusus', 'Kontrol admin & analisa pemasaran (khusus pemilik)'], dl: ['Download', 'Riwayat export Excel / PDF, bisa difilter dan diexport gabungan'], pr: ['Database Produk', 'Stok produk (Purchase, Barang Retur, upload manual / massal); kelola produk dan varian warna'], gd: ['Barang Gudang', 'Cek barang retur / cancel yang tersedia sebelum mengajukan lagi'], br: ['Barang Retur', 'Input barang retur; otomatis masuk ke Barang Gudang'], sc: ['Data Scanner', 'Upload data scan dari Excel (resi, jam scan, PIC); hari ini tampil di atas, sebelumnya masuk riwayat'] };
 function go(t) {
   if (!can(t)) { t = firstPage(); if (!t) return }
   $$('nav button[data-t]').forEach(b => b.classList.toggle('on', b.dataset.t === t));
@@ -267,6 +270,7 @@ function go(t) {
   if (t === 'ow') renderOw();
   if (t === 'rw') renderRw();
   if (t === 'bd') renderBd();
+  if (t === 'sc') renderSc();
   if (t === 'pr') { renderStock(); brLists(normName($('#usName').value)) }
   if (t === 'gd') renderGd();
   if (t === 'br') { brLists(); renderBr() }
@@ -2373,15 +2377,165 @@ async function adminCreate(rec) {
     a[rec.username] = rec; store.set('pp_admins', a); admins.push(rec);
   }
 }
+/* ---------- DATA SCANNER (khusus Owner & Packing) ---------- */
+// Satu dokumen = satu hari (WIB), maksimal SC_CH baris. Data disimpan sebagai larik paralel r (resi), t (jam scan, ms), p (PIC):
+// hemat kuota tulis (puluhan ribu scan hanya jadi beberapa dokumen) dan sesuai aturan Firestore (larik bersarang tidak boleh).
+const SC_CH = 4000, SC_STEP = 200, WIB_MS = 7 * 36e5;
+const scT = t => new Date(t + WIB_MS).toISOString().slice(11, 19); // jam scan HH:MM:SS (WIB)
+const scDtv = (s, end) => s ? Date.parse(s + (end ? ':59.999' : ':00') + '+07:00') : null; // tanggal+jam filter dibaca sebagai WIB
+const scAll = () => {
+  if (scCache) return scCache;
+  const o = []; scans.forEach(d => { const r = d.r || [], t = d.t || [], p = d.p || []; for (let i = 0; i < r.length; i++) o.push({ resi: String(r[i]), ts: t[i], pic: p[i] || '' }) });
+  return scCache = o.sort((a, b) => b.ts - a.ts);
+};
+function scTs(v, defDay) { // nilai sel Excel / teks -> timestamp (ms), jam dibaca sebagai WIB; null jika tidak terbaca
+  if (v instanceof Date) return isNaN(v) ? null : v.getTime();
+  if (typeof v === 'number') {
+    if (!isFinite(v) || v <= 0) return null;
+    if (v < 1) return defDay ? Date.parse(defDay + 'T00:00:00+07:00') + Math.round(v * 86400) * 1000 : null; // hanya jam
+    return Math.round((v - 25569) * 86400) * 1000 - WIB_MS;
+  }
+  const x = String(v == null ? '' : v).trim(); if (!x) return null;
+  if (/^\d+(\.\d+)?$/.test(x) && +x > 1) return scTs(+x, defDay);
+  const pm = /pm/i.test(x), am = /am/i.test(x);
+  let y, mo, d, h = 0, mi = 0, se = 0, a;
+  if ((a = x.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})(?:[T\s,]+(\d{1,2})[:.](\d{2})(?:[:.](\d{2}))?)?/))) { y = +a[1]; mo = +a[2]; d = +a[3]; h = +(a[4] || 0); mi = +(a[5] || 0); se = +(a[6] || 0) }
+  else if ((a = x.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})(?:[T\s,]+(\d{1,2})[:.](\d{2})(?:[:.](\d{2}))?)?/))) { d = +a[1]; mo = +a[2]; y = +a[3]; h = +(a[4] || 0); mi = +(a[5] || 0); se = +(a[6] || 0) }
+  else if ((a = x.match(/^(\d{1,2})[:.](\d{2})(?:[:.](\d{2}))?/))) { if (!defDay) return null; y = +defDay.slice(0, 4); mo = +defDay.slice(5, 7); d = +defDay.slice(8, 10); h = +a[1]; mi = +a[2]; se = +(a[3] || 0) }
+  else return null;
+  if (pm && h < 12) h += 12; if (am && h === 12) h = 0;
+  if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || se > 59) return null;
+  return Date.UTC(y, mo - 1, d, h, mi, se) - WIB_MS;
+}
+const scResi = v => (typeof v === 'number' ? (Number.isInteger(v) ? v.toLocaleString('fullwide', { useGrouping: false }) : String(v)) : String(v == null ? '' : v)).replace(/[\s'"`]+/g, '').toUpperCase();
+function scPlan(rows) { // gabungkan baris baru ke dokumen per hari; hasilnya belum disimpan
+  const by = {}; rows.forEach(r => { (by[dayWIB(r.ts)] = by[dayWIB(r.ts)] || []).push(r) });
+  const docs = {}, ops = [], pic = {}; let added = 0, dup = 0;
+  Object.keys(by).sort().forEach(day => {
+    const old = scans.filter(d => d.day === day), cur = [], seen = new Set();
+    old.forEach(d => (d.r || []).forEach((rs, i) => { const o = { resi: String(rs), ts: d.t[i], pic: (d.p || [])[i] || '' }; cur.push(o); seen.add(o.resi + '|' + o.ts + '|' + o.pic) }));
+    const fresh = by[day].filter(r => { const k = r.resi + '|' + r.ts + '|' + r.pic; if (seen.has(k)) { dup++; return false } seen.add(k); return true });
+    if (!fresh.length) return;
+    added += fresh.length; fresh.forEach(r => pic[r.pic || '-'] = (pic[r.pic || '-'] || 0) + 1);
+    const all = cur.concat(fresh).sort((a, b) => a.ts - b.ts), nd = [];
+    for (let i = 0, n = 0; i < all.length; i += SC_CH, n++) {
+      const c = all.slice(i, i + SC_CH);
+      nd.push({ id: 'sc_' + day + '_' + n, day, ts: c[0].ts, n: c.length, r: c.map(x => x.resi), t: c.map(x => x.ts), p: c.map(x => x.pic), adm: me ? me.name : '' });
+    }
+    docs[day] = nd; nd.forEach(d => ops.push(['scans', 'set', d]));
+    old.filter(d => !nd.some(x => x.id === d.id)).forEach(d => ops.push(['scans', 'del', d.id]));
+  });
+  return { docs, ops, added, dup, pic };
+}
+async function scFiles(files) {
+  if (!can('sc')) return;
+  files = files.filter(f => /\.(xlsx|xls|csv)$/i.test(f.name)); if (!files.length) return msg('#scMsg', 'Gunakan file Excel (.xlsx / .xls) atau CSV.');
+  if (!window.XLSX) return msg('#scMsg', 'Library Excel gagal dimuat. Pastikan terhubung ke internet.');
+  msg('#scMsg', 'Membaca ' + files.length + ' file...', true);
+  const defDay = $('#scDefD').value || dayWIB(Date.now()), rows = [], bad = [], inFile = new Set();
+  let dupFile = 0, nRead = 0;
+  for (const f of files) {
+    try {
+      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+      const all = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '', blankrows: false });
+      all.forEach((r, i) => {
+        if (i === 0 && scTs(r[1], defDay) === null) return; // baris judul
+        const resi = scResi(r[0]), raw = r[1], pic = UN(r[2]);
+        if (!resi && (raw === '' || raw == null) && !pic) return; // baris kosong
+        nRead++; const ln = (files.length > 1 ? f.name + ' ' : '') + 'baris ' + (i + 1);
+        if (!resi) return bad.push(ln + ': resi kosong');
+        const ts = scTs(raw, defDay); if (ts === null) return bad.push(ln + ': jam scan "' + String(raw).slice(0, 25) + '" tidak terbaca');
+        const k = resi + '|' + ts + '|' + pic; if (inFile.has(k)) { dupFile++; return } inFile.add(k);
+        rows.push({ resi, ts, pic });
+      });
+    } catch (err) { console.error(err); bad.push(f.name + ': file tidak bisa dibaca') }
+  }
+  const P = scPlan(rows), badTxt = bad.length ? ' Ditolak: ' + bad.slice(0, 4).join('; ') + (bad.length > 4 ? '; dst.' : '') + '.' : '';
+  const dupN = P.dup + dupFile, extra = (dupN ? ', ' + dupN + ' dilewati (duplikat)' : '') + (bad.length ? ', ' + bad.length + ' baris ditolak' : '');
+  if (!P.added) return msg('#scMsg', 'Tidak ada data baru yang bisa disimpan (' + nRead + ' baris terbaca' + extra + ').' + badTxt);
+  const days = Object.keys(P.docs).sort(), picTxt = Object.keys(P.pic).sort().map(k => k + ' ' + NF(P.pic[k])).join(', ');
+  if (!confirm('Simpan ' + NF(P.added) + ' data scan?\n\nTanggal: ' + days[0].split('-').reverse().join('-') + (days.length > 1 ? ' s/d ' + days[days.length - 1].split('-').reverse().join('-') + ' (' + days.length + ' hari)' : '') + '\nPIC: ' + picTxt + (dupN ? '\n' + dupN + ' dilewati (duplikat)' : '') + (bad.length ? '\n' + bad.length + ' baris ditolak' : ''))) return msg('#scMsg', 'Upload dibatalkan.');
+  const before = scans;
+  scans = scans.filter(d => !(d.day in P.docs)).concat(...Object.values(P.docs)); scCache = null;
+  if (!commit(P.ops)) { scans = before; scCache = null; return msg('#scMsg', 'Penyimpanan penuh.') }
+  renderSc();
+  msg('#scMsg', NF(P.added) + ' data scan berhasil disimpan ke menu Data Scanner' + extra + '.' + badTxt, !bad.length);
+}
+$$('[data-scpick]').forEach(b => b.onclick = () => $('#scFile').click());
+$('#scFile').onchange = e => { const f = [...e.target.files]; e.target.value = ''; scFiles(f) };
+$('#scDrop').addEventListener('dragover', e => { e.preventDefault(); $('#scDrop').classList.add('over') });
+$('#scDrop').addEventListener('dragleave', () => $('#scDrop').classList.remove('over'));
+$('#scDrop').addEventListener('drop', e => { e.preventDefault(); $('#scDrop').classList.remove('over'); scFiles([...e.dataTransfer.files]) });
+
+const SCF = ['#scFromD', '#scFromT', '#scToD', '#scToT', '#scPic', '#scQ'];
+function scFiltered() {
+  const f = scDtv(dtVal('#scFrom')), t = scDtv(dtVal('#scTo', true), true), pic = $('#scPic').value, toks = $('#scQ').value.trim().toUpperCase().split(/[\s,;]+/).filter(Boolean);
+  return scAll().filter(r => (f === null || r.ts >= f) && (t === null || r.ts <= t) && (!pic || r.pic === pic) && (!toks.length || toks.some(k => r.resi.includes(k))));
+}
+const sumSc = L => sumBar([stag('Total scan', NF(L.length)), stag('Resi unik', NF(uniq(L.map(r => r.resi))))].concat(cTags(countBy(L, r => r.pic), 'PIC ')));
+function scTbl(list) {
+  const day = dayWIB(list[0].ts), lim = scLim[day] || SC_STEP, rest = list.length - lim;
+  return `<div class="sch"><button class="btn ghost sm" data-scdel="${day}" type="button">Hapus semua data tanggal ini</button></div><div class="tw"><table style="min-width:520px"><thead><tr><th>No</th><th>Resi</th><th>Jam Scan</th><th>PIC</th></tr></thead><tbody>${list.slice(0, lim).map((r, i) => `<tr><td>${i + 1}</td><td><b>${esc(r.resi)}</b></td><td class="nw">${scT(r.ts)}</td><td>${esc(r.pic || '-')}</td></tr>`).join('')}</tbody></table></div>` +
+    (rest > 0 ? `<div class="sch"><button class="btn ghost sm" data-scmore="${day}" type="button">Tampilkan ${Math.min(SC_STEP, rest)} lagi</button><button class="btn ghost sm" data-scmore="${day}" data-all="1" type="button">Tampilkan semua (${NF(rest)} tersisa)</button></div>` : '');
+}
+function renderSc() {
+  const picSel = $('#scPic'), pv = picSel.value, pics = [...new Set(scAll().map(r => r.pic).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  picSel.innerHTML = '<option value="">Semua</option>' + pics.map(x => `<option>${esc(x)}</option>`).join(''); picSel.value = pics.includes(pv) ? pv : '';
+  const all = scFiltered(), today = dayWIB(Date.now()), filt = SCF.some(x => $(x).value), g = {};
+  const tr = all.filter(r => dayWIB(r.ts) === today), hr = all.filter(r => dayWIB(r.ts) !== today);
+  hr.forEach(r => { const d = dayWIB(r.ts), y = d.slice(0, 4), m = d.slice(5, 7); ((g[y] = g[y] || {})[m] = g[y][m] || []).push(r) });
+  const isOpen = (k, dflt) => k in openState ? openState[k] : (filt || dflt);
+  let html = sumSc(all) + '<div class="dayh">Hari ini <span class="tag">' + NF(tr.length) + ' data</span></div>' + (tr.length ? scTbl(tr) : '<div class="empty">' + (scAll().length && filt ? 'Tidak ada data hari ini yang cocok dengan filter.' : 'Belum ada data scan hari ini.') + '</div>');
+  if (hr.length) {
+    html += '<div class="dayh" style="margin-top:24px">Riwayat <span class="tag">' + NF(hr.length) + ' data</span></div>' + Object.keys(g).sort().reverse().map(y => {
+      const ms = Object.keys(g[y]).sort().reverse(), cnt = ms.reduce((n, m) => n + g[y][m].length, 0), ky = 'sy' + y;
+      return `<details class="yr" data-k="${ky}" ${isOpen(ky, y === today.slice(0, 4)) ? 'open' : ''}><summary>${y} <span class="tag">${NF(cnt)} data</span></summary>` +
+        ms.map(m => { const km = 'sm' + y + m; return `<details class="mo" data-k="${km}" ${isOpen(km, false) ? 'open' : ''}><summary>${BLN[+m - 1]} ${y} <span class="tag">${NF(g[y][m].length)} data</span></summary>${dayBlocks(g[y][m], dayWIB, 'sd', isOpen, d => false, scTbl)}</details>` }).join('') + '</details>';
+    }).join('');
+  } else if (!tr.length && !all.length && scAll().length) html += '<div class="empty">Tidak ada data yang cocok dengan filter / pencarian.</div>';
+  if (!scAll().length) html += '<div class="empty">Belum ada data scanner. Upload file Excel di atas.</div>';
+  $('#scGrp').innerHTML = html;
+}
+$('#scGrp').addEventListener('click', e => {
+  const s = e.target.closest('summary'); if (s) { const d = s.parentElement; openState[d.dataset.k] = !d.open; return }
+  const mo = e.target.closest('[data-scmore]'), dl = e.target.closest('[data-scdel]');
+  if (mo) { const d = mo.dataset.scmore; scLim[d] = mo.dataset.all ? 1e9 : (scLim[d] || SC_STEP) + SC_STEP; return renderSc() }
+  if (dl) {
+    const day = dl.dataset.scdel, docs = scans.filter(x => x.day === day), n = docs.reduce((a, x) => a + (x.r || []).length, 0);
+    askYN('Hapus SEMUA ' + NF(n) + ' data scan tanggal ' + day.split('-').reverse().join('-') + '? Data yang sudah dihapus tidak bisa dipulihkan (upload ulang file Excel bila perlu).', () => {
+      const before = scans; scans = scans.filter(x => x.day !== day); scCache = null;
+      if (!commit(docs.map(x => ['scans', 'del', x.id]))) { scans = before; scCache = null; return alert('Gagal menghapus.') }
+      renderSc();
+    });
+  }
+});
+let scTm = null;
+SCF.forEach(x => { $(x).addEventListener('input', () => { clearTimeout(scTm); scTm = setTimeout(renderSc, 180) }); $(x).addEventListener('change', renderSc) });
+$('#scReset').onclick = () => { SCF.forEach(x => $(x).value = ''); renderSc() };
+function scItems(q) { // saran ketikan resi
+  if (!q || /\s/.test(q)) return []; const out = [], seen = new Set();
+  for (const r of scAll()) { if (r.resi.toLowerCase().includes(q) && !seen.has(r.resi)) { seen.add(r.resi); out.push({ l: 'Resi', t: r.resi }); if (out.length >= 10) break } }
+  return out;
+}
+bdSuggest($('#scQ'), scItems);
+$('#scXls').onclick = () => {
+  if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
+  const rows = scFiltered().slice().sort((a, b) => a.ts - b.ts); if (!rows.length) return alert('Tidak ada data untuk diexport.');
+  const aoa = [['No', 'Resi', 'Tanggal', 'Jam Scan', 'PIC']].concat(rows.map((r, i) => [i + 1, r.resi, dayWIB(r.ts).split('-').reverse().join('-'), scT(r.ts), r.pic]));
+  const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols'] = [{ wch: 6 }, { wch: 26 }, { wch: 12 }, { wch: 10 }, { wch: 18 }];
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Data Scanner');
+  const d = dayWIB(Date.now()).split('-'); XLSX.writeFile(wb, 'DATA SCANNER-' + d[2] + d[1] + d[0].slice(2) + '.xlsx');
+};
+
 /* ---------- ROLE & HAK AKSES ---------- */
 const ROLES = ['Admin', 'Gudang', 'Picker', 'Packing', 'Owner', 'Retur', 'Tamu']; // Tamu = masuk tanpa akun
-const PAGES = { pg: 'Pengajuan', in: 'Input Barang Masuk', pu: 'Purchase', dl: 'Download', rw: 'Riwayat', pr: 'Database Produk', gd: 'Barang Gudang', rt: 'Input Retur', bd: 'Laporan Retur', br: 'Barang Retur', ow: 'Dashboard Khusus (gembok)' };
+const PAGES = { pg: 'Pengajuan', in: 'Input Barang Masuk', pu: 'Purchase', dl: 'Download', rw: 'Riwayat', pr: 'Database Produk', gd: 'Barang Gudang', rt: 'Input Retur', bd: 'Laporan Retur', br: 'Barang Retur', sc: 'Data Scanner', ow: 'Dashboard Khusus (gembok)' };
 const DEF_PERMS = {
   Admin: ['pg', 'in', 'pu', 'dl', 'rw', 'pr', 'gd', 'rt', 'bd', 'br', 'ow'],
   Gudang: ['in', 'pu', 'pr', 'gd'],
   Picker: ['pg', 'gd'],
-  Packing: ['pu', 'gd'],
-  Owner: ['pg', 'in', 'pu', 'dl', 'rw', 'pr', 'gd', 'rt', 'bd', 'br', 'ow'],
+  Packing: ['pu', 'gd', 'sc'],
+  Owner: ['pg', 'in', 'pu', 'dl', 'rw', 'pr', 'gd', 'rt', 'bd', 'br', 'sc', 'ow'],
   Retur: ['rt', 'bd', 'br', 'gd'],
   Tamu: ['pg', 'in', 'pu', 'dl', 'rw', 'pr', 'gd']
 };
@@ -2390,7 +2544,7 @@ const DEF_DESC = {
   Admin: 'Mengelola seluruh data: pengajuan, input barang masuk, purchase, download, riwayat, dan produk.',
   Gudang: 'Menerima barang masuk dan mencatat purchase; mengelola database produk dan barang gudang.',
   Picker: 'Mengambil barang sesuai pengajuan; hanya melihat dan menginput pengajuan.',
-  Packing: 'Mengecek hasil penerimaan barang (purchase) sebelum dikemas.',
+  Packing: 'Mengecek hasil penerimaan barang (purchase) sebelum dikemas dan mengelola Data Scanner (upload & cari resi).',
   Owner: 'Pemilik: akses penuh termasuk Dashboard Khusus (kontrol admin, role, dan analisa).',
   Retur: 'Menginput retur / pengembalian, mencatat barang retur ke gudang, dan memantau Laporan Retur marketplace.',
   Tamu: 'Masuk tanpa akun; nama admin tidak tercatat.'
@@ -2404,7 +2558,7 @@ const descOf = r => (rolesCfg && rolesCfg.desc && rolesCfg.desc[r]) || DEF_DESC[
 const defRole = () => (rolesCfg && rolesCfg.defRole) || 'Admin';
 const roleName = () => { if (!me) return 'Tamu'; if (me.username === SUPER.username) return 'Owner'; const a = admins.find(x => x.username === me.username); return (a && a.role) || me.role || 'Admin' };
 const can = k => roleName() === 'Owner' || permsOf(roleName()).includes(k); // Owner selalu boleh semua halaman
-const firstPage = () => ['pg', 'in', 'pu', 'rt', 'bd', 'br', 'dl', 'rw', 'pr', 'gd'].find(can);
+const firstPage = () => ['pg', 'in', 'pu', 'rt', 'bd', 'br', 'dl', 'rw', 'pr', 'gd', 'sc'].find(can);
 let superDone = false;
 async function ensureSuper() { // dibuat sekali per sesi bila belum ada; bila ada, dipastikan tetap Owner (password yang sudah diganti tidak ditimpa)
   if (superDone) return; superDone = true;

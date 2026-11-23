@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Purchasing Barang</title>
-<link rel="stylesheet" href="style.css?v=47">
+<link rel="stylesheet" href="style.css?v=48">
 </head>
 <body>
 
@@ -20,6 +20,7 @@
       <button data-t="pu">Purchase</button>
       <button data-t="dl">Download</button>
       <button data-t="rw">Riwayat</button>
+      <button data-t="sc">Data Scanner</button>
       <div class="ng" id="ngRetur" data-p="rt,bd,br"><button type="button" aria-haspopup="true">Retur ▾</button><div class="sub"><button data-t="rt">Input Retur</button><button data-t="bd">Laporan Retur</button><button data-t="br">Barang Retur</button></div></div>
       <div class="ng" id="ngProduk" data-p="pr,gd"><button type="button" aria-haspopup="true">Produk ▾</button><div class="sub"><button data-t="pr">Database Produk</button><button data-t="gd">Barang Gudang</button></div></div>
     </nav>
@@ -286,6 +287,35 @@
         <div class="xb"><button class="btn ghost sm" id="brFReset" type="button">Reset filter</button></div>
       </div>
       <div id="brList"></div>
+    </div>
+  </section>
+
+  <!-- DATA SCANNER (hanya Owner & Packing) -->
+  <section class="sec" id="sc">
+    <div class="card">
+      <h3>Upload Data Scanner</h3>
+      <p class="hint">Upload file Excel hasil scan. Susunan kolom: <b>A = Resi</b>, <b>B = Jam Scan</b> (tanggal + jam), <b>C = PIC</b>. Baris judul (baris 1) dilewati otomatis, data dibaca mulai baris 2 sampai baris terakhir. Boleh tarik banyak file sekaligus.</p>
+      <ul class="hint" style="margin:0 0 12px;padding-left:20px">
+        <li>Jam scan dibaca sebagai waktu <b>WIB</b>. Format yang dikenali: sel tanggal Excel, <code>2026-11-20 14:05:33</code>, atau <code>20/11/2026 14:05</code>.</li>
+        <li>Resi yang sama dengan jam scan dan PIC yang sama dianggap duplikat dan dilewati, jadi file yang sama aman di-upload dua kali.</li>
+        <li>Sebelum disimpan akan ada konfirmasi jumlah data.</li>
+      </ul>
+      <div class="mgdrop" id="scDrop"><b>Tarik file ke sini</b><span>atau</span><button class="btn sm" type="button" data-scpick>Pilih file</button><small>XLSX, XLS, CSV. Boleh pilih banyak file sekaligus.</small><input type="file" id="scFile" accept=".xlsx,.xls,.csv" multiple hidden></div>
+      <label>Tanggal untuk baris yang jam scan-nya tanpa tanggal <span style="font-weight:400">(opsional, kosong = hari ini)</span></label>
+      <input type="date" id="scDefD">
+      <div class="msg" id="scMsg" style="margin-top:12px"></div>
+    </div>
+    <div class="card">
+      <h3>Data Scanner</h3>
+      <p class="hint">Semua data scan dari Excel. Hari ini tampil di atas; hari sebelumnya masuk Riwayat per tahun &amp; bulan &amp; tanggal (klik panah untuk membuka / menyembunyikan).</p>
+      <div class="exf">
+        <div><label>Dari tanggal &amp; jam scan</label><div class="dt"><input type="date" id="scFromD"><input class="tm24" id="scFromT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
+        <div><label>Sampai tanggal &amp; jam scan</label><div class="dt"><input type="date" id="scToD"><input class="tm24" id="scToT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
+        <div><label>PIC</label><select id="scPic"><option value="">Semua</option></select></div>
+        <div class="xb"><button class="btn ghost sm" id="scReset" type="button">Reset filter</button><button class="btn ghost sm" id="scXls" type="button">Export Excel</button></div>
+      </div>
+      <div class="bds"><label for="scQ">Cari resi</label><input id="scQ" placeholder="Cari nomor resi (boleh tempel beberapa resi sekaligus)..." autocomplete="off" style="text-transform:uppercase"></div>
+      <div id="scGrp"></div>
     </div>
   </section>
 
@@ -643,6 +673,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="script.js?v=77"></script>
+<script src="script.js?v=78"></script>
 </body>
 </html>
