@@ -1690,13 +1690,27 @@ function bdTokoItems(q) {
   const m = new Map(); returns.forEach(r => { const t = (r.toko || '').trim(); if (t && !m.has(t.toLowerCase())) m.set(t.toLowerCase(), t) });
   return [...m.values()].filter(t => t.toLowerCase().includes(q)).sort((a, b) => a.localeCompare(b)).slice(0, 30).map(t => ({ l: '', t }));
 }
+// input Kompensasi: titik ribuan otomatis (format Indonesia), koma hanya untuk desimal, boleh minus di depan
+function kompFmt(v) {
+  v = String(v == null ? '' : v).replace(/[^\d,\-]/g, '');
+  const neg = v.charAt(0) === '-', c = v.replace(/-/g, '').indexOf(','), t = v.replace(/-/g, '');
+  let ip = c < 0 ? t : t.slice(0, c), dp = c < 0 ? null : t.slice(c + 1).replace(/,/g, '');
+  ip = ip.replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return (neg ? '-' : '') + ip + (dp === null ? '' : ',' + dp);
+}
+$('#tmKomp').addEventListener('input', e => {
+  const el = e.target, pos = el.selectionStart, keep = el.value.slice(0, pos).replace(/[^\d,\-]/g, '').length;
+  el.value = kompFmt(el.value);
+  let n = 0, i = 0; while (i < el.value.length && n < keep) { if (/[\d,\-]/.test(el.value[i])) n++; i++ }
+  try { el.setSelectionRange(i, i) } catch (x) { }
+});
 // edit & hapus
 let tEd = null;
 function openTEdit(id) {
   const r = returns.find(x => x.id === id); if (!r) return; tEd = id;
   $('#tmD').value = ymd(r.ts); $('#tmT').value = hm(r.ts); $('#tmCode').value = ''; $('#tmResi').value = r.resi; $('#tmOid').value = r.oid; $('#tmTiket').value = r.tiket || '';
   $('#tmDesk').value = r.desk || ''; $('#tmDueT').value = r.dueT || 'Cek Berkala'; $('#tmDue').value = r.due || ''; showDue('#tmDueT', '#tmDueW', '#tmDue');
-  $('#tmSt').value = r.status; $('#tmToko').value = r.toko || ''; $('#tmMp').value = r.mp || ''; $('#tmKet').value = r.ket || ''; $('#tmKomp').value = r.komp == null ? '' : r.komp; msg('#tmMsg', ''); $('#tmdl').hidden = false;
+  $('#tmSt').value = r.status; $('#tmToko').value = r.toko || ''; $('#tmMp').value = r.mp || ''; $('#tmKet').value = r.ket || ''; $('#tmKomp').value = kompFmt(r.komp == null ? '' : String(r.komp).replace('.', ',')); msg('#tmMsg', ''); $('#tmdl').hidden = false;
 }
 const closeT = () => { $('#tmdl').hidden = true; tEd = null };
 $('#tmCancel').onclick = closeT; $('#tmdl').addEventListener('mousedown', e => { if (e.target === $('#tmdl')) closeT() });
@@ -1708,7 +1722,7 @@ $('#tmSave').onclick = () => {
   if (dueT === 'Tanggal' && !due) return msg('#tmMsg', 'Pilih tanggal due date.');
   if (!d || !T24.test(t)) return msg('#tmMsg', 'Isi tanggal dan jam (format 24 jam, mis. 14:30).');
   if (returns.some(x => x.id !== r.id && x.resi === resi && x.oid === oid)) return msg('#tmMsg', 'Resi dan ID pesanan yang sama sudah ada.');
-  const kRaw = $('#tmKomp').value.trim(), komp = kRaw === '' ? 0 : Number(kRaw);
+  const kRaw = $('#tmKomp').value.trim().replace(/\./g, '').replace(',', '.'), komp = kRaw === '' ? 0 : Number(kRaw);
   if (!isFinite(komp)) return msg('#tmMsg', 'Kompensasi harus berupa angka (boleh minus atau 0).');
   const dtCh = d !== ymd(r.ts) || t !== hm(r.ts);
   if (dtCh && !codeOk('#tmCode')) return msg('#tmMsg', 'Mengubah tanggal / jam wajib memakai kode 6 digit yang benar.');
