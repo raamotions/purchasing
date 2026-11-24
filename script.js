@@ -37,8 +37,8 @@ const BLN = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Ag
 const HARI = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 const dayLbl = d => HARI[new Date(Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10))).getUTCDay()] + ', ' + (+d.slice(8, 10)) + ' ' + BLN[+d.slice(5, 7) - 1] + ' ' + d.slice(0, 4);
 // kelompokkan per tanggal (terbaru di atas) menjadi panah harian di dalam bulan
-const dayBlocks = (list, dayFn, pre, isOpen, dflt, tblFn) => { const o = {}; list.forEach(r => { const d = dayFn(r.ts); (o[d] = o[d] || []).push(r) });
-  return Object.keys(o).sort().reverse().map(d => { const k = pre + d; return `<details class="dy" data-k="${k}" ${isOpen(k, dflt(d)) ? 'open' : ''}><summary>${dayLbl(d)} <span class="tag">${o[d].length} data</span></summary>${tblFn(o[d])}</details>` }).join('') };
+const dayBlocks = (list, dayFn, pre, isOpen, dflt, tblFn, xFn) => { const o = {}; list.forEach(r => { const d = dayFn(r.ts); (o[d] = o[d] || []).push(r) });
+  return Object.keys(o).sort().reverse().map(d => { const k = pre + d; return `<details class="dy" data-k="${k}" ${isOpen(k, dflt(d)) ? 'open' : ''}><summary>${dayLbl(d)} <span class="tag">${o[d].length} data</span>${xFn ? xFn(o[d]) : ''}</summary>${tblFn(o[d])}</details>` }).join('') };
 const stat = (a, m) => a === m ? '<b class="okc">✓</b>' : '<b class="badc">✕</b>';
 const msg = (id, t, ok) => { const m = $(id); m.textContent = t; m.className = 'msg' + (ok ? ' ok' : '') };
 
@@ -2660,18 +2660,21 @@ $('#scEOk').onclick = () => {
 [$('#scEResi'), $('#scED'), $('#scET'), $('#scEE'), $('#scEP')].forEach(x => x.addEventListener('keydown', e => { if (e.key === 'Enter') $('#scEOk').click() }));
 
 /* ---- tampilan tabel ---- */
-const SCF = ['#scFromD', '#scFromT', '#scToD', '#scToT', '#scPic', '#scEks', '#scQ'];
+const SCF = ['#scFromD', '#scFromT', '#scToD', '#scToT', '#scPic', '#scEks', '#scQ', '#scDup'];
 function scFiltered() {
+  const dm = scDupMap(), dup = $('#scDup').value;
   const f = scDtv(dtVal('#scFrom')), t = scDtv(dtVal('#scTo', true), true), pic = $('#scPic').value, eks = $('#scEks').value, toks = $('#scQ').value.trim().toUpperCase().split(/[\s,;]+/).filter(Boolean);
-  return scAll().filter(r => (f === null || r.ts >= f) && (t === null || r.ts <= t) && (!pic || r.pic === pic) && (!eks || r.e === eks) && (!toks.length || toks.some(k => r.resi.includes(k))));
+  return scAll().filter(r => (f === null || r.ts >= f) && (t === null || r.ts <= t) && (!pic || r.pic === pic) && (!eks || r.e === eks) && (!toks.length || toks.some(k => r.resi.includes(k))) && (!dup || (dup === 'd' ? dm.get(r.resi) > 1 : dm.get(r.resi) === 1)));
 }
-const sumSc = L => sumBar([stag('Total scan', NF(L.length)), stag('Resi unik', NF(uniq(L.map(r => r.resi))))].concat(cTags(countBy(L, r => r.e), 'Ekspedisi ')).concat(cTags(countBy(L, r => r.pic), 'PIC ')));
+const scDupN = L => { const dm = scDupMap(), s = new Set(); L.forEach(r => { if (dm.get(r.resi) > 1) s.add(r.resi) }); return s.size };
+const sumSc = L => sumBar([stag('Total scan', NF(L.length)), stag('Resi unik', NF(uniq(L.map(r => r.resi)))), stag('Resi double', NF(scDupN(L)), scDupN(L) ? 'ed' : '')].concat(cTags(countBy(L, r => r.e), 'Ekspedisi ')).concat(cTags(countBy(L, r => r.pic), 'PIC ')));
 let scDupC = null, scDupK = null;
+function scDupTag(L) { const dm = scDupMap(), s = new Set(); L.forEach(r => { if (dm.get(r.resi) > 1) s.add(r.resi) }); return s.size ? ' <span class="tag ed">' + NF(s.size) + ' resi double</span>' : ' <span class="tag">0 resi double</span>' }
 function scDupMap() { const a = scAll(); if (scDupK === a && scDupC) return scDupC; const m = new Map(); a.forEach(r => m.set(r.resi, (m.get(r.resi) || 0) + 1)); scDupK = a; return scDupC = m }
 function scTbl(list) {
   const dm = scDupMap();
-  const day = dayWIB(list[0].ts), lim = scLim[day] || SC_STEP, rest = list.length - lim, grp = $('#scSort').value !== 'time';
-  const L = grp ? list.slice().sort(scCmp) : list, cnt = {}; let last = null, no = 0, rows = '';
+  const day = dayWIB(list[0].ts), lim = scLim[day] || SC_STEP, rest = list.length - lim, grp = $('#scSort').value !== 'time' && $('#scDup').value !== 'd';
+  const L = grp ? list.slice().sort(scCmp) : $('#scDup').value === 'd' ? list.slice().sort((a, b) => a.resi < b.resi ? -1 : a.resi > b.resi ? 1 : a.ts - b.ts) : list, cnt = {}; let last = null, no = 0, rows = '';
   if (grp) L.forEach(r => { const k = (r.e || '-') + '|' + (r.pic || '-'); cnt[k] = (cnt[k] || 0) + 1 });
   L.slice(0, lim).forEach((r, i) => {
     if (grp) { const k = (r.e || '-') + '|' + (r.pic || '-'); if (k !== last) { last = k; no = 0; rows += `<tr class="scg"><td colspan="6">${esc(r.e || '-')} <span class="tag">PIC: ${esc(r.pic || '-')}</span> <span class="tag">${NF(cnt[k])} data</span></td></tr>` } }
@@ -2694,12 +2697,12 @@ function renderSc() {
   const tr = all.filter(r => dayWIB(r.ts) === today), hr = all.filter(r => dayWIB(r.ts) !== today);
   hr.forEach(r => { const d = dayWIB(r.ts), y = d.slice(0, 4), m = d.slice(5, 7); ((g[y] = g[y] || {})[m] = g[y][m] || []).push(r) });
   const isOpen = (k, dflt) => k in openState ? openState[k] : (filt || dflt);
-  let html = sumSc(all) + '<div class="dayh">Hari ini <span class="tag">' + NF(tr.length) + ' data</span></div>' + (tr.length ? scTbl(tr) : '<div class="empty">' + (all0.length && filt ? 'Tidak ada data hari ini yang cocok dengan filter.' : 'Belum ada data scan hari ini.') + '</div>');
+  let html = sumSc(all) + '<div class="dayh">Hari ini <span class="tag">' + NF(tr.length) + ' data</span>' + scDupTag(tr) + '</div>' + (tr.length ? scTbl(tr) : '<div class="empty">' + (all0.length && filt ? 'Tidak ada data hari ini yang cocok dengan filter.' : 'Belum ada data scan hari ini.') + '</div>');
   if (hr.length) {
     html += '<div class="dayh" style="margin-top:24px">Riwayat <span class="tag">' + NF(hr.length) + ' data</span></div>' + Object.keys(g).sort().reverse().map(y => {
       const ms = Object.keys(g[y]).sort().reverse(), cnt = ms.reduce((n, m) => n + g[y][m].length, 0), ky = 'sy' + y;
       return `<details class="yr" data-k="${ky}" ${isOpen(ky, y === today.slice(0, 4)) ? 'open' : ''}><summary>${y} <span class="tag">${NF(cnt)} data</span></summary>` +
-        ms.map(m => { const km = 'sm' + y + m; return `<details class="mo" data-k="${km}" ${isOpen(km, false) ? 'open' : ''}><summary>${BLN[+m - 1]} ${y} <span class="tag">${NF(g[y][m].length)} data</span></summary>${dayBlocks(g[y][m], dayWIB, 'sd', isOpen, d => false, scTbl)}</details>` }).join('') + '</details>';
+        ms.map(m => { const km = 'sm' + y + m; return `<details class="mo" data-k="${km}" ${isOpen(km, false) ? 'open' : ''}><summary>${BLN[+m - 1]} ${y} <span class="tag">${NF(g[y][m].length)} data</span></summary>${dayBlocks(g[y][m], dayWIB, 'sd', isOpen, d => false, scTbl, scDupTag)}</details>` }).join('') + '</details>';
     }).join('');
   } else if (!tr.length && !all.length && all0.length) html += '<div class="empty">Tidak ada data yang cocok dengan filter / pencarian.</div>';
   if (!all0.length) html += '<div class="empty">Belum ada data scanner. Upload file Excel di atas.</div>';
@@ -2738,7 +2741,7 @@ function scItems(q) { // saran ketikan resi
 bdSuggest($('#scQ'), scItems);
 $('#scPdf').onclick = () => {
   if (!window.jspdf) return alert('Library PDF gagal dimuat. Pastikan terhubung ke internet.');
-  const rows = scFiltered().slice().sort($('#scSort').value !== 'time' ? scCmp : (a, b) => a.ts - b.ts); if (!rows.length) return alert('Tidak ada data untuk diexport.');
+  const rows = scFiltered().slice().sort($('#scDup').value === 'd' ? (a, b) => a.resi < b.resi ? -1 : a.resi > b.resi ? 1 : a.ts - b.ts : $('#scSort').value !== 'time' ? scCmp : (a, b) => a.ts - b.ts); if (!rows.length) return alert('Tidak ada data untuk diexport.');
   const dc = scDupMap(), doc = new jspdf.jsPDF({ orientation: 'portrait' });
   doc.setFontSize(14); doc.text('Data Scanner', 14, 14); doc.setFontSize(9); doc.text(NF(rows.length) + ' data · dicetak ' + scDT(Date.now()), 14, 20);
   doc.autoTable({ startY: 24, headStyles: { fillColor: [74, 123, 208] }, styles: { fontSize: 8 }, head: [['No', 'No Resi', 'Waktu Scan', 'PIC', 'Ekspedisi', 'Ket.']],
@@ -2748,7 +2751,7 @@ $('#scPdf').onclick = () => {
 };
 $('#scXls').onclick = () => {
   if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
-  const rows = scFiltered().slice().sort($('#scSort').value !== 'time' ? scCmp : (a, b) => a.ts - b.ts); if (!rows.length) return alert('Tidak ada data untuk diexport.');
+  const rows = scFiltered().slice().sort($('#scDup').value === 'd' ? (a, b) => a.resi < b.resi ? -1 : a.resi > b.resi ? 1 : a.ts - b.ts : $('#scSort').value !== 'time' ? scCmp : (a, b) => a.ts - b.ts); if (!rows.length) return alert('Tidak ada data untuk diexport.');
   const aoa = [['No', 'No Resi', 'Waktu Scan', 'PIC', 'Ekspedisi']].concat(rows.map((r, i) => [i + 1, r.resi, scDT(r.ts), r.pic, r.e]));
   const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols'] = [{ wch: 6 }, { wch: 26 }, { wch: 21 }, { wch: 22 }, { wch: 12 }];
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Data Scanner');
