@@ -1255,6 +1255,69 @@ function puPdf(rows) {
   const fn = puFn(rows, 'pdf'); doc.save(fn); puLog(rows, S, 'PDF', fn);
 }
 $('#xXls').onclick = () => puExcel(filtered());
+/* ---------- UPLOAD EXCEL PURCHASE: file hasil Export Excel menu Purchase -> digabung jadi data Purchase (grup hari + tahap + asal + admin) ---------- */
+const srcCanon = s => { const t = String(s == null ? '' : s).trim().replace(/\s+/g, ' '); return (typeof SRC !== 'undefined' && SRC.find(x => UN(x) === UN(t))) || t };
+function puReadSheets(wb) { // -> {items, bad}; item: {ts, sj, prod, vn, got, min, src, adm, tahap, ln}
+  const items = [], bad = [];
+  wb.SheetNames.forEach(sh => {
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sh], { header: 1, raw: true, defval: '' });
+    let src = '', adm = '', tahap = 0, cols = null;
+    rows.forEach((r, i) => {
+      const c0 = String(r[0] == null ? '' : r[0]).trim(), ln = i + 1;
+      if (/^asal barang\s*:/i.test(c0)) { const m = c0.match(/^asal barang\s*:\s*(.*?)\s*(?:nama admin\s*:\s*(.*))?$/i); src = m ? srcCanon(m[1]) : ''; adm = m && m[2] ? UN(m[2]) : ''; return }
+      if (/^pengajuan\s*:/i.test(c0)) { const m = c0.match(/(\d+)/); tahap = m ? +m[1] : 0; return }
+      const low = r.map(x => String(x == null ? '' : x).trim().toLowerCase());
+      if (low.includes('nama produk') && low.includes('varian')) { cols = { tgl: low.indexOf('tanggal'), sj: low.findIndex(x => x.includes('surat jalan')), prod: low.indexOf('nama produk'), vn: low.indexOf('varian'), q: low.findIndex(x => x.includes('ada')), asal: low.indexOf('asal') }; return }
+      if (!cols) return;
+      const prod = normName(r[cols.prod]); if (!prod) return;
+      const tg = String(r[cols.tgl] == null ? '' : r[cols.tgl]).trim(), m = tg.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+      const q = String(r[cols.q] == null ? '' : r[cols.q]).match(/(\d+)\s*\/\s*(\d+)/);
+      if (!m || !q) return bad.push({ ln, sh, why: !m ? 'tanggal "' + tg + '" tidak terbaca' : 'kolom Ada / Diminta tidak terbaca', prod });
+      const ts = Date.UTC(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0)) - 7 * 36e5, sj = String(cols.sj >= 0 && r[cols.sj] != null ? r[cols.sj] : '').trim();
+      items.push({ ts, sj: sj === '-' ? '' : sj, prod, vn: normName(r[cols.vn]) === '-' ? '' : normName(r[cols.vn]), got: +q[1], min: +q[2], src: srcCanon(cols.asal >= 0 && r[cols.asal] ? r[cols.asal] : src), adm, tahap, ln, sh });
+    });
+  });
+  return { items, bad };
+}
+function puImportPlan(items, dry) { // dry = hanya hitung ringkasan, tidak mengubah data
+  const RQ = dry ? reqs.map(x => Object.assign({}, x)) : reqs, RC = dry ? records.slice() : records, ops = [], pOps = new Map(); let nRec = 0, nReq = 0, dup = 0;
+  const myName = me ? me.name : '', gids = {};
+  items.slice().sort((a, b) => a.ts - b.ts).forEach(it => {
+    const adm = (!seeAll() || !it.adm || /[,;]/.test(it.adm)) ? myName : it.adm, day = dayWIB(it.ts), th = it.tahap || 0;
+    let q = RQ.find(r => normName(r.prod) === it.prod && (r.vn || '') === it.vn && (r.src || '') === it.src && (r.adm || '') === adm && (Number(r.tahap) || 0) === th && dayWIB(r.ts) === day);
+    if (q && RC.some(x => x.rid === q.id && x.ts === it.ts && (x.sj || '') === it.sj && (Number(x.got) || 0) === it.got)) { dup++; return } // sudah pernah diupload
+    if (!q) {
+      const e = dry ? { p: { id: '', name: it.prod }, vc: '' } : ensureProd(it.prod, it.vn); if (e.changed) pOps.set(e.p.id, e.p);
+      q = { id: uid(), ts: it.ts, pid: e.p.id, prod: e.p.name, vn: it.vn, vc: e.vc, min: Math.max(it.min, it.got, 1), ada: 0, src: it.src, adm, tahap: th, hist: [{ ts: it.ts, n: Math.max(it.min, it.got, 1) }] };
+      RQ.unshift(q); nReq++;
+    }
+    const v = Math.max(0, Math.min(it.got, q.min - q.ada)); q.ada += v;
+    const gk = it.ts + '|' + it.sj, gid = gids[gk] = gids[gk] || uid();
+    const rec = { id: uid(), ts: it.ts, sj: it.sj, prod: q.prod, vn: q.vn, vc: q.vc, ada: q.ada, min: q.min, src: q.src, adm, pid: '', pids: [], rid: q.id, got: v, tahap: th, gid };
+    RC.unshift(rec); nRec++; ops.push(['requests', 'set', q], ['records', 'set', rec]);
+  });
+  pOps.forEach(p => ops.unshift(['products', 'set', p]));
+  return { ops, nRec, nReq, dup };
+}
+async function puFiles(files) {
+  files = [...files].filter(f => /\.(xlsx|xls|csv)$/i.test(f.name)); if (!files.length) return alert('Gunakan file Excel (.xlsx / .xls) hasil Export Excel menu Purchase.');
+  if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
+  let items = [], bad = [];
+  for (const f of files) { try { const r = puReadSheets(XLSX.read(await f.arrayBuffer(), { type: 'array' })); items = items.concat(r.items); bad = bad.concat(r.bad.map(b => Object.assign(b, { f: f.name }))) } catch (e) { console.error(e); bad.push({ f: f.name, ln: 0, sh: '', why: 'file tidak bisa dibaca', prod: '' }) } }
+  if (!items.length) return alert('Tidak ada baris Purchase yang terbaca. Pastikan file hasil Export Excel menu Purchase (ada kolom Nama Produk, Varian, Ada / Diminta).' + (bad.length ? '\n' + bad.slice(0, 5).map(b => b.f + ' baris ' + b.ln + ': ' + b.why).join('\n') : ''));
+  const dupN = puImportPlan(items, true);
+  askYN('Import ' + NF(dupN.nRec) + ' data Purchase dari ' + files.length + ' file' + (dupN.nReq ? ' (' + NF(dupN.nReq) + ' pengajuan baru dibuat karena belum ada)' : '') + (dupN.dup ? ', ' + NF(dupN.dup) + ' dilewati karena sudah ada' : '') + (bad.length ? ', ' + NF(bad.length) + ' baris tidak terbaca' : '') + '? Data akan masuk ke menu Purchase sebagai grup per hari, tahap, asal barang & admin.', () => {
+    const P = puImportPlan(items);
+    if (!P.nRec) return alert('Tidak ada data baru (semua sudah ada).');
+    if (!commit(P.ops)) return alert('Penyimpanan penuh.');
+    PI = null; refresh(); alert('✓ ' + NF(P.nRec) + ' data Purchase berhasil diimport' + (P.dup ? ' (' + NF(P.dup) + ' dilewati karena sudah ada)' : '') + '.');
+  });
+}
+$('#xUp').onclick = () => $('#xUpF').click();
+$('#xUpF').onchange = e => { const f = [...e.target.files]; e.target.value = ''; puFiles(f) };
+$('#pu').addEventListener('dragover', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) e.preventDefault() });
+$('#pu').addEventListener('drop', e => { if (e.dataTransfer && e.dataTransfer.files.length) { e.preventDefault(); puFiles(e.dataTransfer.files) } });
+
 $('#xPdf').onclick = () => puPdf(filtered());
 
 /* ---------- DOWNLOAD (riwayat export) ---------- */
