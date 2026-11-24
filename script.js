@@ -2666,7 +2666,10 @@ function scFiltered() {
   return scAll().filter(r => (f === null || r.ts >= f) && (t === null || r.ts <= t) && (!pic || r.pic === pic) && (!eks || r.e === eks) && (!toks.length || toks.some(k => r.resi.includes(k))));
 }
 const sumSc = L => sumBar([stag('Total scan', NF(L.length)), stag('Resi unik', NF(uniq(L.map(r => r.resi))))].concat(cTags(countBy(L, r => r.e), 'Ekspedisi ')).concat(cTags(countBy(L, r => r.pic), 'PIC ')));
+let scDupC = null, scDupK = null;
+function scDupMap() { const a = scAll(); if (scDupK === a && scDupC) return scDupC; const m = new Map(); a.forEach(r => m.set(r.resi, (m.get(r.resi) || 0) + 1)); scDupK = a; return scDupC = m }
 function scTbl(list) {
+  const dm = scDupMap();
   const day = dayWIB(list[0].ts), lim = scLim[day] || SC_STEP, rest = list.length - lim, grp = $('#scSort').value !== 'time';
   const L = grp ? list.slice().sort(scCmp) : list, cnt = {}; let last = null, no = 0, rows = '';
   if (grp) L.forEach(r => { const k = (r.e || '-') + '|' + (r.pic || '-'); cnt[k] = (cnt[k] || 0) + 1 });
@@ -2674,7 +2677,8 @@ function scTbl(list) {
     if (grp) { const k = (r.e || '-') + '|' + (r.pic || '-'); if (k !== last) { last = k; no = 0; rows += `<tr class="scg"><td colspan="6">${esc(r.e || '-')} <span class="tag">PIC: ${esc(r.pic || '-')}</span> <span class="tag">${NF(cnt[k])} data</span></td></tr>` } }
     no = grp ? no + 1 : i + 1;
     const k = r.ts + '|' + r.resi, nw = SC_NEW.has(k);
-    rows += `<tr${nw ? ' class="mgfill"' : ''}><td>${no}</td><td><b>${esc(r.resi)}</b>${nw ? ' <span class="tag in">Baru</span>' : ''}</td><td class="nw">${scDT(r.ts)}</td><td>${esc(r.pic || '-')}</td><td>${esc(r.e || '-')}</td><td class="nw"><button class="btn ghost sm" type="button" data-scedit="${esc(k)}">Edit</button> <button class="btn ghost sm dng" type="button" data-scrd="${esc(k)}">Hapus</button></td></tr>`;
+    const dn = dm.get(r.resi) || 1;
+    rows += `<tr${nw ? ' class="mgfill"' : dn > 1 ? ' class="scdup"' : ''}><td>${no}</td><td><b>${esc(r.resi)}</b>${nw ? ' <span class="tag in">Baru</span>' : ''}${dn > 1 ? ' <span class="tag ed" title="No. Resi ini muncul ' + dn + ' kali di Data Scanner">Double ' + dn + 'x</span>' : ''}</td><td class="nw">${scDT(r.ts)}</td><td>${esc(r.pic || '-')}</td><td>${esc(r.e || '-')}</td><td class="nw"><button class="btn ghost sm" type="button" data-scedit="${esc(k)}">Edit</button> <button class="btn ghost sm dng" type="button" data-scrd="${esc(k)}">Hapus</button></td></tr>`;
   });
   return `<div class="sch"><button class="btn ghost sm" data-scdel="${day}" type="button">Hapus semua data tanggal ini</button></div><div class="tw"><table style="min-width:720px"><thead><tr><th>No</th><th>No Resi</th><th>Waktu Scan</th><th>PIC</th><th>Ekspedisi</th><th>Aksi</th></tr></thead><tbody>${rows}</tbody></table></div>` +
     (rest > 0 ? `<div class="sch"><button class="btn ghost sm" data-scmore="${day}" type="button">Tampilkan ${Math.min(SC_STEP, rest)} lagi</button><button class="btn ghost sm" data-scmore="${day}" data-all="1" type="button">Tampilkan semua (${NF(rest)} tersisa)</button></div>` : '');
@@ -2732,14 +2736,15 @@ function scItems(q) { // saran ketikan resi
   return out;
 }
 bdSuggest($('#scQ'), scItems);
-$('#scDelAll').onclick = () => {
-  if (!can('sc')) return;
-  const docs = scans.slice(), n = docs.reduce((a, x) => a + (x.r || []).length, 0); if (!docs.length) return alert('Tidak ada data Data Scanner.');
-  askYN('Hapus SEMUA ' + NF(n) + ' data Data Scanner (semua tanggal)? Tidak bisa dipulihkan. Setelah ini Anda bisa upload ulang file.', () => {
-    const before = scans; scans = []; scCache = null;
-    if (!commit(docs.map(x => ['scans', 'del', x.id]))) { scans = before; scCache = null; return alert('Gagal menghapus.') }
-    SC_NEW = new Set(); renderSc(); msg('#scMsg', '✓ Semua data Data Scanner sudah dihapus. Silakan upload ulang.', true);
-  });
+$('#scPdf').onclick = () => {
+  if (!window.jspdf) return alert('Library PDF gagal dimuat. Pastikan terhubung ke internet.');
+  const rows = scFiltered().slice().sort($('#scSort').value !== 'time' ? scCmp : (a, b) => a.ts - b.ts); if (!rows.length) return alert('Tidak ada data untuk diexport.');
+  const dc = scDupMap(), doc = new jspdf.jsPDF({ orientation: 'portrait' });
+  doc.setFontSize(14); doc.text('Data Scanner', 14, 14); doc.setFontSize(9); doc.text(NF(rows.length) + ' data · dicetak ' + scDT(Date.now()), 14, 20);
+  doc.autoTable({ startY: 24, headStyles: { fillColor: [74, 123, 208] }, styles: { fontSize: 8 }, head: [['No', 'No Resi', 'Waktu Scan', 'PIC', 'Ekspedisi', 'Ket.']],
+    body: rows.map((r, i) => [i + 1, r.resi, scDT(r.ts), r.pic, r.e, dc.get(r.resi) > 1 ? 'Double (' + dc.get(r.resi) + 'x)' : '']),
+    didParseCell: d => { if (d.section === 'body' && d.row.raw[5]) d.cell.styles.fillColor = [255, 244, 214] } });
+  doc.save('Data Scanner ' + dayWIB(Date.now()) + '.pdf');
 };
 $('#scXls').onclick = () => {
   if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');

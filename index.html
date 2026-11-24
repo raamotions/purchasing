@@ -315,7 +315,7 @@
         <div><label>Dari tanggal &amp; jam scan</label><div class="dt"><input type="date" id="scFromD"><input class="tm24" id="scFromT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
         <div><label>Sampai tanggal &amp; jam scan</label><div class="dt"><input type="date" id="scToD"><input class="tm24" id="scToT" placeholder="HH:MM" inputmode="numeric" maxlength="5" autocomplete="off" title="Format 24 jam, mis. 14:30"></div></div>
         <div><label>PIC</label><select id="scPic"><option value="">Semua</option></select></div><div><label>Ekspedisi</label><select id="scEks"><option value="">Semua</option></select></div><div><label>Urutan tampilan</label><select id="scSort"><option value="grp">Ekspedisi → PIC → jam scan</option><option value="time">Jam scan (terbaru dulu)</option></select></div>
-        <div class="xb"><button class="btn ghost sm" id="scReset" type="button">Reset filter</button><button class="btn ghost sm" id="scXls" type="button">Export Excel</button><button class="btn ghost sm dng" id="scDelAll" type="button">Hapus semua data</button></div>
+        <div class="xb"><button class="btn ghost sm" id="scReset" type="button">Reset filter</button><button class="btn ghost sm" id="scXls" type="button">Export Excel</button><button class="btn ghost sm" id="scPdf" type="button">Export PDF</button></div>
       </div>
       <div class="bds"><label for="scQ">Cari resi</label><input id="scQ" placeholder="Cari nomor resi (boleh tempel beberapa resi sekaligus)..." autocomplete="off" style="text-transform:uppercase"></div>
       <div id="scGrp"></div>
@@ -687,6 +687,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="script.js?v=81"></script>
+<script src="script.js?v=82"></script>
 </body>
 </html>
