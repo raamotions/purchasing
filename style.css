@@ -415,3 +415,4 @@ details.gp>summary::before{margin-top:2px}
 #scRep table .tag{padding:1px 8px}
 #sc td .btn.sm{padding:4px 10px;font-size:12px}
 .scdup{background:#fff8e1}
+.rchk{display:flex;flex-wrap:wrap;gap:4px 10px;min-width:170px}.rc{display:flex;align-items:center;gap:4px;margin:0;font-size:13px;font-weight:500;color:inherit;white-space:nowrap}.rc input{width:auto;margin:0}

@@ -288,14 +288,14 @@ $$('select[data-src]').forEach(s => {
   s.innerHTML = `<option value="">${s.dataset.src}</option>` + SRC.map(x => `<option>${x}</option>`).join('');
 });
 // pembatasan data per admin: hanya Owner & Retur yang boleh melihat data semua admin; role lain hanya melihat data miliknya sendiri
-const seeAll = () => { const r = roleName(); return r === 'Owner' || r === 'Retur' };
+const seeAll = () => hasRole('Owner') || hasRole('Retur');
 const mine = x => seeAll() || (x.adm || '') === (me ? me.name : '');
-const retRole = () => roleName() === 'Retur' || roleName() === 'Owner'; // filter Nama Admin di menu Retur: role Retur (dan Owner)
+const retRole = () => hasRole('Retur') || hasRole('Owner'); // filter Nama Admin di menu Retur: role Retur (dan Owner)
 const retAdmF = id => retRole() ? $(id).value : '';
-const admF = id => roleName() === 'Owner' ? $(id).value : ''; // filter Nama Admin hanya berlaku untuk Owner
+const admF = id => hasRole('Owner') ? $(id).value : ''; // filter Nama Admin hanya berlaku untuk Owner
 function fillAdm() { // daftar nama admin = akun terdaftar + nama yang sudah tercatat di data (non-Owner/Retur: hanya namanya sendiri)
   const names = seeAll() ? [...new Set(admins.map(a => a.name).concat(reqs.map(r => r.adm), records.map(r => r.adm), downloads.map(r => r.adm), hlog.map(r => r.adm), returns.map(r => r.adm), rgoods.map(r => r.adm)).filter(Boolean))].sort((a, b) => a.localeCompare(b)) : (me && me.name ? [me.name] : []);
-  $$('.ownadm').forEach(w => w.hidden = roleName() !== 'Owner');
+  $$('.ownadm').forEach(w => w.hidden = !hasRole('Owner'));
   $$('.retadm').forEach(w => w.hidden = !retRole());
   $$('select[data-adm]').forEach(s => {
     const v = s.value;
@@ -1760,7 +1760,7 @@ function openTDetail(id) {
     ['Deskripsi', esc(r.desk || '-')], ['Keterangan', esc(r.ket || '-')], ['Kompensasi', '<span class="' + ((r.komp || 0) < 0 ? 'late' : '') + '">' + rp(r.komp) + '</span>'], ['Admin', esc(r.adm || '-')]
   ];
   $('#tdBody').innerHTML = '<div class="dl2">' + rows.map(([k, v]) => '<div class="k">' + k + '</div><div class="v">' + v + '</div>').join('') + '</div>';
-  $('#tdWa').hidden = roleName() !== 'Owner'; // tombol reminder WhatsApp hanya untuk Owner
+  $('#tdWa').hidden = !hasRole('Owner'); // tombol reminder WhatsApp hanya untuk Owner
   $('#tdmdl').hidden = false;
 }
 const closeTD = () => { $('#tdmdl').hidden = true; tdId = null };
@@ -1778,8 +1778,7 @@ const dueDiff = r => { // selisih hari (WIB) antara due date dan hari ini; null 
 };
 function renderNotif() {
   const box = $('#notif'); if (!box) return;
-  const rl = roleName();
-  if (rl !== 'Retur' && rl !== 'Owner') { box.innerHTML = ''; return }
+  if (!hasRole('Retur') && !hasRole('Owner')) { box.innerHTML = ''; return }
   const L = returns.filter(r => r.status !== 'Done' && r.status !== 'Failed').map(r => ({ r, d: dueDiff(r) }))
     .filter(x => x.d !== null && x.d >= 0 && x.d <= 2 && !ntHide.has(x.r.id + ':' + x.d)).sort((a, b) => a.d - b.d || a.r.ts - b.r.ts);
   box.innerHTML = L.map(({ r, d }) => `<div class="nt ${d === 2 ? 'y' : d === 1 ? 'r' : 'rr'}" data-nt="${r.id}"><div class="ntt"><b>${d === 0 ? 'HARI H · Deadline hari ini' : 'H-' + d + ' · Deadline ' + (d === 1 ? 'besok' : '2 hari lagi')}</b><span>${esc(r.toko || '-')} · Resi ${esc(r.resi)} · ID ${esc(r.oid)} · ${esc(dueTxt(r))}</span></div><button class="ntx" data-ntx="${r.id}:${d}" type="button" aria-label="Tutup notifikasi">×</button></div>`).join('') + (L.length > 1 ? `<button class="ntall" data-ntall type="button">Tutup semua (${L.length})</button>` : '');
@@ -1801,7 +1800,7 @@ function waChips() {
 }
 const waText = r => ['Reminder Banding', '', 'Nama Toko : ' + (r.toko || '-'), 'ID Pesanan : ' + r.oid, 'No. Tiket Pelaporan : ' + (r.tiket || '-'), 'No Resi : ' + r.resi, 'Deskripsi : ' + (r.desk || '-'), 'Deadline : ' + dueTxt(r)].join('\n');
 $('#tdWa').onclick = () => {
-  if (roleName() !== 'Owner') return;
+  if (!hasRole('Owner')) return;
   const r = returns.find(x => x.id === tdId); if (!r) return;
   waId = r.id; $('#waNum').value = ''; msg('#waMsg', ''); waChips(); $('#wamdl').hidden = false; $('#waNum').focus();
 };
@@ -1814,7 +1813,7 @@ $('#waChips').addEventListener('click', e => {
   if (d) { waSave(waNums.filter(x => x !== d.dataset.wadel)); waChips() }
 });
 function waGo() {
-  if (roleName() !== 'Owner') return;
+  if (!hasRole('Owner')) return;
   const r = returns.find(x => x.id === waId); if (!r) return closeWa();
   const n = waNorm($('#waNum').value);
   if (!/^\d{9,15}$/.test(n)) return msg('#waMsg', 'Masukkan nomor WhatsApp yang benar, mis. 0812xxxxxxxx atau +62812xxxxxxxx.');
@@ -2785,10 +2784,15 @@ const permsOf = r => { // halaman baru (belum ada saat pengaturan disimpan) ikut
   const c = rolesCfg && rolesCfg.perms && rolesCfg.perms[r]; if (!c) return DEF_PERMS[r] || [];
   const seen = rolesCfg.seen || OLD_KEYS; return c.concat((DEF_PERMS[r] || []).filter(k => !seen.includes(k) && !c.includes(k)));
 };
+const descAll = () => roleList().map(r => roleList().length > 1 ? r + ': ' + descOf(r) : descOf(r)).join(' | ');
 const descOf = r => (rolesCfg && rolesCfg.desc && rolesCfg.desc[r]) || DEF_DESC[r] || '';
 const defRole = () => (rolesCfg && rolesCfg.defRole) || 'Admin';
-const roleName = () => { if (!me) return 'Tamu'; if (me.username === SUPER.username) return 'Owner'; const a = admins.find(x => x.username === me.username); return (a && a.role) || me.role || 'Admin' };
-const can = k => roleName() === 'Owner' || permsOf(roleName()).includes(k); // Owner selalu boleh semua halaman
+// satu akun boleh punya beberapa role: a.roles = ['Gudang','Packing']; a.role (role pertama) tetap disimpan agar kompatibel dengan data lama
+const rolesOf = a => { const l = (a && Array.isArray(a.roles) ? a.roles : []).filter(r => ROLES.includes(r) && r !== 'Tamu'); return l.length ? l : [(a && a.role) || 'Admin'] };
+const roleList = () => { if (!me) return ['Tamu']; if (me.username === SUPER.username) return ['Owner']; const a = admins.find(x => x.username === me.username); return rolesOf(a || me) };
+const hasRole = r => roleList().includes(r);
+const roleName = () => roleList().join(' + ');
+const can = k => hasRole('Owner') || roleList().some(r => permsOf(r).includes(k)); // Owner selalu boleh semua halaman; role ganda = gabungan akses semua rolenya
 const firstPage = () => ['pg', 'in', 'pu', 'rt', 'bd', 'br', 'dl', 'rw', 'pr', 'gd', 'sc'].find(can);
 let superDone = false;
 async function ensureSuper() { // dibuat sekali per sesi bila belum ada; bila ada, dipastikan tetap Owner (password yang sudah diganti tidak ditimpa)
@@ -2811,7 +2815,7 @@ async function ensureSuper() { // dibuat sekali per sesi bila belum ada; bila ad
   } catch (e) { console.error('akun khusus', e); superDone = false }
 }
 function syncMe() { // data akun berubah (mis. role diganti pemilik) -> ikut diperbarui di perangkat ini
-  if (me) { const a = admins.find(x => x.username === me.username); if (a) { me.name = UN(a.name); me.role = a.role || 'Admin' } }
+  if (me) { const a = admins.find(x => x.username === me.username); if (a) { me.name = UN(a.name); me.roles = rolesOf(a); me.role = me.roles[0] } }
   applyRole();
 }
 function applyRole() {
@@ -2838,9 +2842,9 @@ function authTab(t) {
 function showAuth(t) { $('#auth').hidden = false; authTab(t || 'in') }
 function renderWho() {
   $('#who').textContent = me ? '👤 ' + me.name + ' · ' + roleName() : '👤 Tamu';
-  $('#who').title = (me ? 'Role ' + roleName() + ': ' : 'Tamu: ') + descOf(roleName()) + (me ? ' (klik untuk keluar)' : ' (klik untuk masuk / daftar)');
+  $('#who').title = (me ? 'Role ' + roleName() + ': ' : 'Tamu: ') + descAll() + (me ? ' (klik untuk keluar)' : ' (klik untuk masuk / daftar)');
 }
-function setMe(m) { me = m; store.set('pp_session', m ? { username: m.username, name: m.name, role: m.role } : { guest: true }); $('#auth').hidden = true; renderWho(); applyRole(); refresh() }
+function setMe(m) { me = m; store.set('pp_session', m ? { username: m.username, name: m.name, role: m.role, roles: m.roles } : { guest: true }); $('#auth').hidden = true; renderWho(); applyRole(); refresh() }
 $$('.atabs button').forEach(b => b.onclick = () => authTab(b.dataset.a));
 $('#who').onclick = () => {
   if (!me) return showAuth('in');
@@ -2859,7 +2863,7 @@ $('#fLogin').onsubmit = async e => {
     }
     const a = await adminGet(u);
     if (!a || a.pass !== pwHash(u, p)) return authMsg('Username atau password salah.');
-    $('#lPass').value = ''; setMe({ username: a.username, name: UN(a.name), role: a.role || 'Admin' });
+    $('#lPass').value = ''; setMe({ username: a.username, name: UN(a.name), role: rolesOf(a)[0], roles: rolesOf(a) });
   } catch (err) { console.error('login', err); authMsg(authErr(err, 'Tidak bisa terhubung ke server.')) }
 };
 $('#fSignup').onsubmit = async e => {
@@ -2871,15 +2875,15 @@ $('#fSignup').onsubmit = async e => {
   if (u === SUPER.username) return authMsg('Username sudah dipakai, pilih yang lain.');
   try {
     const role = defRole();
-    await adminCreate({ username: u, name, pass: pwHash(u, p), ts: Date.now(), role });
-    $('#sPass').value = ''; setMe({ username: u, name, role });
+    await adminCreate({ username: u, name, pass: pwHash(u, p), ts: Date.now(), role, roles: [role] });
+    $('#sPass').value = ''; setMe({ username: u, name, role, roles: [role] });
   } catch (err) {
     console.error('signup', err);
     authMsg(err && err.message === 'exists' ? 'Username sudah dipakai, pilih yang lain.' : authErr(err, 'Gagal mendaftar.'));
   }
 };
 { const s = store.get('pp_session', null);
-  if (s && s.username) me = { username: s.username, name: UN(s.name), role: s.role };
+  if (s && s.username) me = { username: s.username, name: UN(s.name), role: s.role, roles: s.roles };
   renderWho(); if (!s) showAuth('in'); }
 
 /* ---------- DASHBOARD KHUSUS PEMILIK (ikon gembok) ---------- */
@@ -2991,11 +2995,12 @@ function tabAdm(D) {
   return `<div class="card"><h3>Kontrol Admin</h3><p class="hint">Semua admin yang terdaftar beserta aktivitasnya pada periode terpilih. <b>Hapus akses</b> membuat akun tidak bisa login lagi (data yang pernah diinput tetap tersimpan). <b>Reset password</b> mengganti password admin dengan yang baru.</p>
   <div class="tw"><table class="ot" style="min-width:900px"><thead><tr><th>Admin</th><th>Role</th><th>Terdaftar</th><th>Pengajuan</th><th>Pcs diajukan</th><th>% Terpenuhi</th><th>Input purchase</th><th>Download</th><th>Aktivitas terakhir</th><th></th></tr></thead><tbody>${L.map(o => `<tr><td><b>${esc(o.name)}</b>${o.acc ? '<div class="tm">@' + esc(o.acc.username) + '</div>' : '<div class="tm">tanpa akun</div>'}</td><td>${o.acc ? roleSel(o.acc) : '-'}</td><td>${o.acc && o.acc.ts ? fmt(o.acc.ts) : '-'}</td><td>${nf(o.req)}</td><td>${nf(o.pcs)}</td><td>${o.pcs ? pc(o.ada, o.pcs) + '%' + pbar(pc(o.ada, o.pcs)) : '-'}</td><td>${nf(o.rec)}</td><td>${nf(o.dl)}</td><td>${o.last ? fmt(o.last) + tm(o.last) : '-'}</td><td class="nw">${o.acc ? `<button class="btn ghost sm" data-owreset="${esc(o.acc.username)}">Reset password</button> ${o.acc.username === SUPER.username ? '<span class="tag">Akun khusus</span>' : `<button class="btn sm" style="background:var(--bad)" data-owdel="${esc(o.acc.username)}">Hapus akses</button>`}` : ''}</td></tr>`).join('') || '<tr><td colspan="10" class="empty">Belum ada admin.</td></tr>'}</tbody></table></div></div>`;
 }
-const roleSel = a => `<select data-owrole="${esc(a.username)}" style="width:auto;padding:7px 10px"${a.username === SUPER.username ? ' disabled' : ''}>${ROLES.filter(r => r !== 'Tamu').map(r => `<option${(a.role || 'Admin') === r ? ' selected' : ''}>${r}</option>`).join('')}</select>`;
-async function setRole(u, role) {
+const roleSel = a => { const cur = rolesOf(a), off = a.username === SUPER.username; return `<div class="rchk" data-owrole="${esc(a.username)}">${ROLES.filter(r => r !== 'Tamu').map(r => `<label class="rc"><input type="checkbox" value="${r}"${cur.includes(r) ? ' checked' : ''}${off ? ' disabled' : ''}>${r}</label>`).join('')}</div>` };
+async function setRole(u, roles) {
   if (u === SUPER.username) return renderOw();
   const a = admins.find(x => x.username === u); if (!a) return;
-  const rec = Object.assign({}, a, { role });
+  if (!roles.length) { alert('Minimal satu role harus dipilih.'); return renderOw() }
+  const rec = Object.assign({}, a, { roles, role: roles[0] });
   try {
     if (db) await withTimeout(db.collection('admins').doc(u).set(rec));
     else { const o = store.get('pp_admins', {}); o[u] = rec; store.set('pp_admins', o) }
@@ -3003,8 +3008,8 @@ async function setRole(u, role) {
   } catch (err) { console.error(err); alert('Gagal mengganti role: ' + authErr(err, '')); renderOw() }
 }
 function tabRole() {
-  const cnt = r => r === 'Tamu' ? 'tanpa akun' : admins.filter(a => (a.role || 'Admin') === r).length + ' akun';
-  return `<div class="card"><h3>Role &amp; Hak Akses</h3><p class="hint">Centang halaman yang boleh dibuka tiap role. Role tiap akun diatur di tab <b>Admin &amp; Akses</b>. Owner selalu bisa membuka semua halaman (kolomnya terkunci). Tamu = masuk tanpa akun. Pembatasan ini berlaku di tampilan aplikasi.</p>
+  const cnt = r => r === 'Tamu' ? 'tanpa akun' : admins.filter(a => rolesOf(a).includes(r)).length + ' akun';
+  return `<div class="card"><h3>Role &amp; Hak Akses</h3><p class="hint">Centang halaman yang boleh dibuka tiap role. Role tiap akun diatur di tab <b>Admin &amp; Akses</b>; satu akun boleh punya <b>beberapa role</b> (aksesnya digabung). Owner selalu bisa membuka semua halaman (kolomnya terkunci). Tamu = masuk tanpa akun. Pembatasan ini berlaku di tampilan aplikasi.</p>
   <div class="tw"><table class="ot" style="min-width:820px"><thead><tr><th>Halaman</th>${ROLES.map(r => `<th style="text-align:center">${r}<div class="tm">${cnt(r)}</div></th>`).join('')}</tr></thead><tbody>${Object.keys(PAGES).map(k => `<tr><td><b>${PAGES[k]}</b></td>${ROLES.map(r => { const on = r === 'Owner' || permsOf(r).includes(k); return `<td style="text-align:center"><input type="checkbox" data-rp="${r}|${k}"${on ? ' checked' : ''}${r === 'Owner' ? ' disabled' : ''}></td>` }).join('')}</tr>`).join('')}</tbody></table></div></div>
   <div class="card"><h3>Tugas tiap role</h3><p class="hint">Teks ini tampil sebagai keterangan saat nama akun di pojok atas diarahkan kursor.</p>${ROLES.map(r => `<label>${r}</label><textarea data-rdesc="${r}" rows="2">${esc(descOf(r))}</textarea>`).join('')}
   <label>Role default untuk akun yang baru mendaftar</label><select id="owDef">${ROLES.filter(r => r !== 'Tamu').map(r => `<option${defRole() === r ? ' selected' : ''}>${r}</option>`).join('')}</select>
@@ -3448,7 +3453,7 @@ $('#owBody').addEventListener('click', e => {
 });
 $('#owBody').addEventListener('change', e => {
   const s = e.target.closest('[data-owsort]'); if (s) { owSort = s.value; renderOw() }
-  const rs = e.target.closest('[data-owrole]'); if (rs) setRole(rs.dataset.owrole, rs.value);
+  const rs = e.target.closest('[data-owrole]'); if (rs) setRole(rs.dataset.owrole, [...rs.querySelectorAll('input:checked')].map(c => c.value));
   if (e.target.closest('[data-rp],[data-rdesc],#owDef')) roleDirty = true;
 });
 $('#owBody').addEventListener('input', e => { if (e.target.closest('[data-rdesc]')) roleDirty = true });
