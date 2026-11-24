@@ -294,13 +294,13 @@
   <section class="sec" id="sc">
     <div class="card">
       <h3>Upload Data Scanner</h3>
-      <p class="hint">Upload file Excel hasil scan. Boleh banyak file sekaligus, dan <b>semua sheet</b> di dalam file ikut dibaca. Setiap ekspedisi punya kolom sendiri: <b>B / C / D = JNT</b>, <b>F / G / H = LAZADA</b>, <b>J / K / L = SPX</b>, <b>N / O / P = MIX (CARGO)</b>, masing-masing berisi <b>Resi / Jam Scan / PIC</b>. Kolom nomor urut (A, E, I, M) dan baris judul dilewati otomatis. File 3 kolom lama (A = Resi, B = Jam Scan, C = PIC) tetap bisa diupload, ekspedisinya dikosongkan.</p>
+      <p class="hint">Tarik &amp; lepas (drag and drop) file <b>PDF</b> atau <b>Excel</b> hasil scan. Boleh banyak file sekaligus, semua sheet Excel ikut dibaca. Urutan kolom: <b>A = No.</b>, <b>B = No. Resi</b>, <b>C = Waktu Scan</b>, <b>D = PIC</b>, <b>E = Ekspedisi</b>. Format Excel lama (per ekspedisi atau 3 kolom) tetap bisa diupload.</p>
       <ul class="hint" style="margin:0 0 12px;padding-left:20px">
         <li>Jam scan dibaca sebagai waktu <b>WIB</b>. Format yang dikenali: sel tanggal Excel, <code>2026-11-20 14:05:33</code>, atau <code>20/11/2026 14:05</code>. Penulisan PIC dirapikan otomatis (mis. <code>YANA - RANI</code> menjadi <code>YANA-RANI</code>).</li>
         <li>Setelah file dibaca, tampil <b>laporan status</b> dulu: <b>Baru</b>, <b>Double</b> (resi + jam scan yang sama, sudah ada di database atau dobel antar file / sheet), <b>Resi sama, jam beda</b>, dan <b>Ditolak</b>. Data baru baru disimpan setelah klik <b>Simpan</b>.</li>
         <li>Karena double dilewati otomatis, file yang sama aman di-upload dua kali.</li>
       </ul>
-      <div class="mgdrop" id="scDrop"><b>Tarik file ke sini</b><span>atau</span><button class="btn sm" type="button" data-scpick>Pilih file</button><small>XLSX, XLS, CSV. Boleh pilih banyak file sekaligus.</small><input type="file" id="scFile" accept=".xlsx,.xls,.csv" multiple hidden></div>
+      <div class="mgdrop" id="scDrop"><b>Tarik file ke sini</b><span>atau</span><button class="btn sm" type="button" data-scpick>Pilih file</button><small>PDF, XLSX, XLS, CSV. Boleh pilih banyak file sekaligus.</small><input type="file" id="scFile" accept=".pdf,.xlsx,.xls,.csv" multiple hidden></div>
       <label>Baris yang jam scan-nya kosong</label>
       <select id="scNoTime"><option value="reject">Tolak dan laporkan (tidak disimpan)</option><option value="day">Simpan dengan tanggal sheet, jam 00:00:00</option></select>
       <label>Tanggal untuk baris yang jam scan-nya tanpa tanggal <span style="font-weight:400">(opsional, kosong = hari ini)</span></label>
@@ -687,6 +687,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="script.js?v=79"></script>
+<script src="script.js?v=80"></script>
 </body>
 </html>

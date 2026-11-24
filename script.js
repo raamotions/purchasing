@@ -2309,7 +2309,7 @@ $('#tpl').onclick = () => {
 };
 $('#impFile').onchange = e => {
   const f = e.target.files[0]; if (!f) return;
-  if (!window.XLSX) return msg('#impMsg', 'Library Excel gagal dimuat. Pastikan terhubung ke internet.');
+  if (!window.XLSX && files.some(f => !/\.pdf$/i.test(f.name))) return msg('#impMsg', 'Library Excel gagal dimuat. Pastikan terhubung ke internet.');
   const rd = new FileReader();
   rd.onload = () => {
     try {
@@ -2430,8 +2430,9 @@ const scDT = ts => dayWIB(ts).split('-').reverse().join('-') + ' ' + scT(ts);
 const scEksOrd = e => { const i = SC_EKS.findIndex(x => x[3] === e); return i < 0 ? 99 : i };
 const scCmp = (a, b) => scEksOrd(a.e) - scEksOrd(b.e) || (a.e || '').localeCompare(b.e || '') || (a.pic || '').localeCompare(b.pic || '') || a.ts - b.ts;
 const scIsEks = rows => SC_EKS.filter(g => rows.slice(0, 3).some(r => SC_EKH.includes(UN(r[g[0]])))).length >= 2; // judul JNT / LAZADA / SPX / MIX ada di baris atas
+const scIsNew = rows => rows.slice(0, 6).some(r => /resi/i.test(String(r[1] || '')) && /waktu|jam/i.test(String(r[2] || ''))); // format baru: A No., B No Resi, C Waktu Scan, D PIC, E Ekspedisi
 function scParseSheet(rows, f, sh, defDay) { // satu sheet -> daftar baris mentah {f, sh, ln, e, resi, ts, pic, nt, bad, sd}
-  const out = [], days = {}, eks = scIsEks(rows);
+  const out = [], days = {}, nw = scIsNew(rows), eks = !nw && scIsEks(rows);
   const add = (ln, e, rr, rt, rp) => {
     const resi = scResi(rr), blankT = rt === '' || rt == null, ts = blankT ? null : scTs(rt, defDay);
     const it = { f, sh, ln, e, resi, ts, pic: scPic(rp), nt: false, bad: '', sd: '' };
@@ -2443,7 +2444,13 @@ function scParseSheet(rows, f, sh, defDay) { // satu sheet -> daftar baris menta
   };
   rows.forEach((r, i) => {
     const ln = i + 1;
-    if (eks) SC_EKS.forEach(([ci, ti, pi, name]) => {
+    if (nw) {
+      const rr = r[1], rt = r[2];
+      if (typeof rr === 'string' && /resi/i.test(rr)) return; // baris judul
+      if ((rr === '' || rr == null) && (rt === '' || rt == null)) return;
+      add(ln, UN(r[4]), rr, rt, r[3]);
+    }
+    else if (eks) SC_EKS.forEach(([ci, ti, pi, name]) => {
       const rr = r[ci], rt = r[ti];
       if (rr === '' || rr == null) { if (rt !== '' && rt != null && scTs(rt, defDay) !== null) add(ln, name, rr, rt, r[pi]); return } // ada jam tapi resi kosong
       if (typeof rr === 'string' && SC_HDR.has(UN(rr))) return; // sel judul (JNT, LAZADA, SPX, MIX, CARGO, NO, PIC, ...)
@@ -2511,9 +2518,26 @@ function scPlan(rows) { // gabungkan baris baru ke dokumen per hari; hasilnya be
 
 /* ---- upload: baca semua file & sheet -> laporan status -> simpan ---- */
 function scReset() { SCU.items = []; SCU.res = null; SCU.saved = false; SCU.errs = []; SC_NEW = new Set(); $('#scNoTime').disabled = false; scRep() }
+const SC_EKN = 'CARGO|GTL|JNE|J&T|LEX|SPX|JNT|LAZADA|MIX|ANTERAJA|SICEPAT|NINJA|IDE|WAHANA';
+async function scReadPdf(file) { // PDF -> baris [No., Resi, Waktu, PIC, Ekspedisi]
+  if (!window.pdfjsLib) throw new Error('pdf.js tidak dimuat');
+  try { pdfjsLib.GlobalWorkerOptions.workerSrc = MG_WORKER } catch (e) {}
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+  const rows = [['No.', 'No. Resi', 'Waktu Scan', 'PIC', 'Ekspedisi']], re = /^(\d+)\s+(.+?)\s*(\d{2}\/\d{2}\/\d{4})\s+(\d{1,2}:\d{2}:\d{2})\s+(.*)$/, ek = new RegExp('^(.*?)\\s+(' + SC_EKN + ')(?:\\s|$)', 'i');
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const tc = await (await pdf.getPage(p)).getTextContent(), ls = [];
+    tc.items.forEach(it => { if (!String(it.str).trim()) return; const y = it.transform[5], x = it.transform[4]; let l = ls.find(q => Math.abs(q.y - y) <= 2.5); if (!l) ls.push(l = { y, a: [] }); l.a.push({ x, s: it.str }) });
+    ls.sort((a, b) => b.y - a.y).forEach(l => {
+      const line = l.a.sort((a, b) => a.x - b.x).map(o => o.s.trim()).join(' ').replace(/\s+/g, ' ').trim(), m = line.match(re); if (!m) return;
+      const k = m[5].match(ek);
+      rows.push([m[1], m[2].replace(/\s+/g, ''), m[3] + ' ' + m[4], k ? k[1].trim() : m[5].trim(), k ? k[2].toUpperCase() : '']);
+    });
+  }
+  return rows;
+}
 async function scFiles(files) {
   if (!can('sc')) return;
-  files = files.filter(f => /\.(xlsx|xls|csv)$/i.test(f.name)); if (!files.length) return msg('#scMsg', 'Gunakan file Excel (.xlsx / .xls) atau CSV.');
+  files = files.filter(f => /\.(xlsx|xls|csv|pdf)$/i.test(f.name)); if (!files.length) return msg('#scMsg', 'Gunakan file PDF atau Excel (.xlsx / .xls / .csv).');
   if (!window.XLSX) return msg('#scMsg', 'Library Excel gagal dimuat. Pastikan terhubung ke internet.');
   if (SCU.saved) scReset(); // laporan sebelumnya sudah disimpan: mulai laporan baru
   const defDay = $('#scDefD').value || dayWIB(Date.now()); let k = 0;
@@ -2521,6 +2545,7 @@ async function scFiles(files) {
     msg('#scMsg', 'Membaca ' + f.name + ' (' + (++k) + '/' + files.length + ')...', true);
     await new Promise(r => setTimeout(r, 30)); // beri kesempatan layar menampilkan pesan
     try {
+      if (/\.pdf$/i.test(f.name)) { for (const it of scParseSheet(await scReadPdf(f), f.name, 'PDF', defDay)) SCU.items.push(it); continue }
       const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
       wb.SheetNames.forEach(sh => {
         const rows = XLSX.utils.sheet_to_json(wb.Sheets[sh], { header: 1, raw: true, defval: '' });
@@ -2649,9 +2674,9 @@ function scTbl(list) {
     if (grp) { const k = (r.e || '-') + '|' + (r.pic || '-'); if (k !== last) { last = k; no = 0; rows += `<tr class="scg"><td colspan="6">${esc(r.e || '-')} <span class="tag">PIC: ${esc(r.pic || '-')}</span> <span class="tag">${NF(cnt[k])} data</span></td></tr>` } }
     no = grp ? no + 1 : i + 1;
     const k = r.ts + '|' + r.resi, nw = SC_NEW.has(k);
-    rows += `<tr${nw ? ' class="mgfill"' : ''}><td>${no}</td><td class="nw">${scDT(r.ts)}</td><td><b>${esc(r.resi)}</b>${nw ? ' <span class="tag in">Baru</span>' : ''}</td><td>${esc(r.e || '-')}</td><td>${esc(r.pic || '-')}</td><td class="nw"><button class="btn ghost sm" type="button" data-scedit="${esc(k)}">Edit</button> <button class="btn ghost sm dng" type="button" data-scrd="${esc(k)}">Hapus</button></td></tr>`;
+    rows += `<tr${nw ? ' class="mgfill"' : ''}><td>${no}</td><td><b>${esc(r.resi)}</b>${nw ? ' <span class="tag in">Baru</span>' : ''}</td><td class="nw">${scDT(r.ts)}</td><td>${esc(r.pic || '-')}</td><td>${esc(r.e || '-')}</td><td class="nw"><button class="btn ghost sm" type="button" data-scedit="${esc(k)}">Edit</button> <button class="btn ghost sm dng" type="button" data-scrd="${esc(k)}">Hapus</button></td></tr>`;
   });
-  return `<div class="sch"><button class="btn ghost sm" data-scdel="${day}" type="button">Hapus semua data tanggal ini</button></div><div class="tw"><table style="min-width:720px"><thead><tr><th>No</th><th>Tanggal &amp; Jam Scan</th><th>No Resi</th><th>Ekspedisi</th><th>PIC</th><th>Aksi</th></tr></thead><tbody>${rows}</tbody></table></div>` +
+  return `<div class="sch"><button class="btn ghost sm" data-scdel="${day}" type="button">Hapus semua data tanggal ini</button></div><div class="tw"><table style="min-width:720px"><thead><tr><th>No</th><th>No Resi</th><th>Waktu Scan</th><th>PIC</th><th>Ekspedisi</th><th>Aksi</th></tr></thead><tbody>${rows}</tbody></table></div>` +
     (rest > 0 ? `<div class="sch"><button class="btn ghost sm" data-scmore="${day}" type="button">Tampilkan ${Math.min(SC_STEP, rest)} lagi</button><button class="btn ghost sm" data-scmore="${day}" data-all="1" type="button">Tampilkan semua (${NF(rest)} tersisa)</button></div>` : '');
 }
 function renderSc() {
@@ -2710,8 +2735,8 @@ bdSuggest($('#scQ'), scItems);
 $('#scXls').onclick = () => {
   if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
   const rows = scFiltered().slice().sort($('#scSort').value !== 'time' ? scCmp : (a, b) => a.ts - b.ts); if (!rows.length) return alert('Tidak ada data untuk diexport.');
-  const aoa = [['No', 'Tanggal & Jam Scan', 'No Resi', 'Ekspedisi', 'PIC']].concat(rows.map((r, i) => [i + 1, scDT(r.ts), r.resi, r.e, r.pic]));
-  const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols'] = [{ wch: 6 }, { wch: 21 }, { wch: 26 }, { wch: 12 }, { wch: 20 }];
+  const aoa = [['No', 'No Resi', 'Waktu Scan', 'PIC', 'Ekspedisi']].concat(rows.map((r, i) => [i + 1, r.resi, scDT(r.ts), r.pic, r.e]));
+  const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols'] = [{ wch: 6 }, { wch: 26 }, { wch: 21 }, { wch: 22 }, { wch: 12 }];
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Data Scanner');
   const d = dayWIB(Date.now()).split('-'); XLSX.writeFile(wb, 'DATA SCANNER-' + d[2] + d[1] + d[0].slice(2) + '.xlsx');
 };
