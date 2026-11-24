@@ -1255,68 +1255,127 @@ function puPdf(rows) {
   const fn = puFn(rows, 'pdf'); doc.save(fn); puLog(rows, S, 'PDF', fn);
 }
 $('#xXls').onclick = () => puExcel(filtered());
-/* ---------- UPLOAD EXCEL PURCHASE: file hasil Export Excel menu Purchase -> digabung jadi data Purchase (grup hari + tahap + asal + admin) ---------- */
-const srcCanon = s => { const t = String(s == null ? '' : s).trim().replace(/\s+/g, ' '); return (typeof SRC !== 'undefined' && SRC.find(x => UN(x) === UN(t))) || t };
-function puReadSheets(wb) { // -> {items, bad}; item: {ts, sj, prod, vn, got, min, src, adm, tahap, ln}
-  const items = [], bad = [];
-  wb.SheetNames.forEach(sh => {
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sh], { header: 1, raw: true, defval: '' });
-    let src = '', adm = '', tahap = 0, cols = null;
-    rows.forEach((r, i) => {
-      const c0 = String(r[0] == null ? '' : r[0]).trim(), ln = i + 1;
-      if (/^asal barang\s*:/i.test(c0)) { const m = c0.match(/^asal barang\s*:\s*(.*?)\s*(?:nama admin\s*:\s*(.*))?$/i); src = m ? srcCanon(m[1]) : ''; adm = m && m[2] ? UN(m[2]) : ''; return }
-      if (/^pengajuan\s*:/i.test(c0)) { const m = c0.match(/(\d+)/); tahap = m ? +m[1] : 0; return }
-      const low = r.map(x => String(x == null ? '' : x).trim().toLowerCase());
-      if (low.includes('nama produk') && low.includes('varian')) { cols = { tgl: low.indexOf('tanggal'), sj: low.findIndex(x => x.includes('surat jalan')), prod: low.indexOf('nama produk'), vn: low.indexOf('varian'), q: low.findIndex(x => x.includes('ada')), asal: low.indexOf('asal') }; return }
-      if (!cols) return;
-      const prod = normName(r[cols.prod]); if (!prod) return;
-      const tg = String(r[cols.tgl] == null ? '' : r[cols.tgl]).trim(), m = tg.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
-      const q = String(r[cols.q] == null ? '' : r[cols.q]).match(/(\d+)\s*\/\s*(\d+)/);
-      if (!m || !q) return bad.push({ ln, sh, why: !m ? 'tanggal "' + tg + '" tidak terbaca' : 'kolom Ada / Diminta tidak terbaca', prod });
-      const ts = Date.UTC(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0)) - 7 * 36e5, sj = String(cols.sj >= 0 && r[cols.sj] != null ? r[cols.sj] : '').trim();
-      items.push({ ts, sj: sj === '-' ? '' : sj, prod, vn: normName(r[cols.vn]) === '-' ? '' : normName(r[cols.vn]), got: +q[1], min: +q[2], src: srcCanon(cols.asal >= 0 && r[cols.asal] ? r[cols.asal] : src), adm, tahap, ln, sh });
-    });
+/* ---------- UPLOAD PURCHASE (khusus Owner): drag & drop banyak Excel / PDF hasil export Purchase -> pilih tanggal -> dikelompokkan -> submit ---------- */
+const srcCanon = s => { const t = String(s == null ? '' : s).trim().replace(/\s+/g, ' '); return SRC.find(x => UN(x) === UN(t)) || t };
+function puParseRows(rows, sh) { // rows = baris sheet / hasil baca PDF -> {items, bad}
+  const items = [], bad = []; let src = '', adm = '', tahap = 0, cols = null;
+  rows.forEach((r, i) => {
+    const c0 = String(r[0] == null ? '' : r[0]).trim(), ln = i + 1;
+    if (/^asal barang\s*:/i.test(c0)) { const m = c0.match(/^asal barang\s*:\s*(.*?)\s*(?:nama admin\s*:\s*(.*))?$/i); src = m ? srcCanon(m[1]) : ''; adm = m && m[2] ? UN(m[2]) : ''; return }
+    if (/^pengajuan\s*:/i.test(c0)) { const m = c0.match(/(\d+)/); tahap = m ? +m[1] : 0; return }
+    const low = r.map(x => String(x == null ? '' : x).trim().toLowerCase());
+    if (low.includes('nama produk') && low.includes('varian')) { cols = { tgl: low.indexOf('tanggal'), sj: low.findIndex(x => x.includes('surat jalan')), prod: low.indexOf('nama produk'), vn: low.indexOf('varian'), q: low.findIndex(x => x.includes('ada')), asal: low.indexOf('asal') }; return }
+    if (!cols) return;
+    const prod = normName(r[cols.prod]); if (!prod) return;
+    const tg = String(r[cols.tgl] == null ? '' : r[cols.tgl]).trim(), m = tg.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+    const q = String(r[cols.q] == null ? '' : r[cols.q]).match(/(\d+)\s*\/\s*(\d+)/);
+    if (!m || !q) return bad.push({ ln, sh, why: !m ? 'tanggal "' + tg + '" tidak terbaca' : 'kolom Ada / Diminta tidak terbaca', prod });
+    const ts = Date.UTC(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0)) - 7 * 36e5, sj = String(cols.sj >= 0 && r[cols.sj] != null ? r[cols.sj] : '').trim(), vn = normName(r[cols.vn]);
+    items.push({ ts, sj: sj === '-' ? '' : sj, prod, vn: vn === '-' ? '' : vn, got: +q[1], min: +q[2], src: srcCanon(cols.asal >= 0 && r[cols.asal] ? r[cols.asal] : src), adm, tahap, ln, sh });
   });
   return { items, bad };
 }
+async function puPdfRows(file) { // PDF export Purchase -> baris seperti sheet Excel (kolom ditentukan dari posisi x judul kolom)
+  if (!window.pdfjsLib) throw new Error('pdf.js tidak dimuat');
+  try { pdfjsLib.GlobalWorkerOptions.workerSrc = MG_WORKER } catch (e) {}
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise, out = []; let X = null, lastRow = null;
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const tc = await (await pdf.getPage(p)).getTextContent(), ls = [];
+    tc.items.forEach(it => { if (!String(it.str).trim()) return; const y = it.transform[5]; let l = ls.find(q => Math.abs(q.y - y) <= 2.5); if (!l) ls.push(l = { y, a: [] }); l.a.push({ x: it.transform[4], s: String(it.str).trim() }) });
+    ls.sort((a, b) => b.y - a.y).forEach(l => {
+      l.a.sort((a, b) => a.x - b.x); const txt = l.a.map(o => o.s).join(' '), low = txt.toLowerCase();
+      if (low.includes('nama produk') && low.includes('varian')) {
+        const f = re => { const o = l.a.find(o => re.test(o.s.toLowerCase())); return o ? o.x : null };
+        X = { x0: l.a[0].x, tgl: f(/^tanggal/), sj: f(/surat|^no\. s/), prod: f(/produk/), vn: f(/^varian/), q: f(/^ada/), st: f(/^status/), asal: f(/^asal/) };
+        out.push(['No.', 'Tanggal', 'No. Surat Jalan', 'Nama Produk', 'Varian', 'Ada / Diminta', 'Status', 'Asal']); lastRow = null; return;
+      }
+      if (/^(asal barang|pengajuan)\s*:/i.test(txt)) { out.push([txt]); lastRow = null; return }
+      if (!X) return;
+      const pts = [['x0', 0], ['tgl', 1], ['sj', 2], ['prod', 3], ['vn', 4], ['q', 5], ['st', 6], ['asal', 7]].filter(([k]) => X[k] != null);
+      const cells = ['', '', '', '', '', '', '', ''];
+      l.a.forEach(o => { let c = 0; pts.forEach(([k, ci]) => { if (X[k] <= o.x + 2) c = ci }); cells[c] = (cells[c] ? cells[c] + ' ' : '') + o.s });
+      if (/^\d+$/.test(cells[0]) && /\d{1,2}[-\/]\d{1,2}[-\/]\d{4}/.test(cells[1])) { out.push(cells); lastRow = cells }
+      else if (lastRow && !cells[0] && !cells[1]) [3, 4].forEach(ci => { if (cells[ci]) lastRow[ci] = (lastRow[ci] ? lastRow[ci] + ' ' : '') + cells[ci] }); // sel yang terbungkus ke baris bawah
+    });
+  }
+  return out;
+}
+const PUU = { files: [], bad: [] };
+const puDay = ts => dayWIB(ts);
+function puAdjusted() { // semua baris dengan tanggal sesuai pilihan; jam tetap dari file
+  const o = [];
+  PUU.files.forEach(f => f.items.forEach(it => { const tod = (it.ts + 7 * 36e5) % 864e5; o.push(Object.assign({}, it, { ts: f.day ? Date.parse(f.day + 'T00:00:00+07:00') + tod : it.ts })) }));
+  return o;
+}
 function puImportPlan(items, dry) { // dry = hanya hitung ringkasan, tidak mengubah data
-  const RQ = dry ? reqs.map(x => Object.assign({}, x)) : reqs, RC = dry ? records.slice() : records, ops = [], pOps = new Map(); let nRec = 0, nReq = 0, dup = 0;
-  const myName = me ? me.name : '', gids = {};
+  const RQ = dry ? reqs.map(x => Object.assign({}, x)) : reqs, RC = dry ? records.slice() : records, ops = [], pOps = new Map(), G = new Map(), myName = me ? me.name : '', gids = {};
+  let nRec = 0, nReq = 0, dup = 0;
   items.slice().sort((a, b) => a.ts - b.ts).forEach(it => {
-    const adm = (!seeAll() || !it.adm || /[,;]/.test(it.adm)) ? myName : it.adm, day = dayWIB(it.ts), th = it.tahap || 0;
+    const adm = it.adm && !/[,;]/.test(it.adm) ? it.adm : myName, day = dayWIB(it.ts), th = it.tahap || 0, gk0 = [day, adm, it.src, th].join('|');
+    const g = G.get(gk0) || (G.set(gk0, { day, adm, src: it.src, th, n: 0, dup: 0, ex: 0, nw: 0 }), G.get(gk0));
     let q = RQ.find(r => normName(r.prod) === it.prod && (r.vn || '') === it.vn && (r.src || '') === it.src && (r.adm || '') === adm && (Number(r.tahap) || 0) === th && dayWIB(r.ts) === day);
-    if (q && RC.some(x => x.rid === q.id && x.ts === it.ts && (x.sj || '') === it.sj && (Number(x.got) || 0) === it.got)) { dup++; return } // sudah pernah diupload
-    if (!q) {
+    if (q && RC.some(x => x.rid === q.id && x.ts === it.ts && (x.sj || '') === it.sj && (Number(x.got) || 0) === it.got)) { dup++; g.dup++; return } // sudah pernah diupload
+    if (q) g.ex++; else {
       const e = dry ? { p: { id: '', name: it.prod }, vc: '' } : ensureProd(it.prod, it.vn); if (e.changed) pOps.set(e.p.id, e.p);
-      q = { id: uid(), ts: it.ts, pid: e.p.id, prod: e.p.name, vn: it.vn, vc: e.vc, min: Math.max(it.min, it.got, 1), ada: 0, src: it.src, adm, tahap: th, hist: [{ ts: it.ts, n: Math.max(it.min, it.got, 1) }] };
-      RQ.unshift(q); nReq++;
+      const m = Math.max(it.min, it.got, 1);
+      q = { id: uid(), ts: it.ts, pid: e.p.id, prod: e.p.name, vn: it.vn, vc: e.vc, min: m, ada: 0, src: it.src, adm, tahap: th, hist: [{ ts: it.ts, n: m }] };
+      RQ.unshift(q); nReq++; g.nw++;
     }
+    g.n++;
     const v = Math.max(0, Math.min(it.got, q.min - q.ada)); q.ada += v;
     const gk = it.ts + '|' + it.sj, gid = gids[gk] = gids[gk] || uid();
     const rec = { id: uid(), ts: it.ts, sj: it.sj, prod: q.prod, vn: q.vn, vc: q.vc, ada: q.ada, min: q.min, src: q.src, adm, pid: '', pids: [], rid: q.id, got: v, tahap: th, gid };
     RC.unshift(rec); nRec++; ops.push(['requests', 'set', q], ['records', 'set', rec]);
   });
   pOps.forEach(p => ops.unshift(['products', 'set', p]));
-  return { ops, nRec, nReq, dup };
+  return { ops, nRec, nReq, dup, groups: [...G.values()].sort((a, b) => a.day.localeCompare(b.day) || a.src.localeCompare(b.src) || a.adm.localeCompare(b.adm) || a.th - b.th) };
+}
+function puRep() {
+  const box = $('#puRep'); if (!hasRole('Owner')) { box.innerHTML = ''; return }
+  if (!PUU.files.length) { box.innerHTML = PUU.bad.length ? '<div class="msg">' + esc(PUU.bad.join('; ')) + '</div>' : ''; return }
+  const P = puImportPlan(puAdjusted(), true), total = PUU.files.reduce((a, f) => a + f.items.length, 0);
+  let h = `<h4>1. Tanggal untuk tiap file</h4><div class="tw"><table style="min-width:520px"><thead><tr><th>File</th><th>Baris</th><th>Masuk ke tanggal</th><th></th></tr></thead><tbody>${PUU.files.map((f, i) => `<tr><td>${esc(f.name)}${f.bad ? ` <span class="tag del">${NF(f.bad)} baris tidak terbaca</span>` : ''}</td><td>${NF(f.items.length)}</td><td><input type="date" data-pud="${i}" value="${f.day}" style="width:auto"></td><td><button class="btn ghost sm dng" type="button" data-purm="${i}">Buang</button></td></tr>`).join('')}</tbody></table></div>`;
+  h += `<h4 style="margin-top:14px">2. Pengelompokan (admin · asal barang · tahap)</h4><div class="tw"><table style="min-width:620px"><thead><tr><th>Tanggal</th><th>Admin</th><th>Asal</th><th>Tahap</th><th>Data</th><th>Keterangan</th></tr></thead><tbody>${P.groups.map(g => `<tr><td>${g.day.split('-').reverse().join('-')}</td><td>${esc(g.adm || '-')}</td><td>${esc(g.src || '-')}</td><td>${g.th ? 'Tahap ' + g.th : '-'}</td><td><b>${NF(g.n)}</b>${g.dup ? ` <span class="tag ed">${NF(g.dup)} sudah ada</span>` : ''}</td><td>${g.nw && g.ex ? 'Sebagian masuk pengajuan yang ada, sebagian pengajuan baru' : g.nw ? '<span class="tag">Grup baru</span>' : g.ex ? '<span class="tag in">Masuk grup yang sudah ada</span>' : '-'}</td></tr>`).join('')}</tbody></table></div>`;
+  h += `<p class="hint">${NF(total)} baris terbaca · ${NF(P.nRec)} akan disimpan · ${NF(P.dup)} dilewati karena sudah ada · ${NF(P.nReq)} pengajuan baru akan dibuat (tampil juga di menu Pengajuan).</p><div class="scx"><button class="btn" data-pusave type="button"${P.nRec ? '' : ' disabled'}>Submit ${NF(P.nRec)} data</button><button class="btn ghost" data-puclr type="button">Batal / kosongkan</button></div>`;
+  box.innerHTML = '<div class="mgrep" style="margin-top:14px">' + h + '</div>';
 }
 async function puFiles(files) {
-  files = [...files].filter(f => /\.(xlsx|xls|csv)$/i.test(f.name)); if (!files.length) return alert('Gunakan file Excel (.xlsx / .xls) hasil Export Excel menu Purchase.');
-  if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
-  let items = [], bad = [];
-  for (const f of files) { try { const r = puReadSheets(XLSX.read(await f.arrayBuffer(), { type: 'array' })); items = items.concat(r.items); bad = bad.concat(r.bad.map(b => Object.assign(b, { f: f.name }))) } catch (e) { console.error(e); bad.push({ f: f.name, ln: 0, sh: '', why: 'file tidak bisa dibaca', prod: '' }) } }
-  if (!items.length) return alert('Tidak ada baris Purchase yang terbaca. Pastikan file hasil Export Excel menu Purchase (ada kolom Nama Produk, Varian, Ada / Diminta).' + (bad.length ? '\n' + bad.slice(0, 5).map(b => b.f + ' baris ' + b.ln + ': ' + b.why).join('\n') : ''));
-  const dupN = puImportPlan(items, true);
-  askYN('Import ' + NF(dupN.nRec) + ' data Purchase dari ' + files.length + ' file' + (dupN.nReq ? ' (' + NF(dupN.nReq) + ' pengajuan baru dibuat karena belum ada)' : '') + (dupN.dup ? ', ' + NF(dupN.dup) + ' dilewati karena sudah ada' : '') + (bad.length ? ', ' + NF(bad.length) + ' baris tidak terbaca' : '') + '? Data akan masuk ke menu Purchase sebagai grup per hari, tahap, asal barang & admin.', () => {
-    const P = puImportPlan(items);
-    if (!P.nRec) return alert('Tidak ada data baru (semua sudah ada).');
-    if (!commit(P.ops)) return alert('Penyimpanan penuh.');
-    PI = null; refresh(); alert('✓ ' + NF(P.nRec) + ' data Purchase berhasil diimport' + (P.dup ? ' (' + NF(P.dup) + ' dilewati karena sudah ada)' : '') + '.');
-  });
+  if (!hasRole('Owner')) return;
+  files = [...files].filter(f => /\.(xlsx|xls|csv|pdf)$/i.test(f.name)); if (!files.length) return msg('#puMsg', 'Gunakan file Excel (.xlsx / .xls) atau PDF hasil export menu Purchase.');
+  if (files.some(f => !/\.pdf$/i.test(f.name)) && !window.XLSX) return msg('#puMsg', 'Library Excel gagal dimuat. Pastikan terhubung ke internet.');
+  let k = 0; PUU.bad = [];
+  for (const f of files) {
+    msg('#puMsg', 'Membaca ' + f.name + ' (' + (++k) + '/' + files.length + ')...', true); await new Promise(r => setTimeout(r, 30));
+    try {
+      let r;
+      if (/\.pdf$/i.test(f.name)) r = puParseRows(await puPdfRows(f), 'PDF');
+      else { const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' }); r = { items: [], bad: [] }; wb.SheetNames.forEach(sh => { const x = puParseRows(XLSX.utils.sheet_to_json(wb.Sheets[sh], { header: 1, raw: true, defval: '' }), sh); r.items = r.items.concat(x.items); r.bad = r.bad.concat(x.bad) }) }
+      if (!r.items.length) { PUU.bad.push(f.name + ': tidak ada baris Purchase yang terbaca (harus file hasil export menu Purchase)'); continue }
+      const cnt = {}; r.items.forEach(it => { const d = dayWIB(it.ts); cnt[d] = (cnt[d] || 0) + 1 });
+      PUU.files.push({ name: f.name, items: r.items, bad: r.bad.length, day: Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0] });
+    } catch (err) { console.error(err); PUU.bad.push(f.name + ': file tidak bisa dibaca') }
+  }
+  msg('#puMsg', PUU.files.length ? 'Pilih tanggal tiap file, periksa pengelompokan, lalu klik Submit.' : PUU.bad.join('; '), !!PUU.files.length); puRep();
 }
-$('#xUp').onclick = () => $('#xUpF').click();
-$('#xUpF').onchange = e => { const f = [...e.target.files]; e.target.value = ''; puFiles(f) };
-$('#pu').addEventListener('dragover', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) e.preventDefault() });
-$('#pu').addEventListener('drop', e => { if (e.dataTransfer && e.dataTransfer.files.length) { e.preventDefault(); puFiles(e.dataTransfer.files) } });
+function puSubmit() {
+  if (!hasRole('Owner')) return;
+  const P = puImportPlan(puAdjusted());
+  if (!P.nRec) { msg('#puMsg', 'Tidak ada data baru (semua sudah ada).'); return puRep() }
+  if (!commit(P.ops)) return msg('#puMsg', 'Penyimpanan penuh.');
+  PUU.files = []; PUU.bad = []; PI = null; refresh(); puRep();
+  msg('#puMsg', '✓ ' + NF(P.nRec) + ' data Purchase masuk ke menu Purchase' + (P.nReq ? ' (' + NF(P.nReq) + ' pengajuan baru juga tampil di menu Pengajuan)' : '') + (P.dup ? ', ' + NF(P.dup) + ' dilewati karena sudah ada' : '') + '.', true);
+}
+$$('[data-pupick]').forEach(b => b.onclick = () => $('#puFile').click());
+$('#puFile').onchange = e => { const f = [...e.target.files]; e.target.value = ''; puFiles(f) };
+$('#puDrop').addEventListener('dragover', e => { e.preventDefault(); $('#puDrop').classList.add('over') });
+$('#puDrop').addEventListener('dragleave', () => $('#puDrop').classList.remove('over'));
+$('#puDrop').addEventListener('drop', e => { e.preventDefault(); $('#puDrop').classList.remove('over'); puFiles(e.dataTransfer.files) });
+$('#puRep').addEventListener('change', e => { const d = e.target.closest('[data-pud]'); if (d && d.value) { PUU.files[+d.dataset.pud].day = d.value; puRep() } });
+$('#puRep').addEventListener('click', e => {
+  if (e.target.closest('[data-pusave]')) return puSubmit();
+  if (e.target.closest('[data-puclr]')) { PUU.files = []; PUU.bad = []; msg('#puMsg', ''); return puRep() }
+  const rm = e.target.closest('[data-purm]'); if (rm) { PUU.files.splice(+rm.dataset.purm, 1); puRep() }
+});
 
 $('#xPdf').onclick = () => puPdf(filtered());
 
