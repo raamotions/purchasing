@@ -2732,6 +2732,15 @@ function scItems(q) { // saran ketikan resi
   return out;
 }
 bdSuggest($('#scQ'), scItems);
+$('#scDelAll').onclick = () => {
+  if (!can('sc')) return;
+  const docs = scans.slice(), n = docs.reduce((a, x) => a + (x.r || []).length, 0); if (!docs.length) return alert('Tidak ada data Data Scanner.');
+  askYN('Hapus SEMUA ' + NF(n) + ' data Data Scanner (semua tanggal)? Tidak bisa dipulihkan. Setelah ini Anda bisa upload ulang file.', () => {
+    const before = scans; scans = []; scCache = null;
+    if (!commit(docs.map(x => ['scans', 'del', x.id]))) { scans = before; scCache = null; return alert('Gagal menghapus.') }
+    SC_NEW = new Set(); renderSc(); msg('#scMsg', '✓ Semua data Data Scanner sudah dihapus. Silakan upload ulang.', true);
+  });
+};
 $('#scXls').onclick = () => {
   if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
   const rows = scFiltered().slice().sort($('#scSort').value !== 'time' ? scCmp : (a, b) => a.ts - b.ts); if (!rows.length) return alert('Tidak ada data untuk diexport.');
