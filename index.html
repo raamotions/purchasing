@@ -20,7 +20,7 @@
       <button data-t="pu">Purchase</button>
       <button data-t="dl">Download</button>
       <button data-t="rw">Riwayat</button>
-      <button data-t="sc">Data Scanner</button>
+      <div class="ng" id="ngPacking" data-p="scn,sc"><button type="button" aria-haspopup="true">Packing ▾</button><div class="sub"><button data-t="scn">Scan</button><button data-t="sc">Data Scanner</button></div></div>
       <div class="ng" id="ngRetur" data-p="rt,bd,br"><button type="button" aria-haspopup="true">Retur ▾</button><div class="sub"><button data-t="rt">Input Retur</button><button data-t="bd">Laporan Retur</button><button data-t="br">Barang Retur</button></div></div>
       <div class="ng" id="ngProduk" data-p="pr,gd"><button type="button" aria-haspopup="true">Produk ▾</button><div class="sub"><button data-t="pr">Database Produk</button><button data-t="gd">Barang Gudang</button></div></div>
     </nav>
@@ -294,6 +294,25 @@
         <div class="xb"><button class="btn ghost sm" id="brFReset" type="button">Reset filter</button></div>
       </div>
       <div id="brList"></div>
+    </div>
+  </section>
+
+  <!-- SCAN (Packing & Owner) -->
+  <section class="sec" id="scn">
+    <div class="card">
+      <h3>Scan Barcode / QR</h3>
+      <p class="hint">Pilih ekspedisi, klik kolom scan, lalu scan Barcode / QR (alat scanner otomatis menekan Enter). Hasil langsung masuk ke daftar di bawah dan ke menu <b>Data Scanner</b>. Daftar di bawah hanya menampilkan hasil scan milik akun Anda sendiri.</p>
+      <div class="exf">
+        <div><label>Ekspedisi</label><select id="snEks"><option value="">Pilih ekspedisi</option><option>JNT</option><option>LAZADA</option><option>SPX</option><option>MIX</option><option>CARGO</option><option>JNE</option><option>GTL</option><option>LEX</option><option>ANTERAJA</option><option>SICEPAT</option><option>NINJA</option><option>IDE</option><option>WAHANA</option></select></div>
+        <div><label>Scan Barcode / QR</label><input id="snIn" placeholder="Scan di sini..." autocomplete="off" autocapitalize="characters" style="text-transform:uppercase"></div>
+        <div class="xb"><button class="btn sm" id="snOk" type="button">Simpan</button><button class="btn ghost sm" id="snCam" type="button" hidden>Scan pakai kamera</button></div>
+      </div>
+      <div class="msg" id="snMsg" style="margin-top:12px"></div>
+      <div id="snCamBox" hidden style="margin-top:12px"><video id="snVid" playsinline muted style="width:100%;max-width:420px;border-radius:12px;background:#000"></video><div><button class="btn ghost sm" id="snCamStop" type="button">Tutup kamera</button></div></div>
+    </div>
+    <div class="card">
+      <h3>Hasil Scan Saya Hari Ini</h3>
+      <div id="snList"></div>
     </div>
   </section>
 
@@ -695,6 +714,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="script.js?v=87"></script>
+<script src="script.js?v=88"></script>
 </body>
 </html>
