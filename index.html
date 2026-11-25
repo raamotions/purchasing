@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Purchasing Barang</title>
+<title>Online - Eko</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27%3E%3Ctext y=%27.9em%27 font-size=%2790%27%3E%F0%9F%9B%8D%EF%B8%8F%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css?v=49">
 </head>
 <body>
@@ -11,8 +12,8 @@
 <header class="bar">
   <div class="in">
     <div class="brand">
-      <div class="logo">🛒</div>
-      <div><h1>Purchasing</h1><p>Pengajuan &amp; penerimaan barang</p></div>
+      <div class="logo">🛍️</div>
+      <div><h1>Online - Eko</h1><p>Alur Barang &amp; Gudang</p></div>
     </div>
     <nav id="nav">
       <button class="on" data-t="pg">Pengajuan</button>
@@ -177,7 +178,7 @@
         <div id="owToW" hidden><label>Sampai tanggal</label><input type="date" id="owTo"></div>
         <div><label>Asal Barang</label><select id="owSrc" data-src="Semua"></select></div>
       </div>
-      <div class="otabs"><button data-o="sum" class="on" type="button">Ringkasan</button><button data-o="chart" type="button">Grafik</button><button data-o="prod" type="button">Produk</button><button data-o="adm" type="button">Admin &amp; Akses</button><button data-o="rec" type="button">Rekomendasi</button><button data-o="role" type="button">Role &amp; Akses</button><button data-o="merge" type="button">Gabung Data</button><button data-o="calc" type="button">Hitung Admin Iklan</button></div>
+      <div class="otabs"><button data-o="sum" class="on" type="button">Ringkasan</button><button data-o="chart" type="button">Grafik</button><button data-o="prod" type="button">Produk</button><button data-o="adm" type="button">Admin &amp; Akses</button><button data-o="rec" type="button">Rekomendasi</button><button data-o="role" type="button">Role &amp; Akses</button><button data-o="merge" type="button">Gabung Data</button></div>
     </div>
     <div id="owBody"></div>
   </section>
@@ -301,14 +302,11 @@
   <section class="sec" id="scn">
     <div class="card">
       <h3>Scan Barcode / QR</h3>
-      <p class="hint">Pilih ekspedisi, klik kolom scan, lalu scan Barcode / QR (alat scanner otomatis menekan Enter). Hasil langsung masuk ke daftar di bawah dan ke menu <b>Data Scanner</b>. Daftar di bawah hanya menampilkan hasil scan milik akun Anda sendiri.</p>
-      <div class="exf">
-        <div><label>Ekspedisi</label><select id="snEks"><option value="">Pilih ekspedisi</option><option>JNT</option><option>LAZADA</option><option>SPX</option><option>MIX</option><option>CARGO</option><option>JNE</option><option>GTL</option><option>LEX</option><option>ANTERAJA</option><option>SICEPAT</option><option>NINJA</option><option>IDE</option><option>WAHANA</option></select></div>
-        <div><label>Scan Barcode / QR</label><input id="snIn" placeholder="Scan di sini..." autocomplete="off" autocapitalize="characters" style="text-transform:uppercase"></div>
-        <div class="xb"><button class="btn sm" id="snOk" type="button">Simpan</button><button class="btn ghost sm" id="snCam" type="button" hidden>Scan pakai kamera</button></div>
-      </div>
+      <p class="hint">Ketuk ikon kamera lalu arahkan ke Barcode / QR. Bunyi <b>pip</b> = berhasil tersimpan, bunyi <b>tetot</b> = gagal / duplikat. Hasil masuk ke menu <b>Data Scanner</b>. Daftar di bawah hanya menampilkan hasil scan milik akun Anda sendiri.</p>
+      <input id="snIn" class="sr" inputmode="none" autocomplete="off" autocapitalize="characters" aria-label="Input alat scanner">
+      <div class="sncw"><button class="sncam" id="snCam" type="button" aria-label="Buka kamera scan" title="Buka kamera scan"><svg viewBox="0 0 24 24" width="56" height="56" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l1.6-2.4h6.8L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.2" r="3.7"/></svg></button></div>
+      <div id="snCamBox" class="sncb" hidden><div class="snv"><video id="snVid" playsinline muted></video><div class="snfr"></div></div><div style="text-align:center"><button class="btn ghost sm" id="snCamStop" type="button">Tutup kamera</button></div></div>
       <div class="msg" id="snMsg" style="margin-top:12px"></div>
-      <div id="snCamBox" hidden style="margin-top:12px"><video id="snVid" playsinline muted style="width:100%;max-width:420px;border-radius:12px;background:#000"></video><div><button class="btn ghost sm" id="snCamStop" type="button">Tutup kamera</button></div></div>
     </div>
     <div class="card">
       <h3>Hasil Scan Saya Hari Ini</h3>
@@ -426,8 +424,8 @@
 
 <!-- LOGIN ADMIN -->
 <div class="auth" id="auth" hidden><div class="abox">
-  <div class="alogo">🛒</div>
-  <h2>Purchasing</h2>
+  <div class="alogo">🛍️</div>
+  <h2>Online - Eko</h2>
   <div class="atabs"><button type="button" data-a="in" class="on">Masuk</button><button type="button" data-a="up">Daftar</button></div>
   <form id="fLogin" autocomplete="on">
     <label>Username</label><input id="lUser" autocomplete="username" autocapitalize="none" placeholder="username">

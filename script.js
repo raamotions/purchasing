@@ -259,7 +259,7 @@ function startSync() {
 }
 
 /* ---------- menu & hamburger ---------- */
-const TT = { pg: ['Pengajuan', 'Hari ini tampil di atas; hari sebelumnya masuk riwayat per bulan (ganti hari pukul 00.00 WIB)'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], rt: ['Input Retur', 'Form retur / pengembalian barang'], bd: ['Laporan Retur', 'Hasil input retur marketplace, bisa diedit'], rw: ['Riwayat', 'Riwayat edit & hapus; data lama bisa dipulihkan'], ow: ['Dashboard Khusus', 'Kontrol admin & analisa pemasaran (khusus pemilik)'], dl: ['Download', 'Riwayat export Excel / PDF, bisa difilter dan diexport gabungan'], pr: ['Database Produk', 'Stok produk (Purchase, Barang Retur, upload manual / massal); kelola produk dan varian warna'], gd: ['Barang Gudang', 'Cek barang retur / cancel yang tersedia sebelum mengajukan lagi'], br: ['Barang Retur', 'Input barang retur; otomatis masuk ke Barang Gudang'], scn: ['Scan', 'Scan Barcode / QR; hasil masuk ke Data Scanner dan hanya terlihat oleh akun yang men-scan'], sc: ['Data Scanner', 'Upload data scan dari Excel (ekspedisi, resi, jam scan, PIC); hari ini tampil di atas, sebelumnya masuk riwayat'] };
+const TT = { pg: ['Pengajuan', 'Hari ini tampil di atas; hari sebelumnya masuk riwayat per bulan (ganti hari pukul 00.00 WIB)'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], rt: ['Input Retur', 'Form retur / pengembalian barang'], bd: ['Laporan Retur', 'Hasil input retur marketplace, bisa diedit'], rw: ['Riwayat', 'Riwayat edit & hapus; data lama bisa dipulihkan'], ow: ['Dashboard Khusus', 'Kontrol admin & analisa pemasaran (khusus pemilik)'], dl: ['Download', 'Riwayat export Excel / PDF, bisa difilter dan diexport gabungan'], pr: ['Database Produk', 'Stok produk (Purchase, Barang Retur, upload manual / massal); kelola produk dan varian warna'], gd: ['Barang Gudang', 'Cek barang retur / cancel yang tersedia sebelum mengajukan lagi'], br: ['Barang Retur', 'Input barang retur; otomatis masuk ke Barang Gudang'], scn: ['Scan', 'Scan Barcode / QR lewat kamera; hasil masuk ke Data Scanner dan hanya terlihat oleh akun yang men-scan'], sc: ['Data Scanner', 'Upload data scan dari Excel (ekspedisi, resi, jam scan, PIC); hari ini tampil di atas, sebelumnya masuk riwayat'] };
 function go(t) {
   if (!can(t)) { t = firstPage(); if (!t) return }
   $$('nav button[data-t]').forEach(b => b.classList.toggle('on', b.dataset.t === t));
@@ -272,7 +272,8 @@ function go(t) {
   if (t === 'rw') renderRw();
   if (t === 'bd') renderBd();
   if (t === 'sc') renderSc();
-  if (t === 'scn') { renderSn(); setTimeout(() => { const i = $('#snIn'); if (i) i.focus() }, 50) }
+  try { if (t !== 'scn') snCamStop() } catch (e) {}
+  if (t === 'scn') { renderSn(); setTimeout(() => { const i = $('#snIn'); if (i) i.focus({ preventScroll: true }) }, 50) }
   if (t === 'pr') { renderStock(); brLists(normName($('#usName').value)) }
   if (t === 'gd') renderGd();
   if (t === 'br') { brLists(); renderBr() }
@@ -2799,50 +2800,53 @@ function scAddOne(resi, ts, pic, e) {
   return true;
 }
 let snBeepC = null;
-function snBeep(bad) { try { snBeepC = snBeepC || new (window.AudioContext || window.webkitAudioContext)(); const o = snBeepC.createOscillator(), g = snBeepC.createGain(); o.connect(g); g.connect(snBeepC.destination); o.frequency.value = bad ? 220 : 880; g.gain.value = .15; o.start(); o.stop(snBeepC.currentTime + (bad ? .4 : .12)); if (bad && navigator.vibrate) navigator.vibrate(300) } catch (e) {} }
+function snTone(f, t0, dur, type) { const c = snBeepC, o = c.createOscillator(), g = c.createGain(), t = c.currentTime + t0; o.type = type; o.frequency.value = f; o.connect(g); g.connect(c.destination); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(.4, t + .01); g.gain.setValueAtTime(.4, t + dur - .02); g.gain.exponentialRampToValueAtTime(.0001, t + dur); o.start(t); o.stop(t + dur + .02) }
+function snBeep(bad) { // berhasil: "pip" pendek nada tinggi; gagal / duplikat: "tetot" dua nada rendah
+  try {
+    snBeepC = snBeepC || new (window.AudioContext || window.webkitAudioContext)(); if (snBeepC.state === 'suspended') snBeepC.resume();
+    if (bad) { snTone(330, 0, .16, 'square'); snTone(220, .2, .32, 'square'); if (navigator.vibrate) navigator.vibrate([120, 80, 220]) }
+    else snTone(1500, 0, .11, 'sine');
+  } catch (e) {}
+}
 function snSubmit(raw) {
   const inp = $('#snIn'), resi = scResi(raw);
   const fail = t => { msg('#snMsg', t); $('#snMsg').classList.add('bad'); snBeep(true); inp.value = ''; inp.focus() };
   if (!resi) return;
   if (!me) return fail('Masuk dengan akun terlebih dulu agar hasil scan tercatat atas nama Anda.');
-  const eks = $('#snEks').value;
-  if (!eks) return fail('Pilih ekspedisi dulu sebelum scan.');
   if (scHas(resi)) return fail('Barcode dan QR ini telah ada, harap scan Barcode atau QR yang lain');
   const ts = Date.now();
-  if (!scAddOne(resi, ts, scPic(me.name), eks)) return fail('Penyimpanan penuh, data tidak tersimpan.');
-  try { localStorage.setItem('pp_snEks', eks) } catch (e) {}
+  if (!scAddOne(resi, ts, scPic(me.name), '')) return fail('Penyimpanan penuh, data tidak tersimpan.');
   $('#snMsg').classList.remove('bad'); msg('#snMsg', '✓ ' + resi + ' tersimpan.', true); snBeep(false);
   inp.value = ''; inp.focus(); renderSn(); if ($('#sc').classList.contains('on')) renderSc();
 }
 function renderSn() {
   const el = $('#snList'); if (!el) return;
-  const sel = $('#snEks'); if (!sel.value) { try { sel.value = localStorage.getItem('pp_snEks') || '' } catch (e) {} }
   const today = dayWIB(Date.now()), pic = me ? scPic(me.name) : null;
   const L = pic === null ? [] : scAll().filter(r => r.pic === pic && dayWIB(r.ts) === today);
   if (!L.length) { el.innerHTML = '<div class="empty">Belum ada hasil scan Anda hari ini.</div>'; return }
-  el.innerHTML = '<div class="dayh">Hari ini <span class="tag">' + NF(L.length) + ' data</span></div><div class="tw"><table style="min-width:560px"><thead><tr><th>No</th><th>No Resi</th><th>Waktu Scan</th><th>PIC</th><th>Ekspedisi</th></tr></thead><tbody>' +
-    L.slice(0, 500).map((r, i) => `<tr><td>${L.length - i}</td><td><b>${esc(r.resi)}</b></td><td class="nw">${scDT(r.ts)}</td><td>${esc(r.pic || '-')}</td><td>${esc(r.e || '-')}</td></tr>`).join('') + '</tbody></table></div>' + (L.length > 500 ? '<p class="hint">Menampilkan 500 terbaru. Selengkapnya ada di Data Scanner.</p>' : '');
+  el.innerHTML = '<div class="dayh">Hari ini <span class="tag">' + NF(L.length) + ' data</span></div><div class="tw"><table style="min-width:420px"><thead><tr><th>No</th><th>No Resi</th><th>Waktu Scan</th><th>PIC</th></tr></thead><tbody>' +
+    L.slice(0, 500).map((r, i) => `<tr><td>${L.length - i}</td><td><b>${esc(r.resi)}</b></td><td class="nw">${scDT(r.ts)}</td><td>${esc(r.pic || '-')}</td></tr>`).join('') + '</tbody></table></div>' + (L.length > 500 ? '<p class="hint">Menampilkan 500 terbaru. Selengkapnya ada di Data Scanner.</p>' : '');
 }
 $('#snIn').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); snSubmit($('#snIn').value) } });
-$('#snOk').onclick = () => snSubmit($('#snIn').value);
-// kamera (jika browser mendukung BarcodeDetector)
+// kamera (butuh BarcodeDetector: Chrome / Edge / Android)
 let snStream = null, snTimer = null;
-function snCamStop() { clearInterval(snTimer); snTimer = null; if (snStream) snStream.getTracks().forEach(t => t.stop()); snStream = null; $('#snCamBox').hidden = true }
-if ('BarcodeDetector' in window && navigator.mediaDevices) {
-  $('#snCam').hidden = false;
-  $('#snCam').onclick = async () => {
-    try {
-      const det = new BarcodeDetector(), v = $('#snVid'); let busy = false, lastV = '', lastT = 0;
-      snStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }); v.srcObject = snStream; await v.play(); $('#snCamBox').hidden = false;
-      snTimer = setInterval(async () => {
-        if (busy) return; busy = true;
-        try { const r = await det.detect(v); if (r.length) { const val = r[0].rawValue, n = Date.now(); if (val !== lastV || n - lastT > 2500) { lastV = val; lastT = n; snSubmit(val) } } } catch (e) {}
-        busy = false;
-      }, 300);
-    } catch (e) { snCamStop(); msg('#snMsg', 'Kamera tidak bisa dibuka. Izinkan akses kamera atau pakai alat scanner.') }
-  };
-  $('#snCamStop').onclick = snCamStop;
-}
+function snCamStop() { clearInterval(snTimer); snTimer = null; if (snStream) snStream.getTracks().forEach(t => t.stop()); snStream = null; const v = $('#snVid'); if (v) v.srcObject = null; $('#snCamBox').hidden = true; $('#snCam').hidden = false }
+$('#snCam').onclick = async () => {
+  try { snBeepC = snBeepC || new (window.AudioContext || window.webkitAudioContext)(); if (snBeepC.state === 'suspended') snBeepC.resume() } catch (e) {} // izinkan suara (harus dari ketukan)
+  if (!('BarcodeDetector' in window) || !navigator.mediaDevices) return msg('#snMsg', 'Browser ini belum mendukung scan lewat kamera. Pakai Chrome (Android / komputer) atau alat scanner.');
+  if (snStream) return;
+  try {
+    const det = new BarcodeDetector(), v = $('#snVid'); let busy = false, lastV = '', lastT = 0;
+    snStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', aspectRatio: 1 } }); v.srcObject = snStream; await v.play();
+    $('#snCamBox').hidden = false; $('#snCam').hidden = true; $('#snMsg').classList.remove('bad'); msg('#snMsg', 'Arahkan kamera ke Barcode / QR.');
+    snTimer = setInterval(async () => {
+      if (busy) return; busy = true;
+      try { const r = await det.detect(v); if (r.length) { const val = r[0].rawValue, n = Date.now(); if (val !== lastV || n - lastT > 2500) { lastV = val; lastT = n; snSubmit(val) } } } catch (e) {}
+      busy = false;
+    }, 250);
+  } catch (e) { snCamStop(); msg('#snMsg', 'Kamera tidak bisa dibuka. Izinkan akses kamera atau pakai alat scanner.') }
+};
+$('#snCamStop').onclick = snCamStop;
 /* ---- tampilan tabel ---- */
 const SCF = ['#scFromD', '#scFromT', '#scToD', '#scToT', '#scPic', '#scEks', '#scQ', '#scDup'];
 function scFiltered() {
@@ -3608,56 +3612,13 @@ function mgRender() {
   ow.addEventListener('drop', e => { const z = e.target.closest('#mgDrop'); if (z) { e.preventDefault(); z.classList.remove('over'); mgAdd([...e.dataTransfer.files]) } });
 }
 
-// ---- Hitung Admin Iklan ----
-const HC = { target: '1170000', adm: '0,775', roi: '19', roi2: '20' };
-const hcNum = v => { const n = parseFloat(String(v).replace(/\./g, '').replace(',', '.')); return isFinite(n) ? n : NaN };
-const hcAdm = v => { const n = parseFloat(String(v).trim().replace(',', '.')); return isFinite(n) ? n : NaN };
-const hcDec = (n, d) => n.toLocaleString('id-ID', { minimumFractionDigits: d, maximumFractionDigits: d });
-const hcRp = n => 'Rp ' + hcDec(n, 2);
-const hcTg = v => { const d = String(v).replace(/\D/g, ''); return d ? 'Rp ' + d.replace(/\B(?=(\d{3})+(?!\d))/g, '.') : '' }; // ketik angka -> otomatis format Rp
-function tabCalc() {
-  const inp = (id, k, ph) => '<input id="' + id + '" data-hc="' + k + '" inputmode="decimal" autocomplete="off" value="' + (k === 'target' ? hcTg(HC[k]) : HC[k]) + '" placeholder="' + ph + '">';
-  return '<div id="hcRoot"><h3>Hitung Admin Iklan</h3>' +
-    '<div class="hcg">' +
-    '<div class="hl">Target</div><div>' + inp('hcTarget', 'target', 'Rp 0') + '</div><div></div>' +
-    '<div class="hl">Target + 5.000</div><div class="hcv" id="hcB3">-</div><div></div>' +
-    '<div class="hl">Admin Platform</div><div>' + inp('hcAdm', 'adm', 'mis. 0,775') + '</div><div class="hl">Target dibagi Harga Jual + Iklan: <span id="hcC4">-</span></div>' +
-    '<div class="hl">Harga Jual Normal</div><div class="hcv" id="hcB5">-</div><div></div>' +
-    '<div class="hl">Jumlah ROI</div><div>' + inp('hcRoi', 'roi', 'mis. 19') + '</div><div></div>' +
-    '<div class="hl">Pembagian ROI</div><div class="hcv" id="hcB7">-</div><div></div>' +
-    '<div class="hl">Harga Jual + Iklan</div><div class="hcv" id="hcB9">-</div><div></div>' +
-    '<div class="hl">ROI pembanding</div><div>' + inp('hcRoi2', 'roi2', 'mis. 20') + '</div><div></div>' +
-    '<div class="hl">Pembagian ROI</div><div class="hcv" id="hcB10">-</div><div id="hcCheck"></div>' +
-    '</div><div class="hcres" id="hcRes"><span>Admin Iklan</span><b id="hcOut">-</b><span id="hcOutS"></span></div></div>';
-}
-function hcCalc() {
-  const t = hcNum(HC.target), a = hcAdm(HC.adm), r1 = hcNum(HC.roi), r2 = hcNum(HC.roi2);
-  const set = (id, v) => { const e = $(id); if (e) e.textContent = v };
-  const ok = [t, a, r1, r2].every(isFinite) && a > 0 && r1 > 0 && r2 > 0;
-  const chk = $('#hcCheck'), b10 = $('#hcB10'), res = $('#hcRes');
-  if (!ok) {
-    ['#hcB3', '#hcB5', '#hcB7', '#hcB9', '#hcB10', '#hcC4', '#hcOut'].forEach(i => set(i, '-'));
-    set('#hcOutS', 'Isi semua kolom dengan angka yang valid.'); if (chk) chk.textContent = ''; if (b10) b10.className = 'hcv'; if (res) res.classList.remove('bad');
-    return;
-  }
-  const b3 = t + 5000, b5 = b3 / a, b7 = b5 / r1, b9 = b7 + b5, b10v = b9 / r2, c4 = t / b9, adm = a - c4;
-  set('#hcB3', hcRp(b3)); set('#hcB5', hcRp(b5)); set('#hcB7', hcRp(b7)); set('#hcB9', hcRp(b9)); set('#hcB10', hcRp(b10v));
-  set('#hcC4', hcDec(c4, 10));
-  const same = Math.abs(b7 - b10v) < 0.005;
-  if (b10) b10.className = 'hcv ' + (same ? 'ok' : 'bad');
-  if (chk) { chk.textContent = same ? '✔ Sama dengan B7' : '✖ Tidak sama dengan B7 (' + hcRp(b7) + ') — cek ROI'; chk.className = same ? 'hcv ok' : 'hcv bad' }
-  if (res) res.classList.toggle('bad', !same);
-  set('#hcOut', hcDec(adm * 100, 2) + '%');
-  set('#hcOutS', 'Admin Platform − C4 = ' + hcDec(a, 4) + ' − ' + hcDec(c4, 4) + ' = ' + hcDec(adm, 4));
-}
 function renderOw() {
   if (!owOk) return;
   $$('.otabs button').forEach(b => b.classList.toggle('on', b.dataset.o === owTab));
-  const fx = $('#ow .exf'); if (fx) fx.style.display = (owTab === 'merge' || owTab === 'calc') ? 'none' : ''; // filter periode tidak berlaku untuk Gabung Data
+  const fx = $('#ow .exf'); if (fx) fx.style.display = (owTab === 'merge') ? 'none' : ''; // filter periode tidak berlaku untuk Gabung Data
   if (owTab === 'merge') { if (!$('#mgRoot')) $('#owBody').innerHTML = tabMerge(); mgRender(); return } // jangan digambar ulang tiap data masuk, supaya file yang sudah diupload tidak hilang
-  if (owTab === 'calc') { if (!$('#hcRoot')) $('#owBody').innerHTML = tabCalc(); hcCalc(); return }
   const D = owData();
-  $('#owBody').innerHTML = { sum: tabSum, chart: tabChart, prod: tabProd, adm: tabAdm, rec: tabReco, role: tabRole, merge: tabMerge, calc: tabCalc }[owTab](D);
+  $('#owBody').innerHTML = { sum: tabSum, chart: tabChart, prod: tabProd, adm: tabAdm, rec: tabReco, role: tabRole, merge: tabMerge }[owTab](D);
 }
 // ---- gerbang kode & kontrol akses ----
 function openOw() { if (owOk) return go('ow'); $('#gCode').value = ''; msg('#gMsg', ''); $('#gmdl').hidden = false; $('#gCode').focus() }
@@ -3685,7 +3646,6 @@ $('#owBody').addEventListener('change', e => {
   if (e.target.closest('[data-rp],[data-rdesc],#owDef')) roleDirty = true;
 });
 $('#owBody').addEventListener('input', e => { if (e.target.closest('[data-rdesc]')) roleDirty = true });
-$('#owBody').addEventListener('input', e => { const i = e.target.closest('[data-hc]'); if (i) { if (i.dataset.hc === 'target') { HC.target = i.value.replace(/\D/g, ''); i.value = hcTg(HC.target) } else HC[i.dataset.hc] = i.value; hcCalc() } });
 $('#owBody').addEventListener('click', e => { if (e.target.closest('[data-rolesave]')) saveRoles(); if (e.target.closest('[data-rolereset]')) resetRoles() });
 async function delAccess(u) {
   if (u === SUPER.username) return alert('Akun khusus ini dilindungi dan tidak bisa dihapus.');
