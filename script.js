@@ -3545,13 +3545,56 @@ function mgRender() {
   ow.addEventListener('drop', e => { const z = e.target.closest('#mgDrop'); if (z) { e.preventDefault(); z.classList.remove('over'); mgAdd([...e.dataTransfer.files]) } });
 }
 
+// ---- Hitung Admin Iklan ----
+const HC = { target: '1170000', adm: '0,775', roi: '19', roi2: '20' };
+const hcNum = v => { const n = parseFloat(String(v).replace(/\./g, '').replace(',', '.')); return isFinite(n) ? n : NaN };
+const hcAdm = v => { const n = parseFloat(String(v).trim().replace(',', '.')); return isFinite(n) ? n : NaN };
+const hcDec = (n, d) => n.toLocaleString('id-ID', { minimumFractionDigits: d, maximumFractionDigits: d });
+const hcRp = n => 'Rp ' + hcDec(n, 2);
+function tabCalc() {
+  const inp = (id, k, ph) => '<input id="' + id + '" data-hc="' + k + '" inputmode="decimal" autocomplete="off" value="' + HC[k] + '" placeholder="' + ph + '">';
+  return '<div id="hcRoot"><h3>Hitung Admin Iklan</h3>' +
+    '<div class="hcg">' +
+    '<div class="hh"></div><div class="hh">Isian / Hasil</div><div class="hh">Keterangan</div>' +
+    '<div class="hl">Target<small>B2</small></div><div>' + inp('hcTarget', 'target', 'mis. 1170000') + '</div><div></div>' +
+    '<div class="hl">Target + 5.000<small>B3</small></div><div class="hcv" id="hcB3">-</div><div></div>' +
+    '<div class="hl">Admin Platform<small>B4 (pakai koma, mis. 0,775)</small></div><div>' + inp('hcAdm', 'adm', 'mis. 0,775') + '</div><div class="hl"><small>C4</small><span id="hcC4">-</span></div>' +
+    '<div class="hl">Harga Jual Normal<small>B5 = B3 / B4</small></div><div class="hcv" id="hcB5">-</div><div></div>' +
+    '<div class="hl">Jumlah ROI<small>B6</small></div><div>' + inp('hcRoi', 'roi', 'mis. 19') + '</div><div></div>' +
+    '<div class="hl">Pembagian ROI<small>B7 = B5 / B6</small></div><div class="hcv" id="hcB7">-</div><div></div>' +
+    '<div class="hl">Harga Jual + Iklan<small>B9 = B7 + B5</small></div><div class="hcv" id="hcB9">-</div><div></div>' +
+    '<div class="hl">ROI pembanding<small>C10</small></div><div>' + inp('hcRoi2', 'roi2', 'mis. 20') + '</div><div></div>' +
+    '<div class="hl">Pembagian ROI<small>B10 = B9 / C10 (harus sama dengan B7)</small></div><div class="hcv" id="hcB10">-</div><div id="hcCheck"></div>' +
+    '</div><div class="hcres" id="hcRes"><span>Admin Iklan</span><b id="hcOut">-</b><span id="hcOutS"></span></div></div>';
+}
+function hcCalc() {
+  const t = hcNum(HC.target), a = hcAdm(HC.adm), r1 = hcNum(HC.roi), r2 = hcNum(HC.roi2);
+  const set = (id, v) => { const e = $(id); if (e) e.textContent = v };
+  const ok = [t, a, r1, r2].every(isFinite) && a > 0 && r1 > 0 && r2 > 0;
+  const chk = $('#hcCheck'), b10 = $('#hcB10'), res = $('#hcRes');
+  if (!ok) {
+    ['#hcB3', '#hcB5', '#hcB7', '#hcB9', '#hcB10', '#hcC4', '#hcOut'].forEach(i => set(i, '-'));
+    set('#hcOutS', 'Isi semua kolom dengan angka yang valid.'); if (chk) chk.textContent = ''; if (b10) b10.className = 'hcv'; if (res) res.classList.remove('bad');
+    return;
+  }
+  const b3 = t + 5000, b5 = b3 / a, b7 = b5 / r1, b9 = b7 + b5, b10v = b9 / r2, c4 = t / b9, adm = a - c4;
+  set('#hcB3', hcRp(b3)); set('#hcB5', hcRp(b5)); set('#hcB7', hcRp(b7)); set('#hcB9', hcRp(b9)); set('#hcB10', hcRp(b10v));
+  set('#hcC4', hcDec(c4, 10));
+  const same = Math.abs(b7 - b10v) < 0.005;
+  if (b10) b10.className = 'hcv ' + (same ? 'ok' : 'bad');
+  if (chk) { chk.textContent = same ? '✔ Sama dengan B7' : '✖ Tidak sama dengan B7 (' + hcRp(b7) + ') — cek ROI'; chk.className = same ? 'hcv ok' : 'hcv bad' }
+  if (res) res.classList.toggle('bad', !same);
+  set('#hcOut', hcDec(adm * 100, 2) + '%');
+  set('#hcOutS', 'Admin Platform − C4 = ' + hcDec(a, 4) + ' − ' + hcDec(c4, 4) + ' = ' + hcDec(adm, 4));
+}
 function renderOw() {
   if (!owOk) return;
   $$('.otabs button').forEach(b => b.classList.toggle('on', b.dataset.o === owTab));
-  const fx = $('#ow .exf'); if (fx) fx.style.display = owTab === 'merge' ? 'none' : ''; // filter periode tidak berlaku untuk Gabung Data
+  const fx = $('#ow .exf'); if (fx) fx.style.display = (owTab === 'merge' || owTab === 'calc') ? 'none' : ''; // filter periode tidak berlaku untuk Gabung Data
   if (owTab === 'merge') { if (!$('#mgRoot')) $('#owBody').innerHTML = tabMerge(); mgRender(); return } // jangan digambar ulang tiap data masuk, supaya file yang sudah diupload tidak hilang
+  if (owTab === 'calc') { if (!$('#hcRoot')) $('#owBody').innerHTML = tabCalc(); hcCalc(); return }
   const D = owData();
-  $('#owBody').innerHTML = { sum: tabSum, chart: tabChart, prod: tabProd, adm: tabAdm, rec: tabReco, role: tabRole, merge: tabMerge }[owTab](D);
+  $('#owBody').innerHTML = { sum: tabSum, chart: tabChart, prod: tabProd, adm: tabAdm, rec: tabReco, role: tabRole, merge: tabMerge, calc: tabCalc }[owTab](D);
 }
 // ---- gerbang kode & kontrol akses ----
 function openOw() { if (owOk) return go('ow'); $('#gCode').value = ''; msg('#gMsg', ''); $('#gmdl').hidden = false; $('#gCode').focus() }
@@ -3579,6 +3622,7 @@ $('#owBody').addEventListener('change', e => {
   if (e.target.closest('[data-rp],[data-rdesc],#owDef')) roleDirty = true;
 });
 $('#owBody').addEventListener('input', e => { if (e.target.closest('[data-rdesc]')) roleDirty = true });
+$('#owBody').addEventListener('input', e => { const i = e.target.closest('[data-hc]'); if (i) { HC[i.dataset.hc] = i.value; hcCalc() } });
 $('#owBody').addEventListener('click', e => { if (e.target.closest('[data-rolesave]')) saveRoles(); if (e.target.closest('[data-rolereset]')) resetRoles() });
 async function delAccess(u) {
   if (u === SUPER.username) return alert('Akun khusus ini dilindungi dan tidak bisa dihapus.');
