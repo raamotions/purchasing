@@ -1,0 +1,337 @@
+/* ========== COD GAGAL (menu Retur) ==========
+   Dimuat setelah script.js: memakai helper & data milik script.js (commit, msg, esc, dayWIB, openState, snBeep, dst).
+   Data: koleksi Firestore "codfail" (1 dokumen per resi yang discan) dan dokumen settings/cfdata (manifest + data BigSeller). */
+const CF_EKS = ['J&T', 'SPX', 'GTL', 'SI CEPAT', 'CARGO', 'JNE', 'LEX'];
+const CF_ST = ['Baik', 'Barang ditukar', 'Rusak', 'Lecet', 'Kurang', 'Salah barang'];
+const CF_COLS = ['No', 'Tgl Transaksi', 'Nomor Resi Pengembalian', 'Nama Toko', 'Check Status', 'Check Deskripsi', 'Ket. Karung', 'Tgl Check', 'Waktu Check'];
+const CF_W = [6, 14, 26, 28, 18, 22, 14, 14, 9];
+const CF_H = { // nama kolom Excel BigSeller (huruf kecil)
+  toko: ['toko bigseller', 'nama toko', 'toko'],
+  pes: ['nomor pesanan', 'no pesanan', 'no. pesanan', 'id pesanan'],
+  resi: ['nomor resi', 'no resi', 'no. resi'],
+  ret: ['nomor resi pesanan pengembalian', 'nomor resi pengembalian', 'no resi pengembalian', 'no. resi pengembalian']
+};
+const cfDt = ts => dayWIB(ts).split('-').reverse().join('/'); // 27/11/2026
+const cfTm = ts => new Date(ts).toLocaleTimeString('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }); // 15:32
+const cfFine = () => !(window.matchMedia && matchMedia('(pointer:coarse)').matches); // true = ada mouse/keyboard (bukan layar sentuh)
+
+/* ---------- pilihan ---------- */
+$('#cfEks').innerHTML = '<option value="">Pilih ekspedisi</option>' + CF_EKS.map(e => `<option>${esc(e)}</option>`).join('');
+$('#cfMEks').innerHTML = '<option value="">Tidak ditentukan</option>' + CF_EKS.map(e => `<option>${esc(e)}</option>`).join('');
+['#cfCmpE', '#cfFE'].forEach(id => $(id).innerHTML = '<option value="">Semua</option>' + CF_EKS.map(e => `<option>${esc(e)}</option>`).join(''));
+$('#cfEks').value = store.get('cf_eks', '') || '';
+$('#cfKrg').value = store.get('cf_krg', 36);
+$('#cfCmpD').value = dayWIB(Date.now());
+caps($('#cfResi'));
+
+/* ---------- data manifest & BigSeller ---------- */
+const cfM = () => (cfData && cfData.mf) || [];
+const cfB = () => (cfData && cfData.bs) || [];
+let cfBsK = null, cfBsM = null;
+function cfBsMap() { // resi / resi pengembalian -> {toko, pes, resi, ret}
+  const a = cfB(); if (cfBsK === a && cfBsM) return cfBsM;
+  const m = new Map();
+  a.forEach(s => { const p = s.split('\t'), o = { toko: p[0] || '', pes: p[1] || '', resi: p[2] || '', ret: p[3] || '' }; if (o.resi) m.set(o.resi, o); if (o.ret) m.set(o.ret, o) });
+  cfBsK = a; return cfBsM = m;
+}
+const cfEntry = r => cfBsMap().get(r) || null;
+const cfToko = r => (cfEntry(r) || {}).toko || '';
+function cfSave(mf, bs) {
+  const nd = { id: 'cfdata', mf, bs, upd: Date.now(), adm: me ? me.name : '' };
+  if (JSON.stringify(nd).length > 900000) return false; // batas dokumen Firestore 1 MB
+  const before = cfData; cfData = nd;
+  if (!commit([['settings', 'set', nd]])) { cfData = before; return false }
+  return true;
+}
+function cfParseManifest(t) { // ambil semua nomor resi dari teks (huruf + angka, minimal 8 karakter, wajib ada angka)
+  const out = [], seen = new Set();
+  (String(t).toUpperCase().match(/[A-Z0-9]{8,32}/g) || []).forEach(x => {
+    if (!/\d/.test(x)) return;
+    if (/^\d+$/.test(x)) { if (x.length < 10) return; if (x.length <= 13 && /^(08|62)/.test(x)) return } // bukan tanggal / nomor HP
+    if (seen.has(x)) return; seen.add(x); out.push(x);
+  });
+  return out;
+}
+$('#cfMGo').onclick = () => {
+  const toks = cfParseManifest($('#cfMtx').value);
+  if (!toks.length) return msg('#cfMMsg', 'Tidak ada nomor resi yang terbaca dari teks itu.');
+  const e = $('#cfMEks').value, mf = cfM().map(x => ({ r: x.r, e: x.e || '' })), idx = new Map(mf.map((x, i) => [x.r, i]));
+  let add = 0, dup = 0;
+  toks.forEach(r => { if (idx.has(r)) { dup++; const x = mf[idx.get(r)]; if (!x.e && e) x.e = e } else { idx.set(r, mf.length); mf.push({ r, e }); add++ } });
+  if (!cfSave(mf, cfB())) return msg('#cfMMsg', 'Gagal menyimpan (data terlalu besar atau penyimpanan penuh).');
+  $('#cfMtx').value = ''; msg('#cfMMsg', NF(toks.length) + ' resi terbaca: ' + NF(add) + ' baru, ' + NF(dup) + ' sudah ada.', true); renderCf(true);
+};
+$('#cfMClr').onclick = () => {
+  if (!cfM().length) return msg('#cfMMsg', 'Manifest sudah kosong.');
+  if (!confirm('Kosongkan semua manifest (' + NF(cfM().length) + ' resi)? Data scan tidak ikut terhapus.')) return;
+  if (!cfSave([], cfB())) return msg('#cfMMsg', 'Gagal menyimpan.');
+  msg('#cfMMsg', 'Manifest dikosongkan.', true); renderCf(true);
+};
+async function cfReadBs(files) {
+  files = Array.from(files || []); if (!files.length) return;
+  if (!window.XLSX) return msg('#cfBMsg', 'Library Excel gagal dimuat. Pastikan terhubung ke internet.');
+  msg('#cfBMsg', 'Membaca file...', true);
+  const map = new Map(); cfB().forEach(s => { const p = s.split('\t'); map.set(p[3] || p[2] || p[1], s) });
+  let read = 0, add = 0, upd = 0; const bad = [];
+  try {
+    for (const fl of files) {
+      const wb = XLSX.read(await fl.arrayBuffer(), { type: 'array' }); let found = false;
+      wb.SheetNames.forEach(sn => {
+        const a = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: '' });
+        let hi = -1, ix = {};
+        for (let i = 0; i < Math.min(a.length, 15) && hi < 0; i++) {
+          const h = a[i].map(x => String(x).trim().replace(/\s+/g, ' ').toLowerCase()), f1 = names => h.findIndex(x => names.includes(x));
+          const ret = f1(CF_H.ret), res = f1(CF_H.resi);
+          if (ret >= 0 || res >= 0) { hi = i; ix = { toko: f1(CF_H.toko), pes: f1(CF_H.pes), resi: res, ret } }
+        }
+        if (hi < 0) return; found = true;
+        for (let i = hi + 1; i < a.length; i++) {
+          const r = a[i], g = k => k >= 0 ? r[k] : '';
+          const resi = scResi(g(ix.resi)), ret = scResi(g(ix.ret)), toko = String(g(ix.toko) || '').trim(), pes = String(g(ix.pes) || '').trim();
+          if (!resi && !ret) continue;
+          read++; const key = ret || resi || pes, s = [toko, pes, resi, ret].join('\t');
+          if (map.has(key)) { if (map.get(key) !== s) upd++ } else add++;
+          map.set(key, s);
+        }
+      });
+      if (!found) bad.push(fl.name);
+    }
+  } catch (e) { console.error(e); return msg('#cfBMsg', 'File tidak bisa dibaca. Pastikan file Excel dari BigSeller.') }
+  if (!read) return msg('#cfBMsg', 'Kolom "Nomor Resi" / "Nomor Resi Pesanan Pengembalian" tidak ditemukan' + (bad.length ? ' di: ' + bad.join(', ') : '') + '.');
+  if (!cfSave(cfM(), Array.from(map.values()))) return msg('#cfBMsg', 'Gagal menyimpan (data terlalu besar atau penyimpanan penuh).');
+  msg('#cfBMsg', NF(read) + ' baris dibaca: ' + NF(add) + ' baru, ' + NF(upd) + ' diperbarui.' + (bad.length ? ' File tanpa kolom resi dilewati: ' + bad.join(', ') + '.' : ''), true);
+  renderCf(true);
+}
+(() => {
+  const d = $('#cfBsDrop');
+  ['dragenter', 'dragover'].forEach(ev => d.addEventListener(ev, e => { e.preventDefault(); d.classList.add('over') }));
+  ['dragleave', 'drop'].forEach(ev => d.addEventListener(ev, e => { e.preventDefault(); d.classList.remove('over') }));
+  d.addEventListener('drop', e => cfReadBs(e.dataTransfer.files));
+  $('#cfBsPick').onclick = () => $('#cfBsFile').click();
+  $('#cfBsFile').onchange = e => { cfReadBs(e.target.files); e.target.value = '' };
+})();
+$('#cfBClr').onclick = () => {
+  if (!cfB().length) return msg('#cfBMsg', 'Data BigSeller sudah kosong.');
+  if (!confirm('Kosongkan data BigSeller (' + NF(cfB().length) + ' baris)?')) return;
+  if (!cfSave(cfM(), [])) return msg('#cfBMsg', 'Gagal menyimpan.');
+  msg('#cfBMsg', 'Data BigSeller dikosongkan.', true); renderCf(true);
+};
+
+/* ---------- perbandingan manifest vs scan ---------- */
+function cfRenderCmp() {
+  const el = $('#cfCmp'), day = $('#cfCmpD').value, fe = $('#cfCmpE').value, mf = cfM();
+  $('#cfInfoM').textContent = NF(mf.length) + ' resi manifest dan ' + NF(cfB().length) + ' baris data BigSeller tersimpan.';
+  const sc = codfail.filter(r => !day || (r.day || dayWIB(r.ts)) === day);
+  if (!mf.length && !sc.length) { el.innerHTML = '<div class="empty">Belum ada manifest atau data scan.</div>'; return }
+  const byKey = new Map();
+  sc.forEach(s => byKey.set(s.resi, s));
+  sc.forEach(s => { const en = cfEntry(s.resi); if (en) [en.resi, en.ret].forEach(k => { if (k && !byKey.has(k)) byKey.set(k, s) }) }); // resi lain pada pesanan yang sama ikut dianggap cocok
+  const used = new Set(), rows = [];
+  mf.forEach(m => { const s = byKey.get(m.r); if (s) used.add(s); rows.push({ m, s }) });
+  const shown = rows.filter(x => !fe || !x.m.e || x.m.e === fe), extra = sc.filter(s => !used.has(s) && (!fe || s.eks === fe));
+  const ok = shown.filter(x => x.s).length, wait = shown.length - ok;
+  const tr = (cls, i, man, scn, en, st, del) => `<tr class="${cls}"><td>${i}</td><td>${man ? '<b>' + esc(man) + '</b>' : '-'}</td><td>${scn ? '<b>' + esc(scn) + '</b>' : '-'}</td><td>${esc((en && en.toko) || '-')}</td><td>${esc((en && en.pes) || '-')}</td><td class="nw">${st}</td><td>${del || ''}</td></tr>`;
+  let i = 0, body = '';
+  extra.forEach(s => { body += tr('cfbad', ++i, '', s.resi, cfEntry(s.resi), '✕ Tidak ada di manifest <span class="tag">' + esc(s.eks || '-') + '</span>') });
+  shown.forEach(x => {
+    const en = cfEntry(x.m.r) || (x.s && cfEntry(x.s.resi)), del = `<button class="btn ghost sm" data-cfmdel="${esc(x.m.r)}" title="Hapus dari manifest">×</button>`;
+    body += x.s ? tr('cfok', ++i, x.m.r, x.s.resi, en, '✓ Cocok', del) : tr('cfwait', ++i, x.m.r, '', en, 'Belum discan' + (x.m.e ? ' <span class="tag">' + esc(x.m.e) + '</span>' : ''), del);
+  });
+  el.innerHTML = sumBar([stag('Manifest', NF(shown.length)), stag('Cocok', NF(ok), 'cfokt'), stag('Belum discan', NF(wait)), stag('Scan tidak sesuai', NF(extra.length), extra.length ? 'ed' : '')]) +
+    (body ? `<div class="tw"><table style="min-width:700px"><thead><tr><th>No</th><th>Manifest</th><th>Data Scan</th><th>Nama Toko</th><th>No. Pesanan</th><th>Status</th><th></th></tr></thead><tbody>${body}</tbody></table></div>` : '<div class="empty">Tidak ada data pada filter ini.</div>');
+}
+$('#cfCmp').addEventListener('click', e => {
+  const b = e.target.closest('[data-cfmdel]'); if (!b) return;
+  const mf = cfM().filter(x => x.r !== b.dataset.cfmdel).map(x => ({ r: x.r, e: x.e || '' }));
+  if (cfSave(mf, cfB())) renderCf(true);
+});
+['#cfCmpD', '#cfCmpE'].forEach(id => { $(id).addEventListener('input', cfRenderCmp); $(id).addEventListener('change', cfRenderCmp) });
+
+/* ---------- form & scan ---------- */
+let cfNew = false; // true = scan berikutnya masuk karung baru
+function cfOpenGroup(eks, krg, day) { // karung hari ini (ekspedisi & isi sama) yang belum penuh
+  const g = {};
+  codfail.forEach(r => { if ((r.day || dayWIB(r.ts)) === day && r.eks === eks && +r.krg === krg && r.kid) { const o = g[r.kid] = g[r.kid] || { kid: r.kid, n: 0, t: 0 }; o.n++; o.t = Math.max(o.t, r.ts) } });
+  return Object.values(g).filter(o => o.n < krg).sort((a, b) => b.t - a.t)[0] || null;
+}
+function cfInfo() {
+  const eks = $('#cfEks').value, krg = parseInt($('#cfKrg').value, 10), el = $('#cfInfo');
+  if (!eks || !(krg > 0)) { el.textContent = 'Pilih ekspedisi dan isi jumlah isi karung.'; return }
+  const o = cfNew ? null : cfOpenGroup(eks, krg, dayWIB(Date.now()));
+  el.innerHTML = o ? `Karung aktif: <b>${esc(eks)}</b> · terisi <b>${o.n}/${krg}</b> PCS` : `Scan berikutnya masuk <b>karung baru</b> ${esc(eks)} (0/${krg} PCS)`;
+}
+$('#cfEks').addEventListener('change', () => { store.set('cf_eks', $('#cfEks').value); cfNew = false; cfInfo() });
+$('#cfKrg').addEventListener('input', () => { const v = parseInt($('#cfKrg').value, 10); if (v > 0) store.set('cf_krg', v); cfNew = false; cfInfo() });
+$('#cfNewK').onclick = () => { cfNew = true; cfInfo(); msg('#cfMsg', 'Scan berikutnya masuk karung baru.', true) };
+function cfSubmit(raw) {
+  const inp = $('#cfResi'), resi = scResi(raw), mm = $('#cfMsg');
+  const back = () => { inp.value = ''; if (!cfStream && cfFine()) inp.focus() };
+  const fail = t => { msg('#cfMsg', t); mm.classList.add('bad'); snBeep(true); back() };
+  if (!resi) return;
+  mm.classList.remove('bad');
+  if (!me) return fail('Masuk dengan akun terlebih dulu agar hasil scan tercatat atas nama Anda.');
+  const eks = $('#cfEks').value, krg = parseInt($('#cfKrg').value, 10);
+  if (!eks) return fail('Pilih ekspedisi dulu.');
+  if (!(krg > 0)) return fail('Isi jumlah isi karung (angka lebih dari 0).');
+  if (codfail.some(x => x.resi === resi)) return fail('Resi ' + resi + ' sudah pernah discan.');
+  const ts = Date.now(), day = dayWIB(ts), og = cfNew ? null : cfOpenGroup(eks, krg, day), kid = og ? og.kid : 'k' + uid();
+  const rec = { id: 'cf_' + uid(), ts, day, resi, eks, krg, kid, st: 'Baik', ds: '', adm: me.name };
+  codfail.push(rec);
+  if (!commit([['codfail', 'set', rec]])) { codfail.pop(); return fail('Penyimpanan penuh, data tidak tersimpan.') }
+  cfNew = false;
+  const n = codfail.filter(x => x.kid === kid).length, inMf = cfM().some(m => m.r === resi) || (() => { const en = cfEntry(resi); return !!en && cfM().some(m => m.r === en.resi || m.r === en.ret) })();
+  if (cfM().length && !inMf) { msg('#cfMsg', '⚠ ' + resi + ' tersimpan, tapi TIDAK ADA di manifest.'); mm.classList.add('bad'); snBeep(true) }
+  else { msg('#cfMsg', '✓ ' + resi + ' tersimpan · ' + eks + ' ' + n + '/' + krg + ' PCS' + (n >= krg ? ' (karung penuh)' : ''), true); snBeep(false) }
+  back(); renderCf(true);
+}
+$('#cfResi').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); cfSubmit($('#cfResi').value) } });
+$('#cfAdd').onclick = () => cfSubmit($('#cfResi').value);
+let cfStream = null, cfTimer = null;
+function cfCamStop() {
+  clearInterval(cfTimer); cfTimer = null;
+  if (cfStream) cfStream.getTracks().forEach(t => t.stop()); cfStream = null;
+  const v = $('#cfVid'); if (v) { v.srcObject = null; v.hidden = true }
+  $('#cfFr').hidden = true; $('#cfCam').hidden = false; $('#cfStopW').hidden = true;
+}
+$('#cfCam').onclick = async () => {
+  try { snBeepC = snBeepC || new (window.AudioContext || window.webkitAudioContext)(); if (snBeepC.state === 'suspended') snBeepC.resume() } catch (e) { } // izinkan suara (harus dari ketukan)
+  if (!('BarcodeDetector' in window) || !navigator.mediaDevices) return msg('#cfMsg', 'Browser ini belum mendukung scan lewat kamera. Ketik No. Resi di kolom atas atau pakai alat scanner.');
+  if (cfStream) return;
+  try {
+    const det = new BarcodeDetector(), v = $('#cfVid'); let busy = false, lastV = '', lastT = 0;
+    cfStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', aspectRatio: { ideal: 1 } } }); v.srcObject = cfStream; await v.play();
+    v.hidden = false; $('#cfFr').hidden = false; $('#cfCam').hidden = true; $('#cfStopW').hidden = false; $('#cfMsg').classList.remove('bad'); msg('#cfMsg', 'Arahkan kamera ke Barcode / QR.');
+    cfTimer = setInterval(async () => {
+      if (busy) return; busy = true;
+      try { const r = await det.detect(v); if (r.length) { const val = r[0].rawValue, n = Date.now(); if (val !== lastV || n - lastT > 2500) { lastV = val; lastT = n; cfSubmit(val) } } } catch (e) { }
+      busy = false;
+    }, 250);
+  } catch (e) { cfCamStop(); msg('#cfMsg', 'Kamera tidak bisa dibuka. Izinkan akses kamera atau ketik No. Resi.') }
+};
+$('#cfCamStop').onclick = cfCamStop;
+
+/* ---------- hasil scan (dikelompokkan per tanggal > karung) ---------- */
+function cfGroups(list) {
+  const g = new Map();
+  list.forEach(r => {
+    const d = r.day || dayWIB(r.ts), k = r.kid || ('x' + d + '|' + r.eks + '|' + r.krg);
+    let o = g.get(k); if (!o) { o = { k, eks: r.eks || '-', krg: +r.krg || 0, day: d, rows: [] }; g.set(k, o) }
+    o.rows.push(r);
+  });
+  const arr = Array.from(g.values()), cnt = {};
+  arr.forEach(o => { o.rows.sort((a, b) => a.ts - b.ts); o.t0 = o.rows[0].ts; o.t1 = o.rows[o.rows.length - 1].ts; o.pos = {}; o.rows.forEach((r, i) => o.pos[r.id] = i + 1) });
+  arr.sort((a, b) => a.t0 - b.t0).forEach(o => { const c = o.day + '|' + o.eks; cnt[c] = (cnt[c] || 0) + 1; o.n = cnt[c] });
+  return arr;
+}
+let cfLast = [];
+function cfFiltered() { // kelompok dengan baris yang lolos filter
+  const f = $('#cfFD').value, t = $('#cfTD').value, fe = $('#cfFE').value, toks = $('#cfQ').value.trim().toUpperCase().split(/[\s,;]+/).filter(Boolean), out = [];
+  cfGroups(codfail).forEach(g => {
+    const rows = g.rows.filter(r => { const d = r.day || dayWIB(r.ts); return (!f || d >= f) && (!t || d <= t) && (!fe || r.eks === fe) && (!toks.length || toks.some(k => r.resi.includes(k))) });
+    if (rows.length) out.push(Object.assign({}, g, { all: g.rows.length, rows }));
+  });
+  return out;
+}
+function cfGrpHtml(g) {
+  const full = g.krg > 0 && g.all >= g.krg;
+  const rows = g.rows.map(r => `<tr${(r.st || 'Baik') !== 'Baik' ? ' class="cfwarn"' : ''}><td>${g.pos[r.id]}</td><td><b>${esc(r.resi)}</b></td><td>${esc(cfToko(r.resi) || '-')}</td>` +
+    `<td><select data-cfst="${esc(r.id)}">${CF_ST.map(s => `<option${s === (r.st || 'Baik') ? ' selected' : ''}>${s}</option>`).join('')}</select></td>` +
+    `<td><input data-cfds="${esc(r.id)}" value="${esc(r.ds || '')}" placeholder="Deskripsi" autocomplete="off"></td>` +
+    `<td class="nw">${g.krg}PCS</td><td class="nw">${cfDt(r.ts)}</td><td class="nw">${cfTm(r.ts)}</td><td><button class="btn ghost sm" data-cfdel="${esc(r.id)}">Hapus</button></td></tr>`).join('');
+  return `<div class="cfgh"><div><b>${esc(g.eks)}</b> · Karung ${g.n} <span class="tag${full ? ' cfokt' : ''}">${NF(g.all)}/${NF(g.krg)} PCS</span></div>` +
+    `<div class="cfbtns"><button class="btn ghost sm" data-cfx="xls" data-k="${esc(g.k)}" type="button">Excel</button><button class="btn ghost sm" data-cfx="pdf" data-k="${esc(g.k)}" type="button">PDF</button></div></div>` +
+    `<div class="tw"><table style="min-width:900px"><thead><tr><th>No</th><th>Nomor Resi Pengembalian</th><th>Nama Toko</th><th>Check Status</th><th>Check Deskripsi</th><th>Ket. Karung</th><th>Tgl Check</th><th>Waktu</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function cfRenderGrp() {
+  const G = cfFiltered(), el = $('#cfGrp'); cfLast = G;
+  if (!G.length) { el.innerHTML = '<div class="empty">Belum ada hasil scan.</div>'; return }
+  const today = dayWIB(Date.now()), filt = ['#cfFD', '#cfTD', '#cfFE', '#cfQ'].some(x => $(x).value), all = [].concat(...G.map(g => g.rows)), days = {};
+  G.forEach(g => (days[g.day] = days[g.day] || []).push(g));
+  let html = sumBar([stag('Total scan', NF(all.length)), stag('Jumlah karung', NF(G.length))].concat(cTags(countBy(all, r => r.eks), '')));
+  Object.keys(days).sort().reverse().forEach(d => {
+    const gs = days[d].sort((a, b) => b.t1 - a.t1), n = gs.reduce((s, g) => s + g.rows.length, 0), k = 'cfd' + d, open = k in openState ? openState[k] : (filt || d === today);
+    html += `<details class="dy" data-k="${k}"${open ? ' open' : ''}><summary>${dayLbl(d)} <span class="tag">${NF(n)} data</span></summary>${gs.map(cfGrpHtml).join('')}</details>`;
+  });
+  el.innerHTML = html;
+}
+function renderCf(force) {
+  if (!$('#cf')) return;
+  cfRenderCmp(); cfInfo();
+  const a = document.activeElement;
+  if (force || !(a && $('#cfGrp').contains(a) && /^(INPUT|SELECT)$/.test(a.tagName))) cfRenderGrp(); // jangan ganggu saat sedang mengetik / memilih
+}
+$('#cfGrp').addEventListener('click', e => {
+  const s = e.target.closest('summary'); if (s) { const d = s.parentElement; openState[d.dataset.k] = !d.open; return }
+  const x = e.target.closest('[data-cfx]');
+  if (x) { const g = cfLast.find(z => z.k === x.dataset.k); if (!g) return; return x.dataset.cfx === 'xls' ? cfXlsx([g], cfName(g, 'xlsx')) : cfPdf([g], cfName(g, 'pdf')) }
+  const b = e.target.closest('[data-cfdel]');
+  if (b) {
+    const r = codfail.find(z => z.id === b.dataset.cfdel); if (!r) return;
+    if (!confirm('Hapus resi ' + r.resi + ' dari daftar COD Gagal?')) return;
+    codfail = codfail.filter(z => z !== r); commit([['codfail', 'del', r.id]]); renderCf(true);
+  }
+});
+$('#cfGrp').addEventListener('change', e => {
+  const st = e.target.closest('[data-cfst]'), ds = e.target.closest('[data-cfds]'), el = st || ds; if (!el) return;
+  const r = codfail.find(z => z.id === (el.dataset.cfst || el.dataset.cfds)); if (!r) return;
+  if (st) r.st = st.value; else r.ds = ds.value.trim();
+  commit([['codfail', 'set', r]]);
+  const tr = el.closest('tr'); if (tr && st) tr.classList.toggle('cfwarn', r.st !== 'Baik');
+});
+['#cfFD', '#cfTD', '#cfFE', '#cfQ'].forEach(id => { $(id).addEventListener('input', cfRenderGrp); $(id).addEventListener('change', cfRenderGrp) });
+$('#cfFReset').onclick = () => { ['#cfFD', '#cfTD', '#cfFE', '#cfQ'].forEach(id => $(id).value = ''); cfRenderGrp() };
+
+/* ---------- export (format tabel: No, Tgl Transaksi, Nomor Resi Pengembalian, ...) ---------- */
+const cfRowsOf = g => g.rows.map((r, i) => [i + 1, cfDt(r.ts), r.resi, cfToko(r.resi), r.st || 'Baik', r.ds || '', g.krg + 'PCS', cfDt(r.ts), cfTm(r.ts)]);
+const cfDmy = () => { const d = dayWIB(Date.now()).split('-'); return d[2] + d[1] + d[0].slice(2) };
+const cfName = (g, ext) => 'COD GAGAL-' + (g ? g.eks.replace(/[^A-Za-z0-9]+/g, '') + '-K' + g.n + '-' : '') + (g ? g.day.slice(8) + g.day.slice(5, 7) + g.day.slice(2, 4) : cfDmy()) + '.' + ext;
+function cfSaveBlob(blob, fn) {
+  const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = fn; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 3000);
+}
+async function cfXlsx(groups, fn) {
+  if (!groups.length) return alert('Tidak ada data untuk diexport.');
+  if (!window.ExcelJS) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
+  try {
+    const wb = new ExcelJS.Workbook(), used = new Set(), K = { argb: 'FF000000' };
+    const bd = { top: { style: 'thin', color: K }, bottom: { style: 'thin', color: K }, left: { style: 'medium', color: K }, right: { style: 'medium', color: K } };
+    const PINK = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC7CE' } };
+    groups.forEach(g => {
+      let nm = (g.eks + ' ' + g.day.slice(8) + '-' + g.day.slice(5, 7) + ' K' + g.n).replace(/[\\\/\?\*\[\]:]/g, '').slice(0, 31), i = 1;
+      while (used.has(nm.toLowerCase())) nm = nm.slice(0, 27) + ' (' + (++i) + ')';
+      used.add(nm.toLowerCase());
+      const ws = wb.addWorksheet(nm);
+      CF_W.forEach((w, c) => ws.getColumn(c + 1).width = w);
+      [CF_COLS].concat(cfRowsOf(g)).forEach((v, ri) => {
+        const row = ws.addRow(v); row.height = ri ? 15.75 : 30;
+        row.eachCell({ includeEmpty: true }, (c, ci) => {
+          c.font = { name: 'Arial', size: 10, color: { argb: ci === 3 ? 'FF9C0006' : 'FF000000' } };
+          c.border = bd; c.alignment = { vertical: 'middle', horizontal: 'left', wrapText: !ri };
+          if (ci === 3) c.fill = PINK;
+        });
+      });
+    });
+    cfSaveBlob(new Blob([await wb.xlsx.writeBuffer()], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), fn);
+  } catch (e) { console.error(e); alert('Export Excel gagal: ' + (e.message || e)) }
+}
+function cfPdf(groups, fn) {
+  if (!groups.length) return alert('Tidak ada data untuk diexport.');
+  if (!window.jspdf) return alert('Library PDF gagal dimuat. Pastikan terhubung ke internet.');
+  try {
+    const doc = new jspdf.jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    groups.forEach((g, i) => {
+      if (i) doc.addPage();
+      doc.setFontSize(9); doc.setTextColor(90); doc.text(g.eks + ' - Karung ' + g.n + ' - ' + cfDt(g.t0) + ' - ' + g.rows.length + '/' + g.krg + ' PCS', 10, 8);
+      doc.autoTable({
+        startY: 11, margin: { left: 10, right: 10, top: 10, bottom: 10 }, theme: 'grid',
+        styles: { fontSize: 8, cellPadding: 1.4, lineColor: [0, 0, 0], lineWidth: 0.2, textColor: [0, 0, 0], halign: 'left', valign: 'middle' },
+        headStyles: { fillColor: [255, 255, 255], textColor: [0, 0, 0], fontStyle: 'normal' },
+        columnStyles: { 2: { fillColor: [255, 199, 206], textColor: [156, 0, 6] } },
+        head: [CF_COLS], body: cfRowsOf(g)
+      });
+    });
+    doc.save(fn);
+  } catch (e) { console.error(e); alert('Export PDF gagal: ' + (e.message || e)) }
+}
+const cfAllG = () => cfFiltered().sort((a, b) => a.t0 - b.t0);
+$('#cfXls').onclick = () => cfXlsx(cfAllG(), cfName(null, 'xlsx'));
+$('#cfPdf').onclick = () => cfPdf(cfAllG(), cfName(null, 'pdf'));

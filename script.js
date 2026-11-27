@@ -92,7 +92,7 @@ const FIREBASE_CONFIG = FIREBASE_PROJECTS[PROJ];
 const SESS = 'pp_session_' + PROJ; // sesi login dipisah per project
 
 const recPids = r => r ? (r.pids && r.pids.length ? r.pids : r.pid ? [r.pid] : []) : []; // semua id foto sebuah rekaman Purchase (data lama: hanya pid)
-let db = null, products = [], reqs = [], records = [], downloads = [], hlog = [], returns = [], rgoods = [], pstock = [], scans = [], photos = {}, admins = [], me = null; // me: {username, name} atau null (tamu)
+let db = null, products = [], reqs = [], records = [], downloads = [], hlog = [], returns = [], rgoods = [], pstock = [], scans = [], codfail = [], cfData = null, photos = {}, admins = [], me = null; // me: {username, name} atau null (tamu)
 let scCache = null, scLim = {}; // Data Scanner: cache daftar baris & batas baris tampil per tanggal
 const sk = k => k === 'pp_session' ? SESS : k; // sesi login terpisah per project
 const store = {
@@ -109,7 +109,7 @@ function loadLocal() {
     { id: 'p2', name: 'Tas Kanvas', variants: [] }
   ];
   reqs = store.get('pp_requests', []); records = store.get('pp_records', []); photos = store.get('pp_photos', {});
-  admins = Object.values(store.get('pp_admins', {})); downloads = store.get('pp_downloads', []); hlog = store.get('pp_hlog', []); returns = store.get('pp_returns', []); rgoods = store.get('pp_rgoods', []); pstock = store.get('pp_pstock', []); scans = store.get('pp_scans', []); scCache = null; rolesCfg = store.get('pp_roles', null);
+  admins = Object.values(store.get('pp_admins', {})); downloads = store.get('pp_downloads', []); hlog = store.get('pp_hlog', []); returns = store.get('pp_returns', []); rgoods = store.get('pp_rgoods', []); pstock = store.get('pp_pstock', []); scans = store.get('pp_scans', []); scCache = null; codfail = store.get('pp_codfail', []); cfData = store.get('pp_cfdata', null); rolesCfg = store.get('pp_roles', null);
   [['requests', reqs], ['records', records], ['downloads', downloads], ['hlog', hlog], ['returns', returns], ['rgoods', rgoods], ['pstock', pstock], ['scans', scans], ['admins', admins]].forEach(([c, a]) => fixAdm(c, a, true));
 }
 // ---- nama admin diseragamkan: HURUF KAPITAL
@@ -128,7 +128,7 @@ function commit(ops = []) {
   if (!db) {
     const used = new Set([].concat(...records.map(recPids), ...hlog.map(h => h.pids || [])));
     Object.keys(photos).forEach(k => { if (!used.has(k)) delete photos[k] });
-    const ok = store.set('pp_products', products) && store.set('pp_requests', reqs) && store.set('pp_records', records) && store.set('pp_photos', photos) && store.set('pp_downloads', downloads) && store.set('pp_hlog', hlog) && store.set('pp_returns', returns) && store.set('pp_rgoods', rgoods) && store.set('pp_pstock', pstock) && store.set('pp_scans', scans) && store.set('pp_roles', rolesCfg);
+    const ok = store.set('pp_products', products) && store.set('pp_requests', reqs) && store.set('pp_records', records) && store.set('pp_photos', photos) && store.set('pp_downloads', downloads) && store.set('pp_hlog', hlog) && store.set('pp_returns', returns) && store.set('pp_rgoods', rgoods) && store.set('pp_pstock', pstock) && store.set('pp_scans', scans) && store.set('pp_codfail', codfail) && store.set('pp_cfdata', cfData) && store.set('pp_roles', rolesCfg);
     if (!ok) loadLocal();
     return ok;
   }
@@ -224,6 +224,7 @@ function refresh() {
   if ($('#bd').classList.contains('on')) renderBd();
   if ($('#sc').classList.contains('on')) renderSc();
   if ($('#scn').classList.contains('on')) renderSn();
+  if (window.renderCf && $('#cf').classList.contains('on')) renderCf();
   renderNotif();
 }
 function startSync() {
@@ -252,14 +253,15 @@ function startSync() {
     on('rgoods', (a, fc) => rgoods = fixAdm('rgoods', a, fc).sort((x, y) => y.ts - x.ts));
     on('pstock', (a, fc) => pstock = fixAdm('pstock', a, fc).sort((x, y) => y.ts - x.ts));
     on('scans', (a, fc) => { scans = fixAdm('scans', a, fc); scCache = null });
-    on('settings', a => { rolesCfg = a.find(x => x.id === 'roles') || null; const w = a.find(x => x.id === 'wa'); if (w && Array.isArray(w.nums)) { waNums = w.nums; store.set('pp_wa', waNums) } applyRole() });
+    on('codfail', a => codfail = a);
+    on('settings', a => { rolesCfg = a.find(x => x.id === 'roles') || null; cfData = a.find(x => x.id === 'cfdata') || null; const w = a.find(x => x.id === 'wa'); if (w && Array.isArray(w.nums)) { waNums = w.nums; store.set('pp_wa', waNums) } applyRole() });
     on('downloads', (a, fc) => downloads = fixAdm('downloads', a, fc).sort((x, y) => y.ts - x.ts));
     on('hlog', (a, fc) => hlog = fixAdm('hlog', a, fc).sort((x, y) => y.ts - x.ts));
   } catch (e) { db = null; loadLocal(); setSync('err'); refresh() }
 }
 
 /* ---------- menu & hamburger ---------- */
-const TT = { pg: ['Pengajuan', 'Hari ini tampil di atas; hari sebelumnya masuk riwayat per bulan (ganti hari pukul 00.00 WIB)'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], rt: ['Input Retur', 'Form retur / pengembalian barang'], bd: ['Laporan Retur', 'Hasil input retur marketplace, bisa diedit'], rw: ['Riwayat', 'Riwayat edit & hapus; data lama bisa dipulihkan'], ow: ['Dashboard Khusus', 'Kontrol admin & analisa pemasaran (khusus pemilik)'], dl: ['Download', 'Riwayat export Excel / PDF, bisa difilter dan diexport gabungan'], pr: ['Database Produk', 'Input produk satuan / massal (SKU, varian, Barcode & QR) dan stok produk'], gd: ['Barang Gudang', 'Cek barang retur / cancel yang tersedia sebelum mengajukan lagi'], br: ['Barang Retur', 'Input barang retur; otomatis masuk ke Barang Gudang'], scn: ['Scan', 'Scan Barcode / QR lewat kamera; hasil masuk ke Data Scanner dan hanya terlihat oleh akun yang men-scan'], sc: ['Data Scanner', 'Upload data scan dari Excel (ekspedisi, resi, jam scan, PIC); hari ini tampil di atas, sebelumnya masuk riwayat'] };
+const TT = { cf: ['COD Gagal', 'Scan retur COD gagal dan cocokkan dengan manifest ekspedisi'], pg: ['Pengajuan', 'Hari ini tampil di atas; hari sebelumnya masuk riwayat per bulan (ganti hari pukul 00.00 WIB)'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], rt: ['Input Retur', 'Form retur / pengembalian barang'], bd: ['Laporan Retur', 'Hasil input retur marketplace, bisa diedit'], rw: ['Riwayat', 'Riwayat edit & hapus; data lama bisa dipulihkan'], ow: ['Dashboard Khusus', 'Kontrol admin & analisa pemasaran (khusus pemilik)'], dl: ['Download', 'Riwayat export Excel / PDF, bisa difilter dan diexport gabungan'], pr: ['Database Produk', 'Input produk satuan / massal (SKU, varian, Barcode & QR) dan stok produk'], gd: ['Barang Gudang', 'Cek barang retur / cancel yang tersedia sebelum mengajukan lagi'], br: ['Barang Retur', 'Input barang retur; otomatis masuk ke Barang Gudang'], scn: ['Scan', 'Scan Barcode / QR lewat kamera; hasil masuk ke Data Scanner dan hanya terlihat oleh akun yang men-scan'], sc: ['Data Scanner', 'Upload data scan dari Excel (ekspedisi, resi, jam scan, PIC); hari ini tampil di atas, sebelumnya masuk riwayat'] };
 function go(t) {
   if (!can(t)) { t = firstPage(); if (!t) return }
   $$('nav button[data-t]').forEach(b => b.classList.toggle('on', b.dataset.t === t));
@@ -273,6 +275,8 @@ function go(t) {
   if (t === 'bd') renderBd();
   if (t === 'sc') renderSc();
   try { if (t !== 'scn') snCamStop() } catch (e) {}
+  try { if (t !== 'cf' && window.cfCamStop) cfCamStop() } catch (e) {}
+  if (t === 'cf' && window.renderCf) renderCf(true);
   if (t === 'scn') { renderSn(); setTimeout(() => { const i = $('#snIn'); if (i) i.focus({ preventScroll: true }) }, 50) }
   if (t === 'pr') { brLists() }
   if (t === 'gd') renderGd();
@@ -2909,14 +2913,14 @@ $('#scXls').onclick = () => {
 
 /* ---------- ROLE & HAK AKSES ---------- */
 const ROLES = ['Admin', 'Gudang', 'Picker', 'Packing', 'Owner', 'Retur', 'Tamu']; // Tamu = masuk tanpa akun
-const PAGES = { pg: 'Pengajuan', in: 'Input Barang Masuk', pu: 'Purchase', dl: 'Download', rw: 'Riwayat', pr: 'Database Produk', gd: 'Barang Gudang', rt: 'Input Retur', bd: 'Laporan Retur', br: 'Barang Retur', scn: 'Scan (Packing)', sc: 'Data Scanner', ow: 'Dashboard Khusus (gembok)' };
+const PAGES = { pg: 'Pengajuan', in: 'Input Barang Masuk', pu: 'Purchase', dl: 'Download', rw: 'Riwayat', pr: 'Database Produk', gd: 'Barang Gudang', rt: 'Input Retur', bd: 'Laporan Retur', br: 'Barang Retur', scn: 'Scan (Packing)', sc: 'Data Scanner', cf: 'COD Gagal', ow: 'Dashboard Khusus (gembok)' };
 const DEF_PERMS = {
-  Admin: ['pg', 'in', 'pu', 'dl', 'rw', 'pr', 'gd', 'rt', 'bd', 'br', 'ow'],
+  Admin: ['pg', 'in', 'pu', 'dl', 'rw', 'pr', 'gd', 'rt', 'bd', 'br', 'cf', 'ow'],
   Gudang: ['in', 'pu', 'pr', 'gd'],
   Picker: ['pg', 'gd'],
   Packing: ['pu', 'gd', 'scn', 'sc'],
-  Owner: ['pg', 'in', 'pu', 'dl', 'rw', 'pr', 'gd', 'rt', 'bd', 'br', 'scn', 'sc', 'ow'],
-  Retur: ['rt', 'bd', 'br', 'gd'],
+  Owner: ['pg', 'in', 'pu', 'dl', 'rw', 'pr', 'gd', 'rt', 'bd', 'br', 'cf', 'scn', 'sc', 'ow'],
+  Retur: ['rt', 'bd', 'br', 'cf', 'gd'],
   Tamu: ['pg', 'in', 'pu', 'dl', 'rw', 'pr', 'gd']
 };
 const OLD_KEYS = ['pg', 'in', 'pu', 'dl', 'rw', 'pr', 'rt', 'bd', 'ow']; // halaman yang sudah ada saat pengaturan role lama disimpan
@@ -2943,7 +2947,7 @@ const roleList = () => { if (!me) return ['Tamu']; if (me.username === SUPER.use
 const hasRole = r => roleList().includes(r);
 const roleName = () => roleList().join(' + ');
 const can = k => hasRole('Owner') || roleList().some(r => permsOf(r).includes(k)); // Owner selalu boleh semua halaman; role ganda = gabungan akses semua rolenya
-const firstPage = () => ['pg', 'in', 'pu', 'rt', 'bd', 'br', 'dl', 'rw', 'pr', 'gd', 'scn', 'sc'].find(can);
+const firstPage = () => ['pg', 'in', 'pu', 'rt', 'bd', 'br', 'cf', 'dl', 'rw', 'pr', 'gd', 'scn', 'sc'].find(can);
 let superDone = false;
 async function ensureSuper() { // dibuat sekali per sesi bila belum ada; bila ada, dipastikan tetap Owner (password yang sudah diganti tidak ditimpa)
   if (superDone) return; superDone = true;

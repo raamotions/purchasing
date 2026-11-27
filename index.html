@@ -2,10 +2,18 @@
 <html lang="id">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#4a7bd0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Online Eko">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>Online - Eko</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27%3E%3Ctext y=%27.9em%27 font-size=%2790%27%3E%F0%9F%9B%8D%EF%B8%8F%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=50">
+<link rel="stylesheet" href="style.css?v=51">
 </head>
 <body>
 
@@ -22,14 +30,14 @@
       <button data-t="dl">Download</button>
       <button data-t="rw">Riwayat</button>
       <div class="ng" id="ngPacking" data-p="scn,sc"><button type="button" aria-haspopup="true">Packing ▾</button><div class="sub"><button data-t="scn">Scan</button><button data-t="sc">Data Scanner</button></div></div>
-      <div class="ng" id="ngRetur" data-p="rt,bd,br"><button type="button" aria-haspopup="true">Retur ▾</button><div class="sub"><button data-t="rt">Input Retur</button><button data-t="bd">Laporan Retur</button><button data-t="br">Barang Retur</button></div></div>
+      <div class="ng" id="ngRetur" data-p="rt,bd,br,cf"><button type="button" aria-haspopup="true">Retur ▾</button><div class="sub"><button data-t="rt">Input Retur</button><button data-t="bd">Laporan Retur</button><button data-t="br">Barang Retur</button><button data-t="cf">COD Gagal</button></div></div>
       <div class="ng" id="ngProduk" data-p="pr,gd"><button type="button" aria-haspopup="true">Produk ▾</button><div class="sub"><button data-t="pr">Database Produk</button><button data-t="gd">Barang Gudang</button></div></div>
     </nav>
     <button id="burger" aria-label="Menu" hidden>☰</button>
   </div>
     <div class="ph">
       <div><h2 id="pt">Pengajuan</h2><p id="ps">Ajukan barang yang dibutuhkan</p></div>
-      <div class="hr"><button class="who" id="projBtn" type="button"></button><button class="who" id="lockBtn" type="button" title="Dashboard khusus pemilik">🔒</button><button class="who" id="who" type="button">👤 Tamu</button><div class="sync loc" id="sync"><i></i><span>Mode lokal</span></div></div>
+      <div class="hr"><button class="who" id="pwaBtn" type="button" hidden>📲 Pasang</button><button class="who" id="projBtn" type="button"></button><button class="who" id="lockBtn" type="button" title="Dashboard khusus pemilik">🔒</button><button class="who" id="who" type="button">👤 Tamu</button><div class="sync loc" id="sync"><i></i><span>Mode lokal</span></div></div>
     </div>
 </header>
 
@@ -295,6 +303,59 @@
         <div class="xb"><button class="btn ghost sm" id="brFReset" type="button">Reset filter</button></div>
       </div>
       <div id="brList"></div>
+    </div>
+  </section>
+
+  <!-- COD GAGAL (menu Retur) -->
+  <section class="sec" id="cf">
+    <div class="card">
+      <h3>Manifest Ekspedisi &amp; Data BigSeller</h3>
+      <p class="hint">Tempel teks manifest dari WhatsApp (boleh banyak sekaligus), lalu upload Excel BigSeller untuk melengkapi nama toko dan nomor pesanan. Semua manifest tampil di bawah dan disandingkan dengan hasil scan: <b style="color:var(--ok)">hijau</b> = cocok, <b style="color:var(--bad)">merah</b> = resi yang discan tidak ada di manifest.</p>
+      <div class="cfg2">
+        <div>
+          <label>Manifest ekspedisi (tempel teks dari WhatsApp)</label>
+          <textarea id="cfMtx" rows="8" placeholder="Tempel semua teks manifest di sini. Nomor resi dibaca otomatis."></textarea>
+          <label>Ekspedisi manifest <span style="font-weight:400">(opsional)</span></label>
+          <select id="cfMEks"></select>
+          <div class="cfbtns"><button class="btn sm" id="cfMGo" type="button">Proses manifest</button><button class="btn ghost sm" id="cfMClr" type="button">Kosongkan manifest</button></div>
+          <div class="msg" id="cfMMsg"></div>
+        </div>
+        <div>
+          <label>Data BigSeller (Excel)</label>
+          <div class="mgdrop" id="cfBsDrop"><b>Tarik file Excel ke sini</b><span>atau</span><button class="btn sm" type="button" id="cfBsPick">Pilih file</button><small>Kolom yang diambil: Toko BigSeller, Nomor Pesanan, Nomor Resi, Nomor Resi Pesanan Pengembalian. Boleh banyak file.</small><input type="file" id="cfBsFile" accept=".xlsx,.xls,.csv" multiple hidden></div>
+          <div class="cfbtns"><button class="btn ghost sm" id="cfBClr" type="button">Kosongkan data BigSeller</button></div>
+          <div class="msg" id="cfBMsg"></div>
+        </div>
+      </div>
+      <p class="hint" id="cfInfoM"></p>
+      <div class="cfcmpf">
+        <div><label>Tanggal scan <span style="font-weight:400">(kosong = semua tanggal)</span></label><input type="date" id="cfCmpD"></div>
+        <div><label>Ekspedisi</label><select id="cfCmpE"></select></div>
+      </div>
+      <div id="cfCmp"></div>
+    </div>
+    <div class="card">
+      <h3>Scan COD Gagal</h3>
+      <div class="cfform">
+        <div><label>Ekspedisi</label><select id="cfEks"></select></div>
+        <div><label>Jumlah Isi Karung (PCS)</label><input type="number" id="cfKrg" min="1" inputmode="numeric" placeholder="mis. 36"></div>
+        <div><label>No. Resi Pengembalian</label><div class="cfin"><input id="cfResi" placeholder="Ketik jika Barcode / QR tidak bisa discan" autocomplete="off" autocapitalize="characters"><button class="btn" id="cfAdd" type="button">Tambah</button></div></div>
+      </div>
+      <div class="cfinfo" id="cfInfo"></div>
+      <div class="sncb"><div class="snv" id="cfBox"><video id="cfVid" playsinline muted hidden></video><div class="snfr" id="cfFr" hidden></div><button class="cfopen" id="cfCam" type="button" aria-label="Buka kamera scan"><svg viewBox="0 0 24 24" width="52" height="52" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l1.6-2.4h6.8L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.2" r="3.7"/></svg><span>Ketuk untuk scan</span></button></div><div class="cfbtns" style="justify-content:center"><span id="cfStopW" hidden><button class="btn ghost sm" id="cfCamStop" type="button">Tutup kamera</button></span><button class="btn ghost sm" id="cfNewK" type="button">Mulai karung baru</button></div></div>
+      <div class="msg" id="cfMsg" style="margin-top:12px;text-align:center"></div>
+    </div>
+    <div class="card">
+      <h3>Hasil Scan COD Gagal</h3>
+      <p class="hint">Dikelompokkan per tanggal dan karung. Check Status dan Check Deskripsi bisa diedit langsung. Export Excel / PDF memakai format tabel: No, Tgl Transaksi, Nomor Resi Pengembalian, Nama Toko, Check Status, Check Deskripsi, Ket. Karung, Tgl Check, Waktu Check (Excel: satu sheet per karung).</p>
+      <div class="exf">
+        <div><label>Dari tanggal</label><input type="date" id="cfFD"></div>
+        <div><label>Sampai tanggal</label><input type="date" id="cfTD"></div>
+        <div><label>Ekspedisi</label><select id="cfFE"></select></div>
+        <div class="xb"><button class="btn ghost sm" id="cfFReset" type="button">Reset filter</button><button class="btn ghost sm" id="cfXls" type="button">Export Excel</button><button class="btn ghost sm" id="cfPdf" type="button">Export PDF</button></div>
+      </div>
+      <div class="bds"><label for="cfQ">Cari resi</label><input id="cfQ" placeholder="Cari nomor resi..." autocomplete="off" style="text-transform:uppercase"></div>
+      <div id="cfGrp"></div>
     </div>
   </section>
 
@@ -684,6 +745,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="products-seed.js?v=1"></script>
-<script src="script.js?v=89"></script>
+<script src="script.js?v=90"></script>
+<script src="cod.js?v=1"></script>
+<script src="pwa.js?v=1"></script>
 </body>
 </html>
