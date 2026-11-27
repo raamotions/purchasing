@@ -95,7 +95,7 @@ $('#cfMGo').onclick = () => {
 };
 $('#cfMClr').onclick = () => {
   if (!cfM().length) return msg('#cfMMsg', 'Manifest sudah kosong.');
-  if (!confirm('Kosongkan SEMUA manifest dari semua tanggal (' + NF(cfM().length) + ' resi)? Data scan tidak ikut terhapus.')) return;
+  if (!confirm('Kosongkan SEMUA manifest dari semua tanggal (' + NF(cfM().length) + ' resi)? Data scan yang sudah masuk grup hari tidak ikut terhapus; kalau manifest dimasukkan lagi, otomatis cocok kembali.')) return;
   if (!cfSave([], cfB())) return msg('#cfMMsg', 'Gagal menyimpan.');
   msg('#cfMMsg', 'Semua manifest dikosongkan.', true); renderCf(true);
 };
@@ -364,7 +364,7 @@ function cfRenderGrp() {
   let html = sumBar([stag('Total scan', NF(all.length)), stag('Jumlah karung', NF(G.length))].concat(bsP.length ? [stag('Belum discan (BigSeller)', NF(bsP.length))] : []).concat(cTags(countBy(all, r => r.eks), '')));
   Object.keys(days).sort().reverse().forEach(d => {
     const gs = days[d].sort((a, b) => b.t1 - a.t1), n = gs.reduce((s, g) => s + g.rows.length, 0), k = 'cfd' + d, open = k in openState ? openState[k] : (filt || d === today || !!pd[d]), pn = (pd[d] || []).length;
-    html += `<details class="dy" data-k="${k}"${open ? ' open' : ''}><summary>${dayLbl(d)} <span class="tag">${NF(n)} data</span>${pn ? ` <span class="tag">${NF(pn)} belum discan</span>` : ''}</summary>${pn ? cfPendHtml(pd[d]) : ''}${gs.map(cfGrpHtml).join('')}</details>`;
+    html += `<details class="dy" data-k="${k}"${open ? ' open' : ''}><summary>${dayLbl(d)} <span class="tag">${NF(n)} data</span>${pn ? ` <span class="tag">${NF(pn)} belum discan</span>` : ''}${n ? `<button class="btn ghost sm cfdx" type="button" data-cfdday="${d}" title="Hapus semua data scan hari ini">Hapus</button>` : ''}</summary>${pn ? cfPendHtml(pd[d]) : ''}${gs.map(cfGrpHtml).join('')}</details>`;
   });
   el.innerHTML = html;
 }
@@ -375,6 +375,17 @@ function renderCf(force) {
   if (force || !(a && $('#cfGrp').contains(a) && /^(INPUT|SELECT)$/.test(a.tagName))) cfRenderGrp(); // jangan ganggu saat sedang mengetik / memilih
 }
 $('#cfGrp').addEventListener('click', e => {
+  const dd = e.target.closest('[data-cfdday]');
+  if (dd) { // hapus semua data scan pada satu hari (satu-satunya cara menghapus data yang sudah masuk grup, selain Hapus per resi)
+    e.preventDefault(); e.stopPropagation();
+    const d = dd.dataset.cfdday, list = codfail.filter(r => (r.day || dayWIB(r.ts)) === d);
+    if (!list.length) return;
+    if (!confirm('Hapus SEMUA data scan ' + dayLbl(d) + ' (' + NF(list.length) + ' resi, semua karung)? Manifest dan data BigSeller tidak ikut terhapus. Tindakan ini tidak bisa dibatalkan.')) return;
+    const ids = new Set(list.map(r => r.id)), before = codfail;
+    codfail = codfail.filter(r => !ids.has(r.id));
+    if (!commit(list.map(r => ['codfail', 'del', r.id]))) { codfail = before; return alert('Gagal menghapus data scan.') }
+    msg('#cfMsg', 'Data scan ' + dayLbl(d) + ' dihapus (' + NF(list.length) + ' resi).', true); renderCf(true); return;
+  }
   const s = e.target.closest('summary'); if (s) { const d = s.parentElement; openState[d.dataset.k] = !d.open; return }
   const x = e.target.closest('[data-cfx]');
   if (x) { const g = cfLast.find(z => z.k === x.dataset.k); if (!g) return; return x.dataset.cfx === 'xls' ? cfXlsx([g], cfName(g, 'xlsx')) : cfPdf([g], cfName(g, 'pdf')) }
