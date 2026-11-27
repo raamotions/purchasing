@@ -197,18 +197,20 @@ function cfRenderCmp() {
   cfBsPending().forEach(en => { if (inR(en.d || '') && (!fe || !en.e || en.e === fe)) pend.push({ m: null, s: null, en, md: '' }) }); // data BigSeller yang belum discan & tidak ada di manifest: ikut nyangkut di atas
   const dk = x => x.md || (x.en && x.en.d) || '';
   pend.sort((a, b) => dk(a).localeCompare(dk(b))); // belum discan: tertua di paling atas
-  const extra = codfail.filter(s => !used.has(s) && (!fe || s.eks === fe) && inR(s.day || dayWIB(s.ts)));
+  const extra = codfail.filter(s => !used.has(s) && (!fe || s.eks === fe) && !s.dm && inR(s.day || dayWIB(s.ts)));
   const tr = (cls, i, man, md, scn, en, st, del) => `<tr class="${cls}"><td>${i}</td><td>${man ? '<b>' + esc(man) + '</b>' : '-'}</td><td class="nw">${esc(cfDay(md) || '-')}</td><td>${scn ? '<b>' + esc(scn) + '</b>' : '-'}</td><td>${esc((en && en.toko) || '-')}</td><td>${esc((en && en.pes) || '-')}</td><td class="nw">${esc((en && cfDay(en.d)) || '-')}</td><td class="nw">${st}</td><td>${del || ''}</td></tr>`;
   const delB = m => `<button class="btn ghost sm" data-cfmdel="${esc(m)}" title="Hapus dari manifest">×</button>`;
   let i = 0, body = '';
   pend.forEach(x => { if (!x.m) { body += tr('cfwait', ++i, x.en.ret || x.en.resi, '', '', x.en, 'Belum discan <span class="tag">Hanya di BigSeller</span>'); return }
     body += tr('cfwait', ++i, x.m.r, x.md, '', x.en, 'Belum discan' + (x.m.e ? ' <span class="tag">' + esc(x.m.e) + '</span>' : ''), delB(x.m.r)) }); // belum discan: tetap di atas sampai cocok
-  extra.forEach(s => { body += tr('cfplain', ++i, '', '', s.resi, cfEntry(s.resi), 'Tidak ada di manifest <span class="tag">' + esc(s.eks || '-') + '</span>') }); // tidak sesuai: tetap masuk, warna putih
-  okr.forEach(x => { body += tr('cfok', ++i, x.m.r, x.md, x.s.resi, x.en, '✓ Cocok', delB(x.m.r)) });
+  extra.forEach(s => { body += tr('cfplain', ++i, '', '', s.resi, cfEntry(s.resi), 'Tidak ada di manifest <span class="tag">' + esc(s.eks || '-') + '</span>', `<button class="btn ghost sm" data-cfxdis="${esc(s.id)}" title="Hilangkan dari daftar ini (data scan tetap ada di grup)">×</button>`) }); // tidak sesuai: tetap masuk grup, juga tetap di atas sampai di-x
+  // yang sudah cocok otomatis keluar dari daftar ini dan hanya tampil di grup hasil scan
   el.innerHTML = sumBar([stag('Manifest', NF(pend.filter(x => x.m).length + okr.length)), stag('Cocok', NF(okr.length), 'cfokt'), stag('Belum discan', NF(pend.length)), stag('Scan tidak sesuai', NF(extra.length), extra.length ? 'ed' : '')]) +
-    (body ? `<div class="tw"><table style="min-width:900px"><thead><tr><th>No</th><th>Manifest</th><th>Tgl Manifest</th><th>Data Scan</th><th>Nama Toko</th><th>No. Pesanan</th><th>Tgl BigSeller</th><th>Status</th><th></th></tr></thead><tbody>${body}</tbody></table></div>` : '<div class="empty">Tidak ada data pada filter ini.</div>');
+    (body ? `<div class="tw"><table style="min-width:900px"><thead><tr><th>No</th><th>Manifest</th><th>Tgl Manifest</th><th>Data Scan</th><th>Nama Toko</th><th>No. Pesanan</th><th>Tgl BigSeller</th><th>Status</th><th></th></tr></thead><tbody>${body}</tbody></table></div>` : (okr.length ? '<div class="empty">Semua data yang discan sudah cocok dan masuk ke grup hasil scan.</div>' : '<div class="empty">Tidak ada data pada filter ini.</div>'));
 }
 $('#cfCmp').addEventListener('click', e => {
+  const xd = e.target.closest('[data-cfxdis]');
+  if (xd) { const s = codfail.find(z => z.id === xd.dataset.cfxdis); if (s) { s.dm = 1; commit([['codfail', 'set', s]]); renderCf(true) } return }
   const b = e.target.closest('[data-cfmdel]'); if (!b) return;
   const mf = cfM().filter(x => x.r !== b.dataset.cfmdel).map(x => ({ r: x.r, e: x.e || '', d: x.d || '' }));
   if (cfSave(mf, cfB())) renderCf(true);
@@ -340,7 +342,7 @@ function cfGrpHtml(g) {
     `<td><input data-cfds="${esc(r.id)}" value="${esc(r.ds || '')}" placeholder="Deskripsi" autocomplete="off"></td>` +
     `<td class="nw">${g.krg}PCS</td><td class="nw">${cfDt(r.ts)}</td><td class="nw">${cfTm(r.ts)}</td><td class="nw"><button class="btn ghost sm" data-cfedit="${esc(r.id)}">Edit</button> <button class="btn ghost sm" data-cfdel="${esc(r.id)}">Hapus</button></td></tr>`).join('');
   const hasM = cfM().length > 0, cocok = g.full.filter(r => cfUsedSet.has(r)).length, salah = hasM ? g.full.length - cocok : 0, belum = Math.max(0, g.krg - g.all);
-  return `<div class="cfgh"><div><b>${esc(g.eks)}</b> - Karung ${g.n} <span class="tag${full ? ' cfokt' : ''}">(cocok ${NF(cocok)})</span> <span class="tag${salah ? ' ed' : ''}">(tidak sesuai manifest ${NF(salah)})</span> <span class="tag">(belum di scan ${NF(belum)} (dihitung berdasarkan total karung ${NF(belum)}/${NF(g.krg)}))</span></div>` +
+  return `<div class="cfgh"><div><b>${esc(g.eks)}</b> - Karung ${g.n} <span class="tag${full ? ' cfokt' : ''}">(Cocok ${NF(cocok)}/${NF(g.krg)})</span> <span class="tag${salah ? ' ed' : ''}">(Tidak Sesuai Manifest ${NF(salah)}/${NF(g.krg)})</span> <span class="tag">(belum di scan ${NF(belum)}/${NF(g.krg)})</span></div>` +
     `<div class="cfbtns"><button class="btn ghost sm" data-cfx="xls" data-k="${esc(g.k)}" type="button">Excel</button><button class="btn ghost sm" data-cfx="pdf" data-k="${esc(g.k)}" type="button">PDF</button></div></div>` +
     `<div class="tw"><table style="min-width:900px"><thead><tr><th>No</th><th>Nomor Resi Pengembalian</th><th>Nama Toko</th><th>Check Status</th><th>Check Deskripsi</th><th>Ket. Karung</th><th>Tgl Check</th><th>Waktu</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
