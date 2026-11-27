@@ -8,6 +8,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Online Eko">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -735,18 +737,19 @@
   <p class="wt">Terimakasih ~ Online</p>
 </div></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="products-seed.js?v=1"></script>
-<script src="script.js?v=90"></script>
+<script src="script.js?v=91"></script>
 <script src="cod.js?v=1"></script>
 <script src="pwa.js?v=1"></script>
+<script>
+/* pustaka berat (Excel, PDF) dimuat SETELAH aplikasi tampil, supaya buka web di HP tidak menunggu ~3 MB script */
+(function(){var B='https://cdnjs.cloudflare.com/ajax/libs/',L=['xlsx/0.18.5/xlsx.full.min.js', 'jspdf/2.5.1/jspdf.umd.min.js', 'jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js', 'exceljs/4.4.0/exceljs.min.js', 'pdf.js/3.11.174/pdf.min.js'];
+function go(){L.forEach(function(u){var s=document.createElement('script');s.src=B+u;s.async=false;document.head.appendChild(s)})}
+if(document.readyState==='complete')setTimeout(go,300);else addEventListener('load',function(){setTimeout(go,300)})})();
+</script>
 </body>
 </html>

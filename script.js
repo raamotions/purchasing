@@ -32,7 +32,7 @@ function caps(el) { // kolom selalu HURUF KAPITAL
   el.style.textTransform = 'uppercase';
   el.addEventListener('input', () => { const s = el.selectionStart; el.value = el.value.toUpperCase(); try { el.setSelectionRange(s, s) } catch (e) { } });
 }
-const dayWIB = t => new Date(t).toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+const dayWIB = t => { const x = new Date(t).getTime(); return isNaN(x) ? 'Invalid Date' : new Date(x + 25200000).toISOString().slice(0, 10) }; // WIB = UTC+7 (tanpa DST); jauh lebih cepat daripada toLocaleDateString
 const BLN = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 const HARI = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 const dayLbl = d => HARI[new Date(Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10))).getUTCDay()] + ', ' + (+d.slice(8, 10)) + ' ' + BLN[+d.slice(5, 7) - 1] + ' ' + d.slice(0, 4);
@@ -212,7 +212,10 @@ $('#projBtn').onclick = () => {
   location.reload();
 };
 function refresh() {
-  fillAdm(); renderReqs(); renderProducts(); renderAuto();
+  fillAdm(); pdAutoSeed();
+  if ($('#pg').classList.contains('on')) renderReqs(); // hanya menggambar halaman yang sedang dibuka (go() menggambar halaman lain saat dibuka)
+  if ($('#pr').classList.contains('on')) renderProducts();
+  if ($('#in').classList.contains('on')) renderAuto();
   if ($('#pr').classList.contains('on')) { brLists() }
   if ($('#gd').classList.contains('on')) renderGd();
   if (!$('#gdmdl').hidden) renderGdDetail();
@@ -227,14 +230,16 @@ function refresh() {
   if (window.renderCf && $('#cf').classList.contains('on')) renderCf();
   renderNotif();
 }
+let rfT = 0;
+function refreshSoon() { if (rfT) return; rfT = setTimeout(() => { rfT = 0; refresh() }, 200) } // gabungkan banyak update Firestore beruntun menjadi satu kali gambar ulang
 function startSync() {
   if (!FIREBASE_CONFIG || !window.firebase) { loadLocal(); setSync('loc'); refresh(); return }
   try {
     firebase.initializeApp(FIREBASE_CONFIG); db = firebase.firestore(); db.settings({ experimentalAutoDetectLongPolling: true, merge: true }); setSync('wait');
     // cache lokal (IndexedDB): saat halaman dibuka ulang, data yang tidak berubah dibaca dari perangkat, bukan dari server -> hemat kuota baca
     try { db.enablePersistence({ synchronizeTabs: true }).then(() => persistOK = true).catch(() => {}) } catch (e) {}
-    const on = (c, fn) => db.collection(c).onSnapshot(s => { try { fn(s.docs.map(d => d.data()), s.metadata.fromCache) } catch (e) { console.error(c, e) } setSync(s.metadata.fromCache || s.metadata.hasPendingWrites ? 'wait' : 'ok'); refresh() }, e => failSync(e));
-    on('products', a => products = a.sort((x, y) => String(x.name || '').localeCompare(String(y.name || ''))));
+    const on = (c, fn) => db.collection(c).onSnapshot(s => { try { fn(s.docs.map(d => d.data()), s.metadata.fromCache) } catch (e) { console.error(c, e) } setSync(s.metadata.fromCache || s.metadata.hasPendingWrites ? 'wait' : 'ok'); refreshSoon() }, e => failSync(e));
+    on('products', a => products = a.sort(((c) => (x, y) => c.compare(String(x.name || ''), String(y.name || '')))(new Intl.Collator())));
     on('requests', (a, fc) => reqs = fixAdm('requests', a, fc).sort((x, y) => y.ts - x.ts));
     on('records', (a, fc) => records = fixAdm('records', a, fc).sort((x, y) => y.ts - x.ts));
     // foto TIDAK lagi dibaca semua sekaligus (satu dokumen foto besar & banyak); diambil satu per satu saat dilihat/diedit (lihat photoLoad)
@@ -247,7 +252,7 @@ function startSync() {
         admins = fixAdm('admins', docs.filter(x => !dup.includes(x)).map(x => x.data), sn.metadata.fromCache); syncMe();
         if (!sn.metadata.fromCache) ensureSuper();
       } catch (e) { console.error('admins', e) }
-      setSync(sn.metadata.fromCache || sn.metadata.hasPendingWrites ? 'wait' : 'ok'); refresh();
+      setSync(sn.metadata.fromCache || sn.metadata.hasPendingWrites ? 'wait' : 'ok'); refreshSoon();
     }, e => failSync(e));
     on('returns', (a, fc) => returns = fixAdm('returns', a, fc).sort((x, y) => y.ts - x.ts));
     on('rgoods', (a, fc) => rgoods = fixAdm('rgoods', a, fc).sort((x, y) => y.ts - x.ts));
@@ -278,7 +283,7 @@ function go(t) {
   try { if (t !== 'cf' && window.cfCamStop) cfCamStop() } catch (e) {}
   if (t === 'cf' && window.renderCf) renderCf(true);
   if (t === 'scn') { renderSn(); setTimeout(() => { const i = $('#snIn'); if (i) i.focus({ preventScroll: true }) }, 50) }
-  if (t === 'pr') { brLists() }
+  if (t === 'pr') { brLists(); renderProducts() }
   if (t === 'gd') renderGd();
   if (t === 'br') { brLists(); renderBr() }
   if (t === 'pg') renderReqs();
