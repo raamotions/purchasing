@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Online - Eko</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27%3E%3Ctext y=%27.9em%27 font-size=%2790%27%3E%F0%9F%9B%8D%EF%B8%8F%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=49">
+<link rel="stylesheet" href="style.css?v=50">
 </head>
 <body>
 
@@ -359,68 +359,37 @@
   </section>
 
   <section class="sec" id="pr">
-    <div class="card">
-      <h3>Stok Produk</h3>
-      <p class="hint">Qty = barang yang sudah masuk lewat menu Purchase + Upload Stok (manual / massal) + Barang Retur berkondisi Baik / Kurang. Produk yang sama dengan banyak varian digabung: klik panah di bawah nama produk untuk melihat varian dan Qty-nya. Diperbarui otomatis.</p>
-      <input id="stSearch" placeholder="CARI NAMA PRODUK ATAU VARIAN..." autocomplete="off">
-      <div id="stList"></div>
-    </div>
-    <div class="cols2" style="margin-top:20px">
+    <div class="cols2">
       <div class="card">
-        <h3>Upload Stok Manual</h3>
-        <p class="hint">Tambah stok produk langsung tanpa lewat Purchase. Produk / varian yang belum ada otomatis masuk ke daftar produk.</p>
+        <h3>Input Produk Satuan</h3>
+        <p class="hint">Isi No. SKU, Nama Produk, dan Varian (warna). Varian boleh dikosongkan jika produk tidak punya varian. Setelah disimpan, produk masuk ke Database Produk beserta Barcode dan QR dari No. SKU.</p>
+        <label>No. SKU</label>
+        <input id="pSku" placeholder="Contoh: BKFIZR-100001" autocomplete="off">
         <label>Nama Produk</label>
-        <input id="usName" list="brNames" placeholder="Nama produk" autocomplete="off">
-        <label>Varian <span style="font-weight:400">(warna, kosongkan jika tidak ada)</span></label>
-        <input id="usVar" list="brVars" placeholder="Varian / warna" autocomplete="off">
-        <label>Qty (pcs)</label>
-        <input type="number" id="usQty" min="1" inputmode="numeric" placeholder="Jumlah">
-        <label>Keterangan <span style="font-weight:400">(opsional)</span></label>
-        <textarea id="usKet" rows="2" placeholder="Catatan, mis. stok awal / hasil opname"></textarea>
-        <div class="foot"><div class="msg" id="usMsg"></div><button class="btn" id="usSubmit" type="button">Upload Stok</button></div>
+        <input id="pName" placeholder="Contoh: BAK KOPLING FIZR" autocomplete="off">
+        <label>Varian <span style="font-weight:400">(warna, opsional)</span></label>
+        <input id="pVar" placeholder="Contoh: HITAM" autocomplete="off">
+        <div class="foot"><div class="msg" id="pMsg"></div><button class="btn" id="saveP" type="button">Simpan Produk</button></div>
       </div>
       <div class="card">
-        <h3>Upload Stok Massal (Excel / CSV)</h3>
-        <p class="hint">Kolom: <code>Produk</code>, <code>Varian</code>, <code>Warna</code> (opsional), <code>Qty</code>, <code>Keterangan</code> (opsional). Satu baris per varian. Qty dari file <b>ditambahkan</b> ke stok yang ada, jadi jangan upload file yang sama dua kali. Sebelum disimpan akan ada konfirmasi jumlah data.</p>
-        <button class="btn ghost sm" id="usTpl" type="button">Unduh Template CSV</button>
-        <label>Pilih file</label>
-        <input type="file" id="usFile" accept=".xlsx,.xls,.csv">
-        <div class="msg" id="usImpMsg" style="margin-top:12px"></div>
-      </div>
-    </div>
-    <div class="card" style="margin-top:20px">
-      <h3>Riwayat Upload Stok</h3>
-      <p class="hint">Semua stok yang diupload manual / massal. Bisa diedit atau dihapus; Qty di Stok Produk ikut berubah.</p>
-      <input id="usSearch" placeholder="CARI PRODUK, VARIAN, ATAU KETERANGAN..." autocomplete="off">
-      <div id="usList"></div>
-    </div>
-    <div class="cols2" style="margin-top:20px">
-      <div class="card">
-        <h3>Tambah Produk Manual</h3>
-        <label>Nama Produk</label>
-        <input id="pName" placeholder="Contoh: Kaos Polos">
-        <label>Varian warna (opsional)</label>
-        <div id="vBox"></div>
-        <button class="btn ghost sm" id="addV" type="button" style="margin-top:10px">+ Tambah warna</button>
-        <div class="foot"><div class="msg" id="pMsg"></div><button class="btn" id="saveP">Simpan Produk</button></div>
-      </div>
-      <div class="card">
-        <h3>Input Massal (Excel / CSV)</h3>
-        <p class="hint">Kolom: <code>Produk</code>, <code>Varian</code>, <code>Warna</code>. Satu baris per varian. Warna boleh kode hex (#3b82f6) atau nama (Merah, Biru, Hijau, dll). Produk tanpa varian cukup isi kolom Produk.</p>
+        <h3>Input Produk Massal (Excel / CSV)</h3>
+        <p class="hint">Kolom: <code>SKU</code>, <code>Produk</code>, <code>Varian</code>. Satu baris per SKU. SKU yang sudah ada dilewati. Barcode dan QR dibuat otomatis dari SKU.</p>
         <button class="btn ghost sm" id="tpl" type="button">Unduh Template CSV</button>
         <label>Pilih file</label>
         <input type="file" id="impFile" accept=".xlsx,.xls,.csv">
         <div class="msg" id="impMsg" style="margin-top:12px"></div>
       </div>
     </div>
-    <div class="card">
-      <h3>Daftar Produk</h3>
-      <button class="btn ghost sm" id="pFix" type="button" style="margin-top:8px">Rapikan &amp; gabungkan produk lama</button>
-      <input id="pSearch" placeholder="Cari produk atau warna di daftar..." autocomplete="off" style="margin-top:10px">
+    <div class="card" style="margin-top:20px">
+      <h3>Database Produk</h3>
+      <p class="hint">Edit atau hapus produk memakai kode verifikasi.</p>
+      <input id="pSearch" placeholder="CARI SKU, NAMA PRODUK, ATAU VARIAN..." autocomplete="off">
       <div id="pList"></div>
     </div>
   </section>
 </main>
+
+<button type="button" id="toTop" class="totop" aria-label="Ke atas" title="Ke atas" hidden>↑</button>
 
 <!-- LOGIN ADMIN -->
 <div class="auth" id="auth" hidden><div class="abox">
@@ -488,11 +457,11 @@
 <!-- MODAL EDIT PRODUK -->
 <div class="modal" id="pmdl" hidden><div class="box">
   <h3>Edit Produk</h3>
+  <label>No. SKU</label><input id="pESku" autocomplete="off">
   <label>Nama Produk</label><input id="pEName" autocomplete="off">
-  <label>Varian warna</label>
-  <div id="pEVars"></div>
-  <button class="btn ghost sm" id="pEAdd" type="button" style="margin-top:10px">+ Tambah warna</button>
-  <div class="hint2">Perubahan nama produk, nama warna, atau kode warna juga diterapkan ke data Pengajuan dan Purchase yang sudah ada. Warna yang dihapus dari daftar tidak mengubah data lama.</div>
+  <label>Varian <span style="font-weight:400">(warna, kosongkan jika tidak ada)</span></label><input id="pEVar" autocomplete="off">
+  <label>Kode verifikasi</label><input id="pECode" type="password" autocomplete="off" inputmode="numeric">
+  <div class="hint2">Perubahan nama produk atau varian juga diterapkan ke data Pengajuan dan Purchase yang sudah ada. Jika nama diganti ke produk lain yang sudah ada, varian ini dipindahkan ke produk tersebut.</div>
   <div class="msg" id="pEMsg"></div>
   <div class="acts"><button class="btn ghost" id="pECancel" type="button">Batal</button><button class="btn" id="pESave" type="button">Simpan</button></div>
 </div></div>
@@ -712,6 +681,9 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="script.js?v=88"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="products-seed.js?v=1"></script>
+<script src="script.js?v=89"></script>
 </body>
 </html>

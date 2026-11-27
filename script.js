@@ -213,7 +213,7 @@ $('#projBtn').onclick = () => {
 };
 function refresh() {
   fillAdm(); renderReqs(); renderProducts(); renderAuto();
-  if ($('#pr').classList.contains('on')) { renderStock(); brLists(normName($('#usName').value)) }
+  if ($('#pr').classList.contains('on')) { brLists() }
   if ($('#gd').classList.contains('on')) renderGd();
   if (!$('#gdmdl').hidden) renderGdDetail();
   if ($('#br').classList.contains('on')) { brLists(); renderBr() }
@@ -259,7 +259,7 @@ function startSync() {
 }
 
 /* ---------- menu & hamburger ---------- */
-const TT = { pg: ['Pengajuan', 'Hari ini tampil di atas; hari sebelumnya masuk riwayat per bulan (ganti hari pukul 00.00 WIB)'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], rt: ['Input Retur', 'Form retur / pengembalian barang'], bd: ['Laporan Retur', 'Hasil input retur marketplace, bisa diedit'], rw: ['Riwayat', 'Riwayat edit & hapus; data lama bisa dipulihkan'], ow: ['Dashboard Khusus', 'Kontrol admin & analisa pemasaran (khusus pemilik)'], dl: ['Download', 'Riwayat export Excel / PDF, bisa difilter dan diexport gabungan'], pr: ['Database Produk', 'Stok produk (Purchase, Barang Retur, upload manual / massal); kelola produk dan varian warna'], gd: ['Barang Gudang', 'Cek barang retur / cancel yang tersedia sebelum mengajukan lagi'], br: ['Barang Retur', 'Input barang retur; otomatis masuk ke Barang Gudang'], scn: ['Scan', 'Scan Barcode / QR lewat kamera; hasil masuk ke Data Scanner dan hanya terlihat oleh akun yang men-scan'], sc: ['Data Scanner', 'Upload data scan dari Excel (ekspedisi, resi, jam scan, PIC); hari ini tampil di atas, sebelumnya masuk riwayat'] };
+const TT = { pg: ['Pengajuan', 'Hari ini tampil di atas; hari sebelumnya masuk riwayat per bulan (ganti hari pukul 00.00 WIB)'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], rt: ['Input Retur', 'Form retur / pengembalian barang'], bd: ['Laporan Retur', 'Hasil input retur marketplace, bisa diedit'], rw: ['Riwayat', 'Riwayat edit & hapus; data lama bisa dipulihkan'], ow: ['Dashboard Khusus', 'Kontrol admin & analisa pemasaran (khusus pemilik)'], dl: ['Download', 'Riwayat export Excel / PDF, bisa difilter dan diexport gabungan'], pr: ['Database Produk', 'Input produk satuan / massal (SKU, varian, Barcode & QR) dan stok produk'], gd: ['Barang Gudang', 'Cek barang retur / cancel yang tersedia sebelum mengajukan lagi'], br: ['Barang Retur', 'Input barang retur; otomatis masuk ke Barang Gudang'], scn: ['Scan', 'Scan Barcode / QR lewat kamera; hasil masuk ke Data Scanner dan hanya terlihat oleh akun yang men-scan'], sc: ['Data Scanner', 'Upload data scan dari Excel (ekspedisi, resi, jam scan, PIC); hari ini tampil di atas, sebelumnya masuk riwayat'] };
 function go(t) {
   if (!can(t)) { t = firstPage(); if (!t) return }
   $$('nav button[data-t]').forEach(b => b.classList.toggle('on', b.dataset.t === t));
@@ -274,7 +274,7 @@ function go(t) {
   if (t === 'sc') renderSc();
   try { if (t !== 'scn') snCamStop() } catch (e) {}
   if (t === 'scn') { renderSn(); setTimeout(() => { const i = $('#snIn'); if (i) i.focus({ preventScroll: true }) }, 50) }
-  if (t === 'pr') { renderStock(); brLists(normName($('#usName').value)) }
+  if (t === 'pr') { brLists() }
   if (t === 'gd') renderGd();
   if (t === 'br') { brLists(); renderBr() }
   if (t === 'pg') renderReqs();
@@ -1982,29 +1982,6 @@ $('#bdPdf').onclick = () => {
 };
 
 /* ---------- PRODUK ---------- */
-function addVRow(n = '', c = '#4a7bd0') {
-  const d = document.createElement('div'); d.className = 'vrow';
-  d.innerHTML = `<input type="color" value="${c}"><input placeholder="Nama warna (mis. Biru)" value="${esc(n)}"><button class="btn ghost sm" type="button">Hapus</button>`;
-  d.querySelector('button').onclick = () => d.remove(); caps(d.querySelector('input:not([type=color])')); $('#vBox').appendChild(d);
-}
-$('#addV').onclick = () => addVRow();
-$('#saveP').onclick = () => {
-  const name = normName($('#pName').value);
-  if (!name) return msg('#pMsg', 'Isi nama produk.');
-  const variants = [...$$('.vrow')].map(r => {
-    const c = r.querySelector('input[type=color]').value;
-    return { c, n: normName(r.querySelector('input:not([type=color])').value) || c.toUpperCase() };
-  });
-  const ex = products.find(p => normName(p.name) === name);
-  const p = ex || { id: uid(), name, variants: [] };
-  let added = 0;
-  variants.forEach(v => { if (!p.variants.some(x => normName(x.n) === normName(v.n))) { p.variants.push(v); added++ } });
-  if (ex && !added) return msg('#pMsg', 'Produk sudah ada dan tidak ada varian baru untuk ditambahkan.');
-  if (!ex) products.push(p);
-  if (!commit([['products', 'set', p]])) return msg('#pMsg', 'Penyimpanan penuh.');
-  $('#pName').value = ''; $('#vBox').innerHTML = '';
-  msg('#pMsg', ex ? 'Digabung ke produk yang sama: ' + added + ' varian ditambahkan.' : 'Produk tersimpan.', true); renderProducts();
-};
 /* ---------- STOK PRODUK (Database Produk) ---------- */
 // Qty = jumlah barang "ada" yang sudah tercatat di Purchase. Tiap penerimaan menyimpan jumlah kumulatif pengajuannya, jadi ambil yang terbaru per pengajuan.
 function stockRows() {
@@ -2020,26 +1997,6 @@ function stockRows() {
 const tokOk = (text, q) => normName(q).split(' ').filter(Boolean).every(t => text.includes(t));
 const nfm = n => Number(n || 0).toLocaleString('id-ID');
 const stOpen = {}; // produk (nama) -> daftar varian sedang dibuka
-function renderStock() { // satu baris per produk (varian digabung); panah membuka varian & qty-nya
-  const q = $('#stSearch').value, all = stockRows(), L = all.filter(g => tokOk(g.prod + ' ' + g.vn, q)), m = new Map();
-  L.forEach(g => { let o = m.get(g.prod); if (!o) m.set(g.prod, o = { prod: g.prod, qty: 0, vs: [] }); o.qty += g.qty; o.vs.push(g) });
-  const G = [...m.values()], vcell = g => g.vn ? sw(g.vc, g.vn) + ' ' + esc(g.vn) : 'Tanpa varian';
-  $('#stList').innerHTML = stSum(G, L) + (G.length
-    ? `<div class="tw"><table style="min-width:520px"><thead><tr><th>No</th><th>Nama Produk</th><th>Qty</th></tr></thead><tbody>${G.map((o, i) => {
-      const many = o.vs.length > 1, k = encodeURIComponent(o.prod), open = k in stOpen ? stOpen[k] : !!q.trim();
-      return `<tr><td>${i + 1}</td><td><b>${esc(o.prod)}</b>${many ? `<button type="button" class="arw${open ? ' on' : ''}" data-stk="${k}" title="Lihat varian dan Qty">${o.vs.length} varian</button>` : o.vs[0].vn ? `<div class="tm">${vcell(o.vs[0])}</div>` : ''}</td><td><b>${nfm(o.qty)}</b> pcs</td></tr>`
-        + (many ? `<tr class="hrow" data-stfor="${k}"${open ? '' : ' hidden'}><td></td><td colspan="2"><table class="mt"><thead><tr><th>Varian</th><th>Qty</th></tr></thead><tbody>${o.vs.map(g => `<tr><td>${vcell(g)}</td><td><b>${nfm(g.qty)}</b> pcs</td></tr>`).join('')}</tbody></table></td></tr>` : '');
-    }).join('')}</tbody></table></div>`
-    : '<div class="empty">' + (all.length ? 'Produk tidak ditemukan.' : 'Belum ada stok. Stok berasal dari Purchase, Barang Retur (Baik / Kurang), atau Upload Stok.') + '</div>');
-  renderUs();
-}
-caps($('#stSearch')); $('#stSearch').addEventListener('input', renderStock);
-$('#stList').addEventListener('click', e => {
-  const b = e.target.closest('[data-stk]'); if (!b) return;
-  const k = b.dataset.stk, open = !(k in stOpen ? stOpen[k] : !!$('#stSearch').value.trim());
-  stOpen[k] = open; const row = $('#stList').querySelector('tr.hrow[data-stfor="' + k + '"]'); if (row) row.hidden = !open; b.classList.toggle('on', open);
-});
-
 /* ---------- UPLOAD STOK (manual & massal) + edit/hapus ---------- */
 // pastikan produk & varian ada di database produk (dibuat otomatis jika belum); changed = produk perlu disimpan
 function ensureProd(name, vn, col) {
@@ -2048,79 +2005,8 @@ function ensureProd(name, vn, col) {
   if (vn) { v = p.variants.find(x => normName(x.n) === vn); if (!v) { v = { n: vn, c: col || toHex(vn) || '#4a7bd0' }; p.variants.push(v); changed = true } }
   return { p, vc: v ? v.c : '', changed };
 }
-caps($('#usName')); caps($('#usVar')); caps($('#sgName')); caps($('#sgVar')); caps($('#usSearch')); addClear($('#usSearch'));
-$('#usName').addEventListener('input', () => brLists(normName($('#usName').value)));
+caps($('#sgName')); caps($('#sgVar'));
 $('#sgName').addEventListener('input', () => brLists(normName($('#sgName').value)));
-$('#usSubmit').onclick = () => {
-  const name = normName($('#usName').value), vn = normName($('#usVar').value), q = parseInt($('#usQty').value, 10);
-  if (!name) return msg('#usMsg', 'Nama Produk wajib diisi.');
-  if (!(q >= 1)) return msg('#usMsg', 'Qty minimal 1.');
-  const pr = ensureProd(name, vn), e = { id: uid(), ts: Date.now(), prod: name, vn, vc: pr.vc, qty: q, ket: $('#usKet').value.trim(), adm: me ? me.name : '' }, ops = [['pstock', 'set', e]];
-  if (pr.changed) ops.push(['products', 'set', pr.p]);
-  pstock.unshift(e);
-  if (!commit(ops)) return msg('#usMsg', 'Penyimpanan penuh.');
-  ['#usName', '#usVar', '#usQty', '#usKet'].forEach(x => $(x).value = '');
-  msg('#usMsg', 'Tersimpan: ' + q + ' pcs ' + name + (vn ? ' · ' + vn : '') + ' masuk ke stok.', true); renderStock(); renderProducts(); brLists('');
-};
-$('#usTpl').onclick = () => {
-  const csv = 'Produk,Varian,Warna,Qty,Keterangan\nKaos Polos,Biru,#3b82f6,10,Stok awal\nKaos Polos,Merah,#ef4444,5,\nTas Kanvas,,,20,\n';
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv' })); a.download = 'template-stok.csv'; a.click();
-};
-$('#usFile').onchange = e => {
-  const inp = e.target, f = inp.files[0]; if (!f) return;
-  if (!window.XLSX) { inp.value = ''; return msg('#usImpMsg', 'Library Excel gagal dimuat. Pastikan terhubung ke internet.') }
-  const rd = new FileReader();
-  rd.onload = () => {
-    try {
-      const wb = XLSX.read(rd.result, { type: 'array' }), rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' }), items = [];
-      let bad = 0;
-      rows.forEach(row => {
-        const k = {}; Object.keys(row).forEach(x => k[x.trim().toLowerCase()] = row[x]);
-        const name = normName(k.produk || k['nama produk'] || k['nama barang'] || k.nama || ''), qv = [k.qty, k.jumlah, k.stok].find(v => v !== undefined && v !== ''), q = parseInt(qv, 10);
-        if (!name && qv === undefined) return; // baris kosong
-        if (!name || !(q >= 1)) { bad++; return }
-        const vr = String(k.varian || '').trim(), col = String(k.warna || '').trim();
-        items.push({ name, vn: normName(vr || col), c: toHex(col || vr) || '', q, ket: String(k.keterangan || '').trim() });
-      });
-      if (!items.length) { inp.value = ''; return msg('#usImpMsg', 'Tidak ada baris yang bisa diimpor' + (bad ? ' (' + bad + ' baris dilewati: produk kosong / Qty bukan angka ≥ 1)' : '') + '.') }
-      const tot = items.reduce((s, x) => s + x.q, 0);
-      if (!confirm('Tambahkan ' + items.length + ' baris stok (total ' + tot + ' pcs) ke Database Produk?' + (bad ? '\n' + bad + ' baris dilewati.' : ''))) { inp.value = ''; return msg('#usImpMsg', 'Upload dibatalkan.') }
-      const now = Date.now(), touched = new Set(), recs = items.map((x, i) => {
-        const pr = ensureProd(x.name, x.vn, x.c); if (pr.changed) touched.add(pr.p);
-        return { id: uid(), ts: now + i, prod: x.name, vn: x.vn, vc: pr.vc, qty: x.q, ket: x.ket, adm: me ? me.name : '' };
-      });
-      pstock = recs.slice().reverse().concat(pstock);
-      if (!commit(recs.map(x => ['pstock', 'set', x]).concat([...touched].map(p => ['products', 'set', p])))) { inp.value = ''; return msg('#usImpMsg', 'Penyimpanan penuh.') }
-      renderStock(); renderProducts();
-      msg('#usImpMsg', recs.length + ' baris stok (' + tot + ' pcs) berhasil diupload' + (bad ? ', ' + bad + ' baris dilewati.' : '.'), !bad);
-    } catch (err) { console.error(err); msg('#usImpMsg', 'File tidak bisa dibaca. Gunakan format .xlsx atau .csv.') }
-    inp.value = '';
-  };
-  rd.readAsArrayBuffer(f);
-};
-function renderUs() {
-  const q = $('#usSearch').value, L = pstock.filter(e => mine(e) && tokOk(e.prod + ' ' + (e.vn || '') + ' ' + String(e.ket || '').toUpperCase(), q)).sort((a, b) => b.ts - a.ts), V = L.slice(0, 200);
-  const usT = sumK2(L, e => e.qty);
-  $('#usList').innerHTML = sumBar([stag('Total data', NF(L.length)), stag('Total item', NF(usT) + ' pcs')]) + (V.length
-    ? `<div class="tw"><table style="min-width:760px"><thead><tr><th>No</th><th>Waktu</th><th>Produk</th><th>Varian</th><th>Qty</th><th>Keterangan</th><th>Admin</th><th></th></tr></thead><tbody>${V.map((e, i) => `<tr>
-      <td>${i + 1}</td><td class="nw">${fmt(e.ts)}${tm(e.ts)}</td><td><b>${esc(e.prod)}</b></td><td>${e.vn ? sw(e.vc, e.vn) + ' ' + esc(e.vn) : '-'}</td><td>${nfm(e.qty)} pcs</td><td><div class="wrapc">${esc(e.ket || '-')}</div></td><td>${esc(e.adm || '-')}</td>
-      <td class="nw"><button class="btn ghost sm" data-usedit="${e.id}" type="button">Edit</button> <button class="btn ghost sm" data-usdel="${e.id}" type="button">Hapus</button></td></tr>`).join('')}</tbody></table></div>` + (L.length > V.length ? '<div class="hint2">Menampilkan 200 terbaru dari ' + nfm(L.length) + ' data. Gunakan pencarian untuk mempersempit.</div>' : '')
-    : '<div class="empty">' + (pstock.length ? 'Data tidak ditemukan.' : 'Belum ada stok yang diupload.') + '</div>');
-}
-$('#usSearch').addEventListener('input', renderUs);
-$('#usList').addEventListener('click', e => {
-  const ed = e.target.closest('[data-usedit]'), dl = e.target.closest('[data-usdel]');
-  if (ed) return openSg('pstock', ed.dataset.usedit);
-  if (dl) {
-    const id = dl.dataset.usdel, r0 = pstock.find(x => x.id === id); if (!r0) return;
-    askYN('Yakin menghapus upload stok ' + r0.prod + (r0.vn ? ' · ' + r0.vn : '') + ' (' + r0.qty + ' pcs)? Qty di Stok Produk berkurang sebesar itu.', () => {
-      const r = pstock.find(x => x.id === id); if (!r) return;
-      const lop = logH('UPLOAD STOK', 'hapus', r.prod + (r.vn ? ' · ' + r.vn : '') + ' · ' + r.qty + ' pcs', [{ c: 'pstock', b: cl(r), a: null }]);
-      pstock = pstock.filter(x => x.id !== id); commit([['pstock', 'del', id], lop]); refresh();
-    });
-  }
-});
 // popup edit bersama: kind 'pstock' (upload stok) atau 'rgoods' (barang retur)
 let sgCur = null;
 function openSg(kind, id) {
@@ -2335,90 +2221,10 @@ function gdHint() {
 }
 $('#pgGd').onclick = e => { const b = e.target.closest('[data-gdgo]'); if (b) { $('#gdSearch').value = b.dataset.gdgo; go('gd') } };
 
-function renderProducts() {
-  const q = $('#pSearch').value.trim().toLowerCase();
-  const L = products.filter(p => !q || p.name.toLowerCase().includes(q) || p.variants.some(v => v.n.toLowerCase().includes(q)));
-  $('#pList').innerHTML = pdSum(L) + '<label>Daftar Produk (' + (q ? L.length + ' dari ' : '') + products.length + ')</label>' + (L.length ? L.map(p => `<div class="pl">
-    <div><b>${esc(p.name)}</b><div style="margin-top:6px">${p.variants.length ? p.variants.map(v => sw(v.c, v.n)).join(' ') : '<span style="color:var(--mute);font-size:13px">Tanpa varian</span>'}</div></div>
-    <div class="nw"><button class="btn ghost sm" data-pe="${p.id}">Edit</button> <button class="btn ghost sm" data-p="${p.id}">Hapus</button></div></div>`).join('') : '<div class="empty">' + (products.length ? 'Produk tidak ditemukan.' : 'Belum ada produk.') + '</div>');
-}
-$('#pSearch').oninput = renderProducts;
-caps($('#pSearch')); caps($('#pName'));
-$('#pFix').onclick = () => {
-  if (!confirm('Seragamkan semua nama produk & varian menjadi HURUF KAPITAL dan gabungkan produk yang namanya sama persis? Pengajuan dan Purchase lama ikut diseragamkan.')) return;
-  const keep = {}, idMap = {}, out = [], ops = [];
-  products.forEach(p => {
-    const key = normName(p.name);
-    const k = keep[key] || (keep[key] = { id: p.id, name: key, variants: [] });
-    if (k.id === p.id && !out.includes(k)) out.push(k);
-    idMap[p.id] = k.id;
-    (p.variants || []).forEach(v => { const vn = normName(v.n); if (!k.variants.some(x => x.n === vn)) k.variants.push({ n: vn, c: v.c }) });
-  });
-  const lost = products.length - out.length;
-  products.forEach(p => { if (idMap[p.id] !== p.id) ops.push(['products', 'del', p.id]) });
-  out.forEach(k => ops.push(['products', 'set', k]));
-  reqs.forEach(r => { r.pid = idMap[r.pid] || r.pid; r.prod = normName(r.prod); r.vn = normName(r.vn); ops.push(['requests', 'set', r]) });
-  records.forEach(r => { r.prod = normName(r.prod); r.vn = normName(r.vn); ops.push(['records', 'set', r]) });
-  products = out; commit(ops); renderProducts(); renderReqs();
-  alert('Selesai. ' + lost + ' produk dobel digabung, semua nama menjadi huruf kapital.');
-};
-$('#pList').onclick = e => {
-  if (e.target.dataset.pe) return openPEdit(e.target.dataset.pe);
-  const id = e.target.dataset.p;
-  if (!id || !confirm('Hapus produk ini? Data pengajuan dan purchase lama tetap tersimpan.')) return;
-  products = products.filter(p => String(p.id) !== id); commit([['products', 'del', id]]); renderProducts();
-};
-
-/* ---------- edit produk (popup) ---------- */
-// terapkan hasil edit ke produk + pengajuan + purchase yang terkait (nama produk & varian tersimpan di tiap data); kembalikan ops
-function applyProductEdit(p, name, rows) {
-  const oldName = p.name, oldVars = p.variants.slice(), map = {}, ops = [['products', 'set', p]];
-  rows.forEach(r => { if (r.orig !== '') map[r.orig] = { n: r.n, c: r.c } });
-  p.name = name; p.variants = rows.map(r => ({ n: r.n, c: r.c }));
-  const fix = x => {
-    let i = oldVars.findIndex(v => v.n === x.vn && v.c === x.vc); if (i < 0) i = oldVars.findIndex(v => v.n === x.vn);
-    const nv = i >= 0 ? map[String(i)] : null, before = x.prod + '|' + x.vn + '|' + x.vc;
-    x.prod = name; if (nv) { x.vn = nv.n; x.vc = nv.c }
-    return before !== x.prod + '|' + x.vn + '|' + x.vc;
-  };
-  const ids = new Set();
-  reqs.forEach(x => { if (String(x.pid) === String(p.id)) { ids.add(x.id); if (fix(x)) ops.push(['requests', 'set', x]) } });
-  records.forEach(x => { if (ids.has(x.rid) || (!reqs.some(q => q.id === x.rid) && x.prod === oldName)) { if (fix(x)) ops.push(['records', 'set', x]) } });
-  return ops;
-}
-let pERec = null;
-function pEVarRow(n, c, orig) {
-  const d = document.createElement('div'); d.className = 'vrow'; d.dataset.orig = orig;
-  d.innerHTML = `<input type="color" value="${c}"><input placeholder="Nama warna" value="${esc(n)}"><button class="btn ghost sm" type="button">Hapus</button>`;
-  const ni = d.querySelector('input:not([type=color])'), ci = d.querySelector('input[type=color]');
-  caps(ni); if (orig === '') ni.addEventListener('input', () => { const h = toHex(ni.value); if (h) ci.value = h }); // warna baru: warna terisi otomatis dari nama
-  d.querySelector('button').onclick = () => d.remove(); $('#pEVars').appendChild(d);
-}
-function openPEdit(id) {
-  const p = products.find(x => String(x.id) === String(id)); if (!p) return;
-  pERec = p.id; $('#pEName').value = p.name; $('#pEVars').innerHTML = '';
-  p.variants.forEach((v, i) => pEVarRow(v.n, v.c, String(i)));
-  msg('#pEMsg', ''); $('#pmdl').hidden = false;
-}
-const closePE = () => { $('#pmdl').hidden = true; pERec = null };
-caps($('#pEName'));
-$('#pEAdd').onclick = () => pEVarRow('', '#4a7bd0', '');
-$('#pECancel').onclick = closePE;
-$('#pmdl').onclick = e => { if (e.target.id === 'pmdl') closePE() };
-$('#pESave').onclick = () => {
-  const p = products.find(x => String(x.id) === String(pERec)); if (!p) return closePE();
-  const name = normName($('#pEName').value);
-  if (!name) return msg('#pEMsg', 'Isi nama produk.');
-  if (products.some(x => x !== p && normName(x.name) === name)) return msg('#pEMsg', 'Sudah ada produk lain dengan nama itu. Untuk menggabungkan, pakai tombol "Rapikan & gabungkan produk lama".');
-  const rows = [...$$('#pEVars .vrow')].map(r => ({ orig: r.dataset.orig, c: r.querySelector('input[type=color]').value, n: normName(r.querySelector('input:not([type=color])').value) }));
-  if (rows.some(r => !r.n)) return msg('#pEMsg', 'Nama warna tidak boleh kosong.');
-  const seen = new Set(); for (const r of rows) { if (seen.has(r.n)) return msg('#pEMsg', 'Nama warna kembar: ' + r.n); seen.add(r.n) }
-  const ops = applyProductEdit(p, name, rows);
-  if (!commit(ops)) return msg('#pEMsg', 'Penyimpanan penuh.');
-  closePE(); renderProducts(); renderReqs(); renderTable();
-};
-
-/* input massal */
+/* ---------- DATABASE PRODUK (SKU, Nama Produk, Varian, Barcode, QR) ---------- */
+// Struktur data: produk { id, name, variants: [{ n, c, sku }], sku } ; produk tanpa varian menyimpan SKU di p.sku
+const PD_CODE = '030201';
+const PD_COL = { titanium: '#878681', 'ice blue': '#99c9e8' };
 const CN = { merah: 'red', biru: 'blue', hijau: 'green', kuning: 'yellow', hitam: 'black', putih: 'white', abu: 'gray', 'abu-abu': 'gray', oranye: 'orange', jingga: 'orange', ungu: 'purple', coklat: 'brown', cokelat: 'brown', 'hijau tua': 'darkgreen', 'biru tua': 'navy', 'biru muda': 'lightblue', 'merah muda': 'pink', 'abu abu': 'gray', emas: 'gold', perak: 'silver', krem: '#f5f0dc', tosca: 'turquoise', army: '#4b5320', mocca: '#8b6b4a' };
 function toHex(s) {
   s = String(s || '').trim().toLowerCase(); if (!s) return null; s = CN[s] || s;
@@ -2426,41 +2232,196 @@ function toHex(s) {
   x.fillStyle = '#010203'; x.fillStyle = s;
   return x.fillStyle === '#010203' && s !== '#010203' ? null : x.fillStyle;
 }
+
+const pdColor = v => { const f = String(v || '').split('/')[0].trim().toLowerCase(); return PD_COL[f] || toHex(f) || '#9aa5b1' };
+function pdRows() {
+  const out = [];
+  products.forEach(p => {
+    const vs = p.variants || [];
+    if (vs.length) vs.forEach((v, i) => out.push({ p, i, sku: v.sku || '', name: p.name, vn: v.n, c: v.c }));
+    else out.push({ p, i: -1, sku: p.sku || '', name: p.name, vn: '', c: '' });
+  });
+  return out;
+}
+const pdSkuKey = s => String(s || '').trim().toUpperCase();
+// tambah satu SKU ke produk (produk baru dibuat bila nama belum ada); kembalikan { p } atau { err }
+function pdAdd(sku, name, vn) {
+  let p = products.find(x => normName(x.name) === name); const isNew = !p;
+  if (!p) p = { id: uid(), name, variants: [] };
+  if (vn) {
+    if (p.variants.some(v => normName(v.n) === vn)) return { err: 'Varian ' + vn + ' sudah ada pada produk ' + name + '.' };
+    if (!p.variants.length && p.sku) return { err: 'Produk ' + name + ' sudah ada tanpa varian (SKU ' + p.sku + '). Edit dulu produk itu.' };
+    p.variants.push({ n: vn, c: pdColor(vn), sku });
+  } else {
+    if (p.variants.length || p.sku) return { err: 'Produk ' + name + ' sudah ada. Isi varian untuk SKU baru.' };
+    p.sku = sku;
+  }
+  if (isNew) products.push(p);
+  return { p };
+}
+let pdShow = 50;
+function pdDraw() {
+  $$('#pList svg[data-bc]').forEach(s => { try { JsBarcode(s, s.dataset.bc, { format: 'CODE128', width: 1, height: 30, displayValue: false, margin: 0 }) } catch (e) { s.replaceWith('-') } });
+  $$('#pList [data-qr]').forEach(d => { try { const q = qrcode(0, 'M'); q.addData(d.dataset.qr); q.make(); d.innerHTML = q.createSvgTag({ cellSize: 2, margin: 0, scalable: true }) } catch (e) { d.textContent = '-' } });
+}
+function renderProducts() {
+  pdAutoSeed();
+  const q = normName($('#pSearch').value), all = pdRows();
+  const L = q ? all.filter(r => (r.sku + ' ' + r.name + ' ' + r.vn).toUpperCase().includes(q)) : all, V = L.slice(0, pdShow);
+  const code = r => r.sku ? `<svg data-bc="${esc(r.sku)}"></svg>` : '-', qr = r => r.sku ? `<div class="pqr" data-qr="${esc(r.sku)}"></div>` : '-';
+  $('#pList').innerHTML = sumBar([stag('Total SKU', NF(all.length)), q ? stag('Hasil pencarian', NF(L.length)) : '']) +
+    (L.length ? `<div class="tw"><table style="min-width:820px"><thead><tr><th>No.</th><th>No. SKU</th><th>Nama Produk</th><th>Varian</th><th>Barcode</th><th>QR</th><th></th></tr></thead><tbody>${V.map((r, k) => `<tr>
+      <td>${k + 1}</td><td class="nw"><b>${r.sku ? esc(r.sku) : '-'}</b></td><td>${esc(r.name)}</td>
+      <td>${r.vn ? sw(r.c, r.vn) + ' ' + esc(r.vn) : '-'}</td><td>${code(r)}</td><td>${qr(r)}</td>
+      <td class="nw"><button class="btn ghost sm" data-pe="${esc(r.p.id)}" data-pi="${r.i}">Edit</button> <button class="btn ghost sm" data-pd="${esc(r.p.id)}" data-pi="${r.i}">Hapus</button></td></tr>`).join('')}</tbody></table></div>`
+      + (L.length > V.length ? `<button class="btn ghost sm" type="button" data-pmore="1" style="margin-top:12px">Tampilkan ${Math.min(50, L.length - V.length)} lagi (${V.length} dari ${L.length})</button>` : '')
+      : '<div class="empty">' + (all.length ? 'Produk tidak ditemukan.' : 'Belum ada produk.') + '</div>');
+  pdDraw();
+}
+$('#pSearch').oninput = () => { pdShow = 50; renderProducts() };
+caps($('#pSearch')); caps($('#pName')); caps($('#pVar')); caps($('#pSku')); caps($('#pESku')); caps($('#pEName')); caps($('#pEVar'));
+
+// input satuan
+$('#saveP').onclick = () => {
+  const sku = pdSkuKey($('#pSku').value), name = normName($('#pName').value), vn = normName($('#pVar').value);
+  if (!sku) return msg('#pMsg', 'Isi No. SKU.');
+  if (!name) return msg('#pMsg', 'Isi nama produk.');
+  if (pdRows().some(r => pdSkuKey(r.sku) === sku)) return msg('#pMsg', 'No. SKU ' + sku + ' sudah ada di database.');
+  const r = pdAdd(sku, name, vn); if (r.err) return msg('#pMsg', r.err);
+  if (!commit([['products', 'set', r.p]])) return msg('#pMsg', 'Penyimpanan penuh.');
+  $('#pSku').value = $('#pName').value = $('#pVar').value = '';
+  msg('#pMsg', 'Produk tersimpan beserta Barcode dan QR.', true); renderProducts(); $('#pSku').focus();
+};
+// input massal
 $('#tpl').onclick = () => {
-  const csv = 'Produk,Varian,Warna\nKaos Polos,Biru,#3b82f6\nKaos Polos,Merah,#ef4444\nTas Kanvas,,\n';
+  const csv = 'SKU,Produk,Varian\nBKFIZR-100001,BAK KOPLING FIZR,\nBKKHSM-100001,BAK KOPLING KHARISMA,BLACK\nBKKHSM-100002,BAK KOPLING KHARISMA,RED\n';
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv' })); a.download = 'template-produk.csv'; a.click();
 };
 $('#impFile').onchange = e => {
   const f = e.target.files[0]; if (!f) return;
-  if (!window.XLSX && files.some(f => !/\.pdf$/i.test(f.name))) return msg('#impMsg', 'Library Excel gagal dimuat. Pastikan terhubung ke internet.');
+  if (!window.XLSX) return msg('#impMsg', 'Library Excel gagal dimuat. Pastikan terhubung ke internet.');
   const rd = new FileReader();
   rd.onload = () => {
     try {
       const wb = XLSX.read(rd.result, { type: 'array' });
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
-      let np = 0, nv = 0, bad = 0; const touched = new Set();
+      const have = new Set(pdRows().map(r => pdSkuKey(r.sku)).filter(Boolean)), touched = new Set();
+      let ok = 0, dup = 0, bad = 0;
       rows.forEach(row => {
         const k = {}; Object.keys(row).forEach(x => k[x.trim().toLowerCase()] = row[x]);
-        const name = normName(k.produk || k['nama produk'] || k.nama || '');
-        if (!name) { bad++; return }
-        let p = products.find(x => normName(x.name) === name);
-        if (!p) { p = { id: uid(), name, variants: [] }; products.push(p); np++ }
-        touched.add(p);
-        const vn = String(k.varian || '').trim(), col = String(k.warna || '').trim();
-        if (!vn && !col) return;
-        const c = toHex(col || vn), nm = normName(vn || col);
-        if (!c) { bad++; return }
-        if (!p.variants.some(v => normName(v.n) === nm)) { p.variants.push({ n: nm, c }); nv++ }
+        const sku = pdSkuKey(k.sku || k['no. sku'] || k['no sku']), name = normName(k.produk || k['nama produk'] || k.nama || ''), vn = normName(k.varian || k.warna || '');
+        if (!sku || !name) { bad++; return }
+        if (have.has(sku)) { dup++; return }
+        const r = pdAdd(sku, name, vn); if (r.err) { bad++; return }
+        have.add(sku); touched.add(r.p); ok++;
       });
-      if (!commit([...touched].map(p => ['products', 'set', p]))) return msg('#impMsg', 'Penyimpanan penuh.');
+      if (ok && !commit([...touched].map(p => ['products', 'set', p]))) return msg('#impMsg', 'Penyimpanan penuh.');
       renderProducts();
-      msg('#impMsg', `${np} produk baru, ${nv} varian ditambahkan` + (bad ? `, ${bad} baris dilewati (nama/warna tidak valid).` : '.'), true);
+      msg('#impMsg', `${ok} SKU ditambahkan` + (dup ? `, ${dup} dilewati (SKU sudah ada)` : '') + (bad ? `, ${bad} baris dilewati (SKU/nama kosong atau varian kembar)` : '') + '.', true);
     } catch (err) { msg('#impMsg', 'File tidak bisa dibaca. Gunakan format .xlsx atau .csv.') }
     $('#impFile').value = '';
   };
   rd.readAsArrayBuffer(f);
 };
+// Data awal dari Excel HPP (products-seed.js): otomatis terisi satu kali bila Database Produk belum punya satu pun SKU
+let pdSeeding = false;
+function pdAutoSeed() {
+  if (pdSeeding || !window.PROD_SEED || !products.length || products.some(p => p.sku || (p.variants || []).some(v => v.sku))) return;
+  pdSeeding = true;
+  const map = new Map(), out = [];
+  PROD_SEED.forEach(([sku, name, vn]) => {
+    let p = map.get(name); if (!p) { p = { id: 'x' + String(map.size + 1).padStart(4, '0'), name, variants: [] }; map.set(name, p); out.push(p) }
+    if (vn) p.variants.push({ n: vn, c: pdColor(vn), sku }); else p.sku = sku;
+  });
+  const keep = new Set(out.map(p => p.id));
+  const ops = products.filter(p => !keep.has(p.id)).map(p => ['products', 'del', p.id]).concat(out.map(p => ['products', 'set', p]));
+  products = out; commit(ops); pdShow = 50;
+}
+
+// edit / hapus (kode verifikasi)
+let pERec = null;
+function pdFind(id, i) { const p = products.find(x => String(x.id) === String(id)); return p ? { p, i: +i } : null }
+// pindahkan data Pengajuan & Purchase yang memakai produk/varian lama ke nama/varian baru
+function pdSyncRefs(p, oldName, oldVn, t, name, vn, c) {
+  const ops = [], ids = new Set(), fix = x => { x.prod = name; x.vn = vn; x.vc = c; x.pid = t.id };
+  reqs.forEach(x => { if (String(x.pid) === String(p.id) && (x.vn || '') === oldVn) { ids.add(x.id); fix(x); ops.push(['requests', 'set', x]) } });
+  records.forEach(x => { if ((x.vn || '') === oldVn && (ids.has(x.rid) || (!reqs.some(q => q.id === x.rid) && x.prod === oldName))) { x.prod = name; x.vn = vn; x.vc = c; ops.push(['records', 'set', x]) } });
+  return ops;
+}
+function pdEditRow(p, i, sku, name, vn) {
+  const v = i >= 0 ? p.variants[i] : null, oldName = p.name, oldVn = v ? v.n : '';
+  const ex = name !== p.name ? products.find(x => x !== p && normName(x.name) === name) : null;
+  const total = p.variants.length || 1, inPlace = !ex && (name === p.name || total <= 1);
+  const t = inPlace ? p : ex || { id: uid(), name, variants: [] };
+  // validasi
+  if (t === p) {
+    if (vn && p.variants.some((x, j) => j !== i && normName(x.n) === vn)) return { err: 'Varian ' + vn + ' sudah ada pada produk ini.' };
+    if (!vn && total > 1) return { err: 'Produk ini punya beberapa varian. Isi nama varian untuk SKU ini.' };
+  } else if (ex) {
+    if (vn && ex.variants.some(x => normName(x.n) === vn)) return { err: 'Varian ' + vn + ' sudah ada pada produk ' + name + '.' };
+    if (!vn && (ex.variants.length || ex.sku)) return { err: 'Produk ' + name + ' sudah ada. Isi varian untuk SKU ini.' };
+    if (vn && !ex.variants.length && ex.sku) return { err: 'Produk ' + name + ' sudah ada tanpa varian. Edit dulu produk itu.' };
+  }
+  const c = !vn ? '' : v && vn === oldVn ? v.c : pdColor(vn), ops = [];
+  if (t === p) {
+    p.name = name;
+    if (v && vn) { v.n = vn; v.c = c; v.sku = sku }
+    else if (v && !vn) { p.variants = []; p.sku = sku }
+    else if (!v && vn) { p.variants = [{ n: vn, c, sku }]; p.sku = '' }
+    else p.sku = sku;
+    ops.push(['products', 'set', p]);
+  } else {
+    if (v) p.variants.splice(i, 1); else p.sku = '';
+    if (vn) t.variants.push({ n: vn, c, sku }); else t.sku = sku;
+    if (!ex) products.push(t);
+    if (!p.variants.length && !p.sku) { products = products.filter(x => x !== p); ops.push(['products', 'del', p.id]) } else ops.push(['products', 'set', p]);
+    ops.push(['products', 'set', t]);
+  }
+  if (name !== oldName || vn !== oldVn) ops.push(...pdSyncRefs(p, oldName, oldVn, t, name, vn, c));
+  return { ops };
+}
+$('#pList').onclick = e => {
+  if (e.target.closest('[data-pmore]')) { pdShow += 50; return renderProducts() }
+  const be = e.target.closest('[data-pe]'), bd = e.target.closest('[data-pd]');
+  if (be) return openPEdit(be.dataset.pe, be.dataset.pi);
+  if (!bd) return;
+  const f = pdFind(bd.dataset.pd, bd.dataset.pi); if (!f) return;
+  const code = prompt('Masukkan kode verifikasi untuk menghapus:'); if (code === null) return;
+  if (code.trim() !== PD_CODE) return alert('Kode verifikasi salah.');
+  if (!confirm('Hapus produk ini dari Database Produk? Data pengajuan dan purchase lama tetap tersimpan.')) return;
+  const { p, i } = f;
+  if (i >= 0) p.variants.splice(i, 1); else p.sku = '';
+  if (!p.variants.length) { products = products.filter(x => x !== p); commit([['products', 'del', p.id]]) } else commit([['products', 'set', p]]);
+  renderProducts();
+};
+function openPEdit(id, i) {
+  const f = pdFind(id, i); if (!f) return;
+  const { p } = f, v = f.i >= 0 ? p.variants[f.i] : null;
+  pERec = f; $('#pESku').value = v ? v.sku || '' : p.sku || ''; $('#pEName').value = p.name; $('#pEVar').value = v ? v.n : ''; $('#pECode').value = '';
+  msg('#pEMsg', ''); $('#pmdl').hidden = false;
+}
+const closePE = () => { $('#pmdl').hidden = true; pERec = null };
+$('#pECancel').onclick = closePE;
+$('#pmdl').onclick = e => { if (e.target.id === 'pmdl') closePE() };
+$('#pESave').onclick = () => {
+  if (!pERec) return closePE();
+  const sku = pdSkuKey($('#pESku').value), name = normName($('#pEName').value), vn = normName($('#pEVar').value);
+  if ($('#pECode').value.trim() !== PD_CODE) return msg('#pEMsg', 'Kode verifikasi salah.');
+  if (!sku) return msg('#pEMsg', 'Isi No. SKU.');
+  if (!name) return msg('#pEMsg', 'Isi nama produk.');
+  const { p, i } = pERec;
+  if (pdRows().some(r => !(r.p === p && r.i === i) && pdSkuKey(r.sku) === sku)) return msg('#pEMsg', 'No. SKU ' + sku + ' sudah dipakai produk lain.');
+  const r = pdEditRow(p, i, sku, name, vn); if (r.err) return msg('#pEMsg', r.err);
+  if (!commit(r.ops)) return msg('#pEMsg', 'Penyimpanan penuh.');
+  closePE(); renderProducts(); renderReqs(); renderTable();
+};
+
+/* ---------- tombol ke atas ---------- */
+const toTop = $('#toTop');
+toTop.onclick = () => window.scrollTo(0, 0);
+const toTopVis = () => { toTop.hidden = (window.scrollY || document.documentElement.scrollTop) < 200 };
+window.addEventListener('scroll', toTopVis, { passive: true }); toTopVis();
 
 /* ---------- mulai ---------- */
 [$('#pSearch'), $('#fqProd'), $('#fqSj'), $('#xProd'), $('#dlFile'), $('#rwQ'), $('#bdQ'), $('#bdToko')].forEach(addClear);
@@ -3680,7 +3641,7 @@ if (!db) ensureSuper(); // mode lokal
 if (!db && admFixN) { commit(); store.set('pp_admins', Object.fromEntries(admins.map(a => [a.username, a]))) } // simpan nama admin yang sudah dikapitalkan (mode lokal)
 applyRole();
 /* filter selalu kosong saat halaman dibuka atau di-refresh (browser suka mengembalikan isian filter / nama admin terakhir setelah refresh) */
-const FIL_SEL = '.exf input,.exf select,#fl input,#fl select,.inh input,.inh select,.bds input,#stSearch,#pSearch,#gdSearch,#usSearch';
+const FIL_SEL = '.exf input,.exf select,#fl input,#fl select,.inh input,.inh select,.bds input,#pSearch,#gdSearch';
 $$(FIL_SEL).forEach(el => el.setAttribute('autocomplete', 'off')); // autocomplete=off: browser tidak menyimpan isian ini untuk dipulihkan saat refresh berikutnya
 function clearFilters() {
   $$(FIL_SEL).forEach(el => {
