@@ -35,6 +35,16 @@ function cfBsMap() { // resi / resi pengembalian -> {toko, pes, resi, ret}
   cfBsK = a; return cfBsM = m;
 }
 const cfEntry = r => cfBsMap().get(r) || null;
+// Toko yang diambil dari kolom B (Toko BigSeller). Baris toko lain dibuang. Pencocokan tidak peduli huruf besar/kecil, spasi, garis bawah.
+// Nama dalam kurung (alias BigSeller) dan variasi ejaan yang ada di file ikut didaftarkan.
+const BS_TOKO = [
+  'Sukses Acc Motorshop', 'Sukses Acc1', 'Sukses Aksesoris Motor', 'Shinesanz Shop', 'Pusat Variasi Motor', 'JFM Motor', // TikTok
+  'Sukses Acc Motor', 'Shinesanz_Motor', 'Santix2', 'Shinesanz Motor', 'Fortune Star Shop', 'JFM 2', 'Pusat Variasi Motorsport', 'Gorilla Motor', 'Kaylie Motor', 'Mario Racing', 'Roda Dua Store', 'Roda Dua Stores', // Shopee
+  'Shinesanz', 'PVM', 'PVM Speed' // Lazada
+];
+const cfNorm = t => String(t == null ? '' : t).toLowerCase().replace(/[^a-z0-9]+/g, '');
+const BS_TOKO_SET = new Set(BS_TOKO.map(cfNorm));
+const cfTokoOk = t => BS_TOKO_SET.has(cfNorm(t));
 const BS_DATE_COL = 37; // kolom AL (Waktu Sampai Gudang) = acuan tanggal data BigSeller
 const CF_BLN = { jan: 1, feb: 2, mar: 3, apr: 4, mei: 5, may: 5, jun: 6, jul: 7, agu: 8, agt: 8, aug: 8, sep: 9, okt: 10, oct: 10, nov: 11, des: 12, dec: 12 };
 const cfP2 = n => (n < 10 ? '0' : '') + n;
@@ -99,7 +109,7 @@ async function cfReadBs(files) {
   if (!window.XLSX) return msg('#cfBMsg', 'Library Excel gagal dimuat. Pastikan terhubung ke internet.');
   msg('#cfBMsg', 'Membaca file...', true);
   const map = new Map(); cfB().forEach(s => { const p = s.split('\t'); map.set(p[3] || p[2] || p[1], s) });
-  let read = 0, add = 0, upd = 0, nod = 0; const bad = [], perD = [];
+  let read = 0, add = 0, upd = 0, nod = 0, skip = 0; const bad = [], perD = [], skipN = {};
   try {
     for (const fl of files) {
       const wb = XLSX.read(await fl.arrayBuffer(), { type: 'array' }); let found = false;
@@ -116,6 +126,7 @@ async function cfReadBs(files) {
           const r = a[i], g = k => k >= 0 ? r[k] : '';
           const resi = scResi(g(ix.resi)), ret = scResi(g(ix.ret)), toko = String(g(ix.toko) || '').trim(), pes = String(g(ix.pes) || '').trim();
           if (!resi && !ret) continue;
+          if (!cfTokoOk(toko)) { skip++; const nm = toko || '(kosong)'; skipN[nm] = (skipN[nm] || 0) + 1; continue } // bukan toko yang diambil
           const dt = cfParseDt(r[BS_DATE_COL]); if (!dt) nod++; perD.push({ d: dt });
           read++; const key = ret || resi || pes, s = [toko, pes, resi, ret, dt].join('\t');
           if (map.has(key)) { if (map.get(key) !== s) upd++ } else add++;
@@ -125,9 +136,12 @@ async function cfReadBs(files) {
       if (!found) bad.push(fl.name);
     }
   } catch (e) { console.error(e); return msg('#cfBMsg', 'File tidak bisa dibaca. Pastikan file Excel dari BigSeller.') }
+  const skipTxt = skip ? ' Dilewati ' + NF(skip) + ' baris dari toko lain: ' + Object.keys(skipN).sort((a, b) => skipN[b] - skipN[a]).slice(0, 8).map(k => k + ' (' + skipN[k] + ')').join(', ') + (Object.keys(skipN).length > 8 ? ', dst' : '') + '.' : '';
+  if (!read && skip) return msg('#cfBMsg', 'Tidak ada baris dari toko yang diambil.' + skipTxt);
   if (!read) return msg('#cfBMsg', 'Kolom "Nomor Resi" / "Nomor Resi Pesanan Pengembalian" tidak ditemukan' + (bad.length ? ' di: ' + bad.join(', ') : '') + '.');
-  if (!cfSave(cfM(), Array.from(map.values()))) return msg('#cfBMsg', 'Gagal menyimpan (data terlalu besar atau penyimpanan penuh).');
-  msg('#cfBMsg', NF(read) + ' baris dibaca: ' + NF(add) + ' baru, ' + NF(upd) + ' diperbarui. Per tanggal (kolom AL): ' + cfCount(perD, o => o.d) + (nod ? ' (' + NF(nod) + ' baris tanpa tanggal di kolom AL)' : '') + '.' + (bad.length ? ' File tanpa kolom resi dilewati: ' + bad.join(', ') + '.' : ''), true);
+  const keep = Array.from(map.values()).filter(s => cfTokoOk(s.split('\t')[0])), purged = map.size - keep.length; // data lama dari toko lain ikut dibuang
+  if (!cfSave(cfM(), keep)) return msg('#cfBMsg', 'Gagal menyimpan (data terlalu besar atau penyimpanan penuh).');
+  msg('#cfBMsg', NF(read) + ' baris dibaca: ' + NF(add) + ' baru, ' + NF(upd) + ' diperbarui. Per tanggal (kolom AL): ' + cfCount(perD, o => o.d) + (nod ? ' (' + NF(nod) + ' baris tanpa tanggal di kolom AL)' : '') + '.' + skipTxt + (purged ? ' ' + NF(purged) + ' baris lama dari toko lain dibuang.' : '') + (bad.length ? ' File tanpa kolom resi dilewati: ' + bad.join(', ') + '.' : ''), true);
   renderCf(true);
 }
 (() => {
