@@ -447,7 +447,7 @@ main{padding-bottom:calc(56px + env(safe-area-inset-bottom))}
 /* ===== COD Gagal ===== */
 .cfg2{display:grid;grid-template-columns:1fr 1fr;gap:22px}
 .cfbtns{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;align-items:center}
-.cfcmpf{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:6px}
+.cfcmpf{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:6px}
 .cfform{display:grid;grid-template-columns:1fr 1fr 2fr;gap:14px}
 .cfin{display:flex;gap:8px}.cfin .btn{padding:11px 18px;flex:none}
 .cfinfo{margin:12px 0 0;font-size:13px;color:var(--mute);text-align:center}
@@ -459,6 +459,7 @@ main{padding-bottom:calc(56px + env(safe-area-inset-bottom))}
 .tag.cfokt{background:#d8f2e2;color:#1f7a47}
 tr.cfok td{background:#dcf4e5}
 tr.cfbad td{background:#fde0e0}
+tr.cfplain td{background:#fff}
 tr.cfwait td{background:#fff7de}
 tr.cfwarn td{background:#fff4dd}
 #cfGrp td select,#cfGrp td input{padding:7px 9px;font-size:13px;min-width:130px}

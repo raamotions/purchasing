@@ -2,7 +2,7 @@
    - halaman utama (index.html): jaringan dulu, tapi jika lebih dari 3 detik langsung pakai salinan tersimpan
    - script / css / ikon (alamatnya berversi ?v=): langsung dari cache, tidak menunggu jaringan
    - pustaka CDN berversi: dari cache. Firestore tidak disentuh. */
-const VER = 'eko-pwa-v2';
+const VER = 'eko-pwa-v3';
 const CDN = ['cdnjs.cloudflare.com', 'www.gstatic.com', 'fonts.googleapis.com', 'fonts.gstatic.com'];
 const put = (r, res) => { if (res && (res.ok || res.type === 'opaque')) { const cp = res.clone(); caches.open(VER).then(c => c.put(r, cp)) } return res };
 self.addEventListener('install', e => {
