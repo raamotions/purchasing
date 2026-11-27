@@ -31,7 +31,7 @@ let cfBsK = null, cfBsM = null;
 function cfBsMap() { // resi / resi pengembalian -> {toko, pes, resi, ret}
   const a = cfB(); if (cfBsK === a && cfBsM) return cfBsM;
   const m = new Map();
-  a.forEach(s => { const p = s.split('\t'), o = { toko: p[0] || '', pes: p[1] || '', resi: p[2] || '', ret: p[3] || '', d: p[4] || '' }; if (o.resi) m.set(o.resi, o); if (o.ret) m.set(o.ret, o) });
+  a.forEach(s => { const p = s.split('\t'), o = { toko: p[0] || '', pes: p[1] || '', resi: p[2] || '', ret: p[3] || '', d: p[4] || '', e: p[5] || '' }; if (o.resi) m.set(o.resi, o); if (o.ret) m.set(o.ret, o) });
   cfBsK = a; return cfBsM = m;
 }
 const cfEntry = r => cfBsMap().get(r) || null;
@@ -133,7 +133,7 @@ async function cfReadBs(files) {
           if (eksSel === 'SPX' && String(r[BS_AE_COL] == null ? '' : r[BS_AE_COL]).trim() !== '') { skipE++; continue } // SPX: hanya yang kolom AE kosong (ID / CM tidak ikut)
           if (eksSel === 'J&T' && !cfJntReg(r[BS_X_COL])) { skipE++; continue } // J&T: hanya yang kolom X = JNT Reguler
           const dt = cfParseDt(r[BS_DATE_COL]); if (!dt) nod++; perD.push({ d: dt });
-          read++; const key = ret || resi || pes, s = [toko, pes, resi, ret, dt].join('\t');
+          read++; const key = ret || resi || pes, s = [toko, pes, resi, ret, dt, eksSel].join('\t');
           if (map.has(key)) { if (map.get(key) !== s) upd++ } else add++;
           map.set(key, s);
         }
@@ -173,6 +173,15 @@ function cfMatch() { // scan <-> manifest (semua tanggal). Resi lain pada pesana
   cfM().forEach(m => { const s = byKey.get(m.r); if (s) used.add(s) });
   return { byKey, used };
 }
+function cfBsPending() { // baris BigSeller yang belum discan dan tidak ada di manifest (yang ada di manifest sudah tampil sebagai manifest belum discan)
+  const ms = new Set(cfM().map(m => m.r)), ss = new Set(codfail.map(s => s.resi)), seen = new Set(), out = [];
+  cfBsMap().forEach(en => {
+    if (seen.has(en)) return; seen.add(en);
+    if ([en.resi, en.ret].some(k => k && (ms.has(k) || ss.has(k)))) return;
+    out.push(en);
+  });
+  return out;
+}
 function cfRenderCmp() {
   const el = $('#cfCmp'), d1 = $('#cfCmpD').value, d2 = $('#cfCmpD2').value, fe = $('#cfCmpE').value, mf = cfM(), bs = cfB();
   $('#cfInfoM').innerHTML = 'Manifest tersimpan: <b>' + NF(mf.length) + '</b> resi' + (mf.length ? ' (' + cfCount(mf, x => x.d) + ')' : '') +
@@ -185,15 +194,18 @@ function cfRenderCmp() {
     if (!inR(md || (en && en.d) || '') || (fe && m.e && m.e !== fe)) return;
     (s ? okr : pend).push({ m, s, en, md });
   });
-  pend.sort((a, b) => (a.md || '').localeCompare(b.md || '')); // belum discan: tertua di paling atas
+  cfBsPending().forEach(en => { if (inR(en.d || '') && (!fe || !en.e || en.e === fe)) pend.push({ m: null, s: null, en, md: '' }) }); // data BigSeller yang belum discan & tidak ada di manifest: ikut nyangkut di atas
+  const dk = x => x.md || (x.en && x.en.d) || '';
+  pend.sort((a, b) => dk(a).localeCompare(dk(b))); // belum discan: tertua di paling atas
   const extra = codfail.filter(s => !used.has(s) && (!fe || s.eks === fe) && inR(s.day || dayWIB(s.ts)));
   const tr = (cls, i, man, md, scn, en, st, del) => `<tr class="${cls}"><td>${i}</td><td>${man ? '<b>' + esc(man) + '</b>' : '-'}</td><td class="nw">${esc(cfDay(md) || '-')}</td><td>${scn ? '<b>' + esc(scn) + '</b>' : '-'}</td><td>${esc((en && en.toko) || '-')}</td><td>${esc((en && en.pes) || '-')}</td><td class="nw">${esc((en && cfDay(en.d)) || '-')}</td><td class="nw">${st}</td><td>${del || ''}</td></tr>`;
   const delB = m => `<button class="btn ghost sm" data-cfmdel="${esc(m)}" title="Hapus dari manifest">×</button>`;
   let i = 0, body = '';
-  pend.forEach(x => { body += tr('cfwait', ++i, x.m.r, x.md, '', x.en, 'Belum discan' + (x.m.e ? ' <span class="tag">' + esc(x.m.e) + '</span>' : ''), delB(x.m.r)) }); // belum discan: tetap di atas sampai cocok
+  pend.forEach(x => { if (!x.m) { body += tr('cfwait', ++i, x.en.ret || x.en.resi, '', '', x.en, 'Belum discan <span class="tag">Hanya di BigSeller</span>'); return }
+    body += tr('cfwait', ++i, x.m.r, x.md, '', x.en, 'Belum discan' + (x.m.e ? ' <span class="tag">' + esc(x.m.e) + '</span>' : ''), delB(x.m.r)) }); // belum discan: tetap di atas sampai cocok
   extra.forEach(s => { body += tr('cfplain', ++i, '', '', s.resi, cfEntry(s.resi), 'Tidak ada di manifest <span class="tag">' + esc(s.eks || '-') + '</span>') }); // tidak sesuai: tetap masuk, warna putih
   okr.forEach(x => { body += tr('cfok', ++i, x.m.r, x.md, x.s.resi, x.en, '✓ Cocok', delB(x.m.r)) });
-  el.innerHTML = sumBar([stag('Manifest', NF(pend.length + okr.length)), stag('Cocok', NF(okr.length), 'cfokt'), stag('Belum discan', NF(pend.length)), stag('Scan tidak sesuai', NF(extra.length), extra.length ? 'ed' : '')]) +
+  el.innerHTML = sumBar([stag('Manifest', NF(pend.filter(x => x.m).length + okr.length)), stag('Cocok', NF(okr.length), 'cfokt'), stag('Belum discan', NF(pend.length)), stag('Scan tidak sesuai', NF(extra.length), extra.length ? 'ed' : '')]) +
     (body ? `<div class="tw"><table style="min-width:900px"><thead><tr><th>No</th><th>Manifest</th><th>Tgl Manifest</th><th>Data Scan</th><th>Nama Toko</th><th>No. Pesanan</th><th>Tgl BigSeller</th><th>Status</th><th></th></tr></thead><tbody>${body}</tbody></table></div>` : '<div class="empty">Tidak ada data pada filter ini.</div>');
 }
 $('#cfCmp').addEventListener('click', e => {
@@ -218,7 +230,40 @@ function cfInfo() {
 }
 $('#cfEks').addEventListener('change', () => { store.set('cf_eks', $('#cfEks').value); cfNew = false; cfInfo() });
 $('#cfKrg').addEventListener('input', () => { const v = parseInt($('#cfKrg').value, 10); if (v > 0) store.set('cf_krg', v); cfNew = false; cfInfo() });
-$('#cfNewK').onclick = () => { cfNew = true; cfInfo(); msg('#cfMsg', 'Scan berikutnya masuk karung baru.', true) };
+$('#cfNewK').onclick = () => { $('#cfNewMdl').hidden = false; $('#cfNewOk').focus() }; // konfirmasi dulu
+const cfNewClose = () => { $('#cfNewMdl').hidden = true };
+$('#cfNewC').onclick = cfNewClose;
+$('#cfNewMdl').addEventListener('mousedown', e => { if (e.target === $('#cfNewMdl')) cfNewClose() });
+$('#cfNewOk').onclick = () => { cfNewClose(); cfNew = true; cfInfo(); msg('#cfMsg', 'Scan berikutnya masuk karung baru.', true) };
+
+/* ---------- edit: pindah resi antar karung ---------- */
+let cfEdId = null;
+function cfEdClose() { $('#cfEdMdl').hidden = true; cfEdId = null }
+function cfEdOpen(id) {
+  const r = codfail.find(z => z.id === id); if (!r) return;
+  const day = r.day || dayWIB(r.ts), gs = cfGroups(codfail).filter(g => g.day === day), cur = gs.find(g => g.rows.includes(r));
+  cfEdId = id; $('#cfEResi').textContent = r.resi;
+  $('#cfEK').innerHTML = gs.map(g => `<option value="${esc(g.k)}"${cur && g.k === cur.k ? ' selected' : ''}>${esc(g.eks)} · Karung ${g.n} (${NF(g.rows.length)}/${NF(g.krg)} PCS)${cur && g.k === cur.k ? ' - sekarang' : ''}</option>`).join('') + `<option value="__new">+ Karung baru (${esc(r.eks || '-')})</option>`;
+  msg('#cfEMsg', ''); $('#cfEdMdl').hidden = false;
+}
+$('#cfECancel').onclick = cfEdClose;
+$('#cfEdMdl').addEventListener('mousedown', e => { if (e.target === $('#cfEdMdl')) cfEdClose() });
+$('#cfEOk').onclick = () => {
+  const r = codfail.find(z => z.id === cfEdId); if (!r) return cfEdClose();
+  const v = $('#cfEK').value, day = r.day || dayWIB(r.ts), gs = cfGroups(codfail).filter(g => g.day === day), cur = gs.find(g => g.rows.includes(r));
+  if (cur && v === cur.k) return cfEdClose(); // tidak ada perubahan
+  const old = { kid: r.kid, eks: r.eks, krg: r.krg }, changed = [r], oldK = [];
+  if (v === '__new') r.kid = 'k' + uid();
+  else {
+    const g = gs.find(x => x.k === v); if (!g) return msg('#cfEMsg', 'Karung tujuan tidak ditemukan.');
+    if (g.krg > 0 && g.rows.length >= g.krg) return msg('#cfEMsg', 'Karung tujuan sudah penuh (' + NF(g.rows.length) + '/' + NF(g.krg) + ' PCS).');
+    let kid = g.rows[0].kid;
+    if (!kid) { kid = 'k' + uid(); g.rows.forEach(z => { oldK.push([z, z.kid]); z.kid = kid; changed.push(z) }) } // karung data lama diberi ID
+    r.kid = kid; r.eks = g.eks; r.krg = g.krg;
+  }
+  if (!commit(changed.map(z => ['codfail', 'set', z]))) { Object.assign(r, old); oldK.forEach(([z, k]) => z.kid = k); return msg('#cfEMsg', 'Penyimpanan penuh, perubahan tidak tersimpan.') }
+  cfEdClose(); cfNew = false; msg('#cfMsg', 'Resi ' + r.resi + ' dipindahkan.', true); renderCf(true);
+};
 function cfSubmit(raw) {
   const inp = $('#cfResi'), resi = scResi(raw), mm = $('#cfMsg');
   const back = () => { inp.value = ''; if (!cfStream && cfFine()) inp.focus() };
@@ -238,7 +283,7 @@ function cfSubmit(raw) {
   const n = codfail.filter(x => x.kid === kid).length, inMf = cfM().some(m => m.r === resi) || (() => { const en = cfEntry(resi); return !!en && cfM().some(m => m.r === en.resi || m.r === en.ret) })();
   if (cfM().length && !inMf) { msg('#cfMsg', '⚠ ' + resi + ' tersimpan, tapi TIDAK ADA di manifest.'); mm.classList.add('bad'); snBeep(true) }
   else { msg('#cfMsg', '✓ ' + resi + ' tersimpan · ' + eks + ' ' + n + '/' + krg + ' PCS' + (n >= krg ? ' (karung penuh)' : ''), true); snBeep(false) }
-  back(); renderCf(true);
+  openState['cfd' + day] = true; back(); renderCf(true);
 }
 $('#cfResi').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); cfSubmit($('#cfResi').value) } });
 $('#cfAdd').onclick = () => cfSubmit($('#cfResi').value);
@@ -284,7 +329,7 @@ function cfFiltered() { // kelompok dengan baris yang lolos filter
   const f = $('#cfFD').value, t = $('#cfTD').value, fe = $('#cfFE').value, toks = $('#cfQ').value.trim().toUpperCase().split(/[\s,;]+/).filter(Boolean), out = [];
   cfGroups(codfail).forEach(g => {
     const rows = g.rows.filter(r => { const d = r.day || dayWIB(r.ts); return (!f || d >= f) && (!t || d <= t) && (!fe || r.eks === fe) && (!toks.length || toks.some(k => r.resi.includes(k))) });
-    if (rows.length) out.push(Object.assign({}, g, { all: g.rows.length, rows }));
+    if (rows.length) out.push(Object.assign({}, g, { all: g.rows.length, full: g.rows, rows }));
   });
   return out;
 }
@@ -293,20 +338,31 @@ function cfGrpHtml(g) {
   const rows = g.rows.map(r => `<tr${(r.st || 'Baik') !== 'Baik' ? ' class="cfwarn"' : cfUsedSet.has(r) ? ' class="cfok"' : ''}><td>${g.pos[r.id]}</td><td><b>${esc(r.resi)}</b></td><td>${esc(cfToko(r.resi) || '-')}</td>` +
     `<td><select data-cfst="${esc(r.id)}">${CF_ST.map(s => `<option${s === (r.st || 'Baik') ? ' selected' : ''}>${s}</option>`).join('')}</select></td>` +
     `<td><input data-cfds="${esc(r.id)}" value="${esc(r.ds || '')}" placeholder="Deskripsi" autocomplete="off"></td>` +
-    `<td class="nw">${g.krg}PCS</td><td class="nw">${cfDt(r.ts)}</td><td class="nw">${cfTm(r.ts)}</td><td><button class="btn ghost sm" data-cfdel="${esc(r.id)}">Hapus</button></td></tr>`).join('');
-  return `<div class="cfgh"><div><b>${esc(g.eks)}</b> · Karung ${g.n} <span class="tag${full ? ' cfokt' : ''}">${NF(g.all)}/${NF(g.krg)} PCS</span></div>` +
+    `<td class="nw">${g.krg}PCS</td><td class="nw">${cfDt(r.ts)}</td><td class="nw">${cfTm(r.ts)}</td><td class="nw"><button class="btn ghost sm" data-cfedit="${esc(r.id)}">Edit</button> <button class="btn ghost sm" data-cfdel="${esc(r.id)}">Hapus</button></td></tr>`).join('');
+  const hasM = cfM().length > 0, cocok = g.full.filter(r => cfUsedSet.has(r)).length, salah = hasM ? g.full.length - cocok : 0, belum = Math.max(0, g.krg - g.all);
+  return `<div class="cfgh"><div><b>${esc(g.eks)}</b> - Karung ${g.n} <span class="tag${full ? ' cfokt' : ''}">(cocok ${NF(cocok)})</span> <span class="tag${salah ? ' ed' : ''}">(tidak sesuai manifest ${NF(salah)})</span> <span class="tag">(belum di scan ${NF(belum)} (dihitung berdasarkan total karung ${NF(belum)}/${NF(g.krg)}))</span></div>` +
     `<div class="cfbtns"><button class="btn ghost sm" data-cfx="xls" data-k="${esc(g.k)}" type="button">Excel</button><button class="btn ghost sm" data-cfx="pdf" data-k="${esc(g.k)}" type="button">PDF</button></div></div>` +
     `<div class="tw"><table style="min-width:900px"><thead><tr><th>No</th><th>Nomor Resi Pengembalian</th><th>Nama Toko</th><th>Check Status</th><th>Check Deskripsi</th><th>Ket. Karung</th><th>Tgl Check</th><th>Waktu</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
+function cfBsPendF() { // data BigSeller belum discan, mengikuti filter hasil scan
+  const f = $('#cfFD').value, t = $('#cfTD').value, fe = $('#cfFE').value, toks = $('#cfQ').value.trim().toUpperCase().split(/[\s,;]+/).filter(Boolean), today = dayWIB(Date.now());
+  return cfBsPending().map(en => ({ en, d: en.d || today })).filter(x => (!f || x.d >= f) && (!t || x.d <= t) && (!fe || !x.en.e || x.en.e === fe) && (!toks.length || toks.some(k => (x.en.resi + ' ' + x.en.ret).toUpperCase().includes(k))));
+}
+function cfPendHtml(list) {
+  const rows = list.map((x, i) => `<tr class="cfwait"><td>${i + 1}</td><td><b>${esc(x.en.ret || x.en.resi)}</b></td><td>${esc(x.en.toko || '-')}</td><td>${esc(x.en.pes || '-')}</td><td class="nw">Belum discan</td></tr>`).join('');
+  return `<div class="cfgh"><div><b>Belum discan</b> · dari BigSeller <span class="tag">${NF(list.length)} resi</span></div></div><div class="tw"><table style="min-width:600px"><thead><tr><th>No</th><th>Nomor Resi</th><th>Nama Toko</th><th>No. Pesanan</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
 function cfRenderGrp() {
   const G = cfFiltered(), el = $('#cfGrp'); cfLast = G; cfUsedSet = cfM().length ? cfMatch().used : new Set();
-  if (!G.length) { el.innerHTML = '<div class="empty">Belum ada hasil scan.</div>'; return }
+  const bsP = cfBsPendF();
+  if (!G.length && !bsP.length) { el.innerHTML = '<div class="empty">Belum ada hasil scan.</div>'; return }
   const today = dayWIB(Date.now()), filt = ['#cfFD', '#cfTD', '#cfFE', '#cfQ'].some(x => $(x).value), all = [].concat(...G.map(g => g.rows)), days = {};
   G.forEach(g => (days[g.day] = days[g.day] || []).push(g));
-  let html = sumBar([stag('Total scan', NF(all.length)), stag('Jumlah karung', NF(G.length))].concat(cTags(countBy(all, r => r.eks), '')));
+  const pd = {}; bsP.forEach(x => { (pd[x.d] = pd[x.d] || []).push(x); days[x.d] = days[x.d] || [] });
+  let html = sumBar([stag('Total scan', NF(all.length)), stag('Jumlah karung', NF(G.length))].concat(bsP.length ? [stag('Belum discan (BigSeller)', NF(bsP.length))] : []).concat(cTags(countBy(all, r => r.eks), '')));
   Object.keys(days).sort().reverse().forEach(d => {
-    const gs = days[d].sort((a, b) => b.t1 - a.t1), n = gs.reduce((s, g) => s + g.rows.length, 0), k = 'cfd' + d, open = k in openState ? openState[k] : (filt || d === today);
-    html += `<details class="dy" data-k="${k}"${open ? ' open' : ''}><summary>${dayLbl(d)} <span class="tag">${NF(n)} data</span></summary>${gs.map(cfGrpHtml).join('')}</details>`;
+    const gs = days[d].sort((a, b) => b.t1 - a.t1), n = gs.reduce((s, g) => s + g.rows.length, 0), k = 'cfd' + d, open = k in openState ? openState[k] : (filt || d === today || !!pd[d]), pn = (pd[d] || []).length;
+    html += `<details class="dy" data-k="${k}"${open ? ' open' : ''}><summary>${dayLbl(d)} <span class="tag">${NF(n)} data</span>${pn ? ` <span class="tag">${NF(pn)} belum discan</span>` : ''}</summary>${pn ? cfPendHtml(pd[d]) : ''}${gs.map(cfGrpHtml).join('')}</details>`;
   });
   el.innerHTML = html;
 }
@@ -320,6 +376,7 @@ $('#cfGrp').addEventListener('click', e => {
   const s = e.target.closest('summary'); if (s) { const d = s.parentElement; openState[d.dataset.k] = !d.open; return }
   const x = e.target.closest('[data-cfx]');
   if (x) { const g = cfLast.find(z => z.k === x.dataset.k); if (!g) return; return x.dataset.cfx === 'xls' ? cfXlsx([g], cfName(g, 'xlsx')) : cfPdf([g], cfName(g, 'pdf')) }
+  const ed = e.target.closest('[data-cfedit]'); if (ed) return cfEdOpen(ed.dataset.cfedit);
   const b = e.target.closest('[data-cfdel]');
   if (b) {
     const r = codfail.find(z => z.id === b.dataset.cfdel); if (!r) return;
