@@ -93,19 +93,6 @@ $('#cfMGo').onclick = () => {
   if (!cfSave(mf, cfB())) return msg('#cfMMsg', 'Gagal menyimpan (data terlalu besar atau penyimpanan penuh).');
   $('#cfMtx').value = ''; msg('#cfMMsg', 'Manifest tanggal ' + cfDay(d) + ': ' + NF(toks.length) + ' resi terbaca, ' + NF(add) + ' baru, ' + NF(dup) + ' sudah ada (tanggal lama dipertahankan).', true); renderCf(true);
 };
-$('#cfMClr').onclick = () => {
-  if (!cfM().length) return msg('#cfMMsg', 'Manifest sudah kosong.');
-  if (!confirm('Kosongkan SEMUA manifest dari semua tanggal (' + NF(cfM().length) + ' resi)? Data scan yang sudah masuk grup hari tidak ikut terhapus; kalau manifest dimasukkan lagi, otomatis cocok kembali.')) return;
-  if (!cfSave([], cfB())) return msg('#cfMMsg', 'Gagal menyimpan.');
-  msg('#cfMMsg', 'Semua manifest dikosongkan.', true); renderCf(true);
-};
-$('#cfMDelD').onclick = () => { // hapus manifest untuk satu tanggal saja
-  const d = $('#cfMD').value; if (!d) return msg('#cfMMsg', 'Pilih tanggal manifest yang mau dihapus.');
-  const n = cfM().filter(x => x.d === d).length; if (!n) return msg('#cfMMsg', 'Tidak ada manifest untuk tanggal ' + cfDay(d) + '.');
-  if (!confirm('Hapus manifest tanggal ' + cfDay(d) + ' (' + NF(n) + ' resi)? Manifest tanggal lain dan data scan tidak ikut terhapus.')) return;
-  if (!cfSave(cfM().filter(x => x.d !== d).map(x => ({ r: x.r, e: x.e || '', d: x.d || '' })), cfB())) return msg('#cfMMsg', 'Gagal menyimpan.');
-  msg('#cfMMsg', 'Manifest tanggal ' + cfDay(d) + ' dihapus.', true); renderCf(true);
-};
 async function cfReadBs(files) {
   files = Array.from(files || []); if (!files.length) return;
   if (!window.XLSX) return msg('#cfBMsg', 'Library Excel gagal dimuat. Pastikan terhubung ke internet.');

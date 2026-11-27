@@ -312,7 +312,7 @@
   <section class="sec" id="cf">
     <div class="card">
       <h3>Manifest Ekspedisi &amp; Data BigSeller</h3>
-      <p class="hint">Pilih <b>tanggal manifest</b>, lalu tempel teks manifest dari WhatsApp. Manifest tanggal lain (mis. 26) tinggal ditambahkan dengan cara yang sama; manifest lama tidak terhapus. Upload Excel BigSeller (boleh banyak file; tanggalnya dibaca dari kolom AL) untuk melengkapi nama toko dan nomor pesanan. Tabel di bawah: <b style="color:#b8860b">kuning</b> = belum discan (tetap di paling atas sampai cocok), <b>putih</b> = resi discan tapi tidak ada di manifest (tetap tersimpan di grup, dan tetap di daftar ini sampai Anda klik ×). Resi yang sudah cocok otomatis keluar dari daftar ini dan hanya tampil di grup hasil scan. Boleh mencocokkan manifest dengan scan dulu; Excel BigSeller bisa diupload belakangan dan otomatis mencocokkan nama toko / no. pesanan. Baris BigSeller yang belum discan dan tidak ada di manifest juga ikut nyangkut di atas dan di grup hari tersebut sampai discan.</p>
+      <p class="hint">Pilih tanggal, tempel manifest, lalu upload Excel BigSeller (boleh banyak file). Warna: <b style="color:#b8860b">kuning</b> = belum discan, <b>putih</b> = discan tapi tidak ada di manifest (klik × untuk menyembunyikan), <b style="color:var(--ok)">hijau</b> = cocok dan masuk ke grup hasil scan.</p>
       <div class="cfg2">
         <div>
           <label>Tanggal manifest</label><input type="date" id="cfMD">
@@ -320,12 +320,12 @@
           <textarea id="cfMtx" rows="8" placeholder="Tempel semua teks manifest di sini. Nomor resi dibaca otomatis."></textarea>
           <label>Ekspedisi manifest <span style="font-weight:400">(opsional)</span></label>
           <select id="cfMEks"></select>
-          <div class="cfbtns"><button class="btn sm" id="cfMGo" type="button">Proses manifest</button><button class="btn ghost sm" id="cfMDelD" type="button">Hapus manifest tanggal ini</button><button class="btn ghost sm" id="cfMClr" type="button">Kosongkan semua manifest</button></div>
+          <div class="cfbtns"><button class="btn sm" id="cfMGo" type="button">Proses manifest</button></div>
           <div class="msg" id="cfMMsg"></div>
         </div>
         <div>
           <label>Data BigSeller (Excel)</label>
-          <div class="mgdrop" id="cfBsDrop"><b>Tarik file Excel ke sini</b><span>atau</span><button class="btn sm" type="button" id="cfBsPick">Pilih file</button><small>Kolom yang diambil: Toko BigSeller, Nomor Pesanan, Nomor Resi, Nomor Resi Pesanan Pengembalian, dan tanggal dari kolom AL (Waktu Sampai Gudang). Hanya toko TikTok, Shopee, dan Lazada milik Anda yang diambil (kolom B), toko lain dilewati. Penyaringan ekspedisi mengikuti pilihan <b>Ekspedisi manifest</b> saat file diupload: <b>SPX</b> = hanya baris yang kolom AE kosong, <b>J&amp;T</b> = hanya baris kolom X = JNT Reguler, kosong = tanpa penyaringan. Boleh banyak file; data lama tetap tersimpan.</small><input type="file" id="cfBsFile" accept=".xlsx,.xls,.csv" multiple hidden></div>
+          <div class="mgdrop" id="cfBsDrop"><b>Tarik file Excel ke sini</b><span>atau</span><button class="btn sm" type="button" id="cfBsPick">Pilih file</button><small>Tanggal dibaca dari kolom AL. Filter SPX / J&amp;T mengikuti pilihan Ekspedisi manifest. Boleh banyak file.</small><input type="file" id="cfBsFile" accept=".xlsx,.xls,.csv" multiple hidden></div>
           <div class="cfbtns"><button class="btn ghost sm" id="cfBClr" type="button">Kosongkan data BigSeller</button></div>
           <div class="msg" id="cfBMsg"></div>
         </div>
@@ -350,7 +350,7 @@
     </div>
     <div class="card">
       <h3>Hasil Scan COD Gagal</h3>
-      <p class="hint">Dikelompokkan per tanggal dan karung. Baris <b style="color:var(--ok)">hijau</b> = cocok dengan manifest, <b>putih</b> = tidak ada di manifest. Check Status dan Check Deskripsi bisa diedit langsung. Export Excel / PDF memakai format tabel: No, Tgl Transaksi, Nomor Resi Pengembalian, Nama Toko, Check Status, Check Deskripsi, Ket. Karung, Tgl Check, Waktu Check (Excel: satu sheet per karung).</p>
+      <p class="hint">Dikelompokkan per tanggal dan karung. <b style="color:var(--ok)">Hijau</b> = cocok dengan manifest, <b>putih</b> = tidak ada di manifest. Check Status dan Deskripsi bisa diedit langsung.</p>
       <div class="exf">
         <div><label>Dari tanggal</label><input type="date" id="cfFD"></div>
         <div><label>Sampai tanggal</label><input type="date" id="cfTD"></div>
@@ -760,7 +760,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="products-seed.js?v=1"></script>
 <script src="script.js?v=91"></script>
-<script src="cod.js?v=9"></script>
+<script src="cod.js?v=10"></script>
 <script src="pwa.js?v=1"></script>
 <script>
 /* pustaka berat (Excel, PDF) dimuat SETELAH aplikasi tampil, supaya buka web di HP tidak menunggu ~3 MB script */
