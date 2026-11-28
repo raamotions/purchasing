@@ -2852,10 +2852,10 @@ function snSubmit(raw) {
   const fail = t => { msg('#snMsg', t); $('#snMsg').classList.add('bad'); snBeep(true); inp.value = ''; inp.focus() };
   if (!resi) return;
   if (!me) return fail('Masuk dengan akun terlebih dulu agar hasil scan tercatat atas nama Anda.');
-  if (scHas(resi)) return fail('Barcode dan QR ini telah ada, harap scan Barcode atau QR yang lain');
+  if (scHas(resi)) { if (window.snInfo) snInfo(resi, true); return fail('Barcode dan QR ini telah ada, harap scan Barcode atau QR yang lain') }
   const ts = Date.now();
   if (!scAddOne(resi, ts, scPic(me.name), '')) return fail('Penyimpanan penuh, data tidak tersimpan.');
-  $('#snMsg').classList.remove('bad'); msg('#snMsg', '✓ ' + resi + ' tersimpan.', true); snBeep(false);
+  $('#snMsg').classList.remove('bad'); msg('#snMsg', '✓ ' + resi + ' tersimpan.', true); snBeep(false); if (window.snInfo) snInfo(resi, false);
   inp.value = ''; inp.focus(); renderSn(); if ($('#sc').classList.contains('on')) renderSc();
 }
 function renderSn() {

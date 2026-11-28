@@ -50,7 +50,15 @@ function djOpts(sel, vals, label) {
   const el = $(sel), cur = el.value; el.innerHTML = `<option value="">${label}</option>` + vals.map(v => `<option>${esc(v)}</option>`).join('');
   el.value = vals.includes(cur) ? cur : '';
 }
-const djUl = a => a.length ? '<ul style="margin:0;padding-left:18px">' + a.map(t => `<li>${esc(t)}</li>`).join('') + '</ul>' : '-';
+const djRows = (s, i) => { // satu resi = beberapa baris; tiap poin produk, variasinya, dan jumlahnya sejajar di baris yang sama
+  const n = Math.max(1, s.prod.length, s.vari.length, s.qty.length), pt = t => t ? '• ' + esc(t) : '-', out = [];
+  for (let k = 0; k < n; k++) {
+    const top = k === 0 ? ' style="border-top:2px solid rgba(60,100,150,.35)"' : '';
+    out.push('<tr>' + (k === 0 ? `<td rowspan="${n}"${top}>${i + 1}</td><td class="nw" rowspan="${n}"${top}><b>${esc(s.resi)}</b></td><td rowspan="${n}"${top}>${esc(s.mp || '-')}</td><td rowspan="${n}"${top}>${esc(s.toko || '-')}</td><td class="nw" rowspan="${n}"${top}>${esc(s.kirim || '-')}</td>` : '') +
+      `<td${top}>${pt(s.prod[k])}</td><td${top}>${pt(s.vari[k])}</td><td style="${k === 0 ? 'border-top:2px solid rgba(60,100,150,.35);' : ''}text-align:center"><b>${esc(s.qty[k] || '-')}</b></td></tr>`);
+  }
+  return out.join('');
+};
 function djRender() {
   const el = $('#djList'); if (!el) return;
   const uniq = k => Array.from(new Set(sales.map(s => s[k]).filter(Boolean))).sort((a, b) => a.localeCompare(b));
@@ -60,8 +68,7 @@ function djRender() {
     (!q || tokOk(normName([s.resi, s.toko, s.prod.join(' '), s.vari.join(' ')].join(' ')), q))).sort((a, b) => (b.ts || 0) - (a.ts || 0) || a.resi.localeCompare(b.resi));
   const pcs = L.reduce((n, s) => n + s.qty.reduce((m, x) => m + (parseFloat(x) || 0), 0), 0), V = L.slice(0, djShow);
   el.innerHTML = sumBar([stag('Total resi', NF(sales.length)), (q || mp || kk || tk) ? stag('Hasil filter', NF(L.length)) : '', stag('Total pcs', NF(pcs))]) +
-    (V.length ? `<div class="tw"><table style="min-width:1000px"><thead><tr><th>No</th><th>No. Resi</th><th>Marketplace</th><th>Toko</th><th>Jasa Kirim</th><th>Nama Produk</th><th>Nama Variasi</th><th>Jumlah</th></tr></thead><tbody>${V.map((s, i) =>
-      `<tr><td>${i + 1}</td><td class="nw"><b>${esc(s.resi)}</b></td><td>${esc(s.mp || '-')}</td><td>${esc(s.toko || '-')}</td><td class="nw">${esc(s.kirim || '-')}</td><td>${djUl(s.prod)}</td><td>${djUl(s.vari)}</td><td>${djUl(s.qty)}</td></tr>`).join('')}</tbody></table></div>` +
+    (V.length ? `<div class="tw"><table style="min-width:1000px"><thead><tr><th>No</th><th>No. Resi</th><th>Marketplace</th><th>Toko</th><th>Jasa Kirim</th><th>Nama Produk</th><th>Nama Variasi</th><th>Jumlah</th></tr></thead><tbody>${V.map(djRows).join('')}</tbody></table></div>` +
       (L.length > V.length ? `<div style="text-align:center;margin-top:10px"><button class="btn ghost sm" type="button" id="djMore">Tampilkan lebih banyak (${NF(L.length - V.length)} lagi)</button></div>` : '') : '<div class="empty">Belum ada data penjualan.</div>');
   const m = $('#djMore'); if (m) m.onclick = () => { djShow += 200; djRender() };
 }
@@ -86,4 +93,36 @@ window.renderDj = async function () {
     if (db) commit(ids.map(id => ['sales', 'del', id])); else djSave();
     msg('#djMsg', 'Semua data penjualan dihapus.', true); djRender();
   };
+})();
+
+/* ---------- Pop up info resi saat scan (menu Packing > Scan) ---------- */
+const djId = r => 's_' + String(r).replace(/[\/\s]+/g, '_');
+async function djFind(resi) { // null = tidak ada, undefined = gagal membaca
+  const ids = Array.from(new Set([resi, String(resi).toUpperCase()])), U = String(resi).toUpperCase();
+  const list = salesLoaded ? sales : (db ? [] : store.get('pp_sales', []));
+  const c = list.find(s => String(s.resi).toUpperCase() === U); if (c) return c;
+  if (!db) return null;
+  try { for (const r of ids) { const d = await db.collection('sales').doc(djId(r)).get(); if (d.exists) return d.data() } return null }
+  catch (e) { return undefined }
+}
+let snInfoTok = 0;
+function snInfoClose() { $('#snMdl').hidden = true; if ($('#scn').classList.contains('on')) { const i = $('#snIn'); if (i) i.focus({ preventScroll: true }) } }
+window.snInfo = async function (resi, dup) {
+  const body = $('#snMdlBody'), tok = ++snInfoTok;
+  body.innerHTML = `<div class="hint">No. Resi : <b>${esc(resi)}</b></div><div class="empty">Mencari data penjualan...</div>`; $('#snMdl').hidden = false;
+  const s = await djFind(resi); if (tok !== snInfoTok) return; // sudah scan resi lain
+  const note = dup ? '<div class="msg bad" style="margin:0 0 10px">Resi ini sudah pernah discan.</div>' : '';
+  if (!s) { body.innerHTML = note + `<div style="margin-bottom:8px"><b>No. Resi</b> : ${esc(resi)}</div><div class="msg bad" style="margin:0">${s === undefined ? 'Gagal membaca Data Penjualan (periksa koneksi / Rules Firestore).' : 'Resi ini tidak ditemukan di Data Penjualan.'}</div>`; return }
+  const n = Math.max(1, s.prod.length, s.vari.length, s.qty.length), rows = [];
+  for (let k = 0; k < n; k++) rows.push(`<tr><td>${k + 1}</td><td>${esc(s.prod[k] || '-')}</td><td>${esc(s.vari[k] || '-')}</td><td style="text-align:center"><b>${esc(s.qty[k] || '-')}</b></td></tr>`);
+  body.innerHTML = note +
+    `<div style="line-height:1.7"><div><b>No. Resi</b> : ${esc(s.resi)}</div><div><b>Toko</b> : ${esc(s.toko || '-')}</div><div><b>Marketplace</b> : ${esc(s.mp || '-')}</div></div>` +
+    `<div class="tw" style="margin:12px 0"><table style="min-width:420px"><thead><tr><th>No.</th><th>Nama Produk</th><th>Nama Variasi</th><th>Jumlah</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>` +
+    `<div><b>Jasa Kirim</b> : ${esc(s.kirim || '-')}</div>`;
+};
+(() => {
+  const m = $('#snMdl'); if (!m) return;
+  $('#snMdlOk').onclick = snInfoClose;
+  m.addEventListener('mousedown', e => { if (e.target === m) snInfoClose() });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !m.hidden) snInfoClose() });
 })();
