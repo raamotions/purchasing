@@ -257,18 +257,18 @@ $('#cfEOk').onclick = () => {
   if (!day) return msg('#cfEMsg', 'Pilih tanggalnya dulu.');
   const gs = cfGroups(codfail).filter(g => g.day === day), cur = gs.find(g => g.rows.includes(r));
   if (day === own && cur && v === cur.k) return cfEdClose(); // tidak ada perubahan
-  const old = { kid: r.kid, eks: r.eks, krg: r.krg, day: r.day, mv: r.mv }, changed = [r], oldK = [];
+  const old = { kid: r.kid, eks: r.eks, krg: r.krg, day: r.day, mv: r.mv }, changed = [r], oldK = [], oldG = []; let grown = 0;
   if (v === '__new') r.kid = 'k' + uid();
   else {
     const g = gs.find(x => x.k === v); if (!g) return msg('#cfEMsg', 'Karung tujuan tidak ditemukan.');
-    if (g.krg > 0 && g.rows.length >= g.krg) return msg('#cfEMsg', 'Karung tujuan sudah penuh (' + NF(g.rows.length) + '/' + NF(g.krg) + ' PCS).');
+    if (g.krg > 0 && g.rows.length >= g.krg) { grown = g.rows.length + 1; g.rows.forEach(z => { oldG.push([z, z.krg]); z.krg = grown; changed.push(z) }) } // karung penuh: isinya otomatis ditambah (mis. 41/41 jadi 42/42)
     let kid = g.rows[0].kid;
     if (!kid) { kid = 'k' + uid(); g.rows.forEach(z => { oldK.push([z, z.kid]); z.kid = kid; changed.push(z) }) } // karung data lama diberi ID
-    r.kid = kid; r.eks = g.eks; r.krg = g.krg;
+    r.kid = kid; r.eks = g.eks; r.krg = grown || g.krg;
   }
   r.day = day; r.mv = 1; // diatur manual: tidak ikut dipindah otomatis saat upload BigSeller
-  if (!commit(changed.map(z => ['codfail', 'set', z]))) { Object.assign(r, old); oldK.forEach(([z, k]) => z.kid = k); return msg('#cfEMsg', 'Penyimpanan penuh, perubahan tidak tersimpan.') }
-  cfEdClose(); cfNew = false; openState['cfd' + day] = true; msg('#cfMsg', 'Resi ' + r.resi + ' dipindahkan ke ' + cfDay(day) + '.', true); renderCf(true);
+  if (!commit(changed.map(z => ['codfail', 'set', z]))) { Object.assign(r, old); oldK.forEach(([z, k]) => z.kid = k); oldG.forEach(([z, k]) => z.krg = k); return msg('#cfEMsg', 'Penyimpanan penuh, perubahan tidak tersimpan.') }
+  cfEdClose(); cfNew = false; openState['cfd' + day] = true; msg('#cfMsg', 'Resi ' + r.resi + ' dipindahkan ke ' + cfDay(day) + '.' + (grown ? ' Karung tujuan diperluas menjadi ' + NF(grown) + '/' + NF(grown) + ' PCS.' : ''), true); renderCf(true);
 };
 function cfSubmit(raw) {
   const inp = $('#cfResi'), resi = scResi(raw), mm = $('#cfMsg');

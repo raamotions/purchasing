@@ -443,7 +443,8 @@ main{padding-bottom:calc(56px + env(safe-area-inset-bottom))}
   .bar .in,.ph,main{padding-left:max(14px,env(safe-area-inset-left));padding-right:max(14px,env(safe-area-inset-right))}
   .card{padding:18px}
 }
-@media(display-mode:standalone){body{-webkit-user-select:none;user-select:none}input,textarea,[contenteditable]{-webkit-user-select:text;user-select:text}}
+@media(display-mode:standalone){body{-webkit-user-select:none;user-select:none}input,textarea,[contenteditable],td,th,.cfgh,.tag,.hint,.empty,.msg,pre{-webkit-user-select:text;user-select:text}}
+td,th,.cfgh,.tag,.hint,.msg{-webkit-touch-callout:default}
 
 /* ===== COD Gagal ===== */
 .cfg2{display:grid;grid-template-columns:1fr 1fr;gap:22px}
