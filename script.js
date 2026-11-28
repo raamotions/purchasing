@@ -334,8 +334,8 @@ function psearch(box, opts, onPick, onText) { // onText: aktifkan mode ketik pro
   const i = box.querySelector('input'), l = box.querySelector('.sug'), upd = addClear(i);
   const show = () => {
     const q = i.value.trim().toLowerCase();
-    const m = opts().filter(p => p.name.toLowerCase().includes(q));
-    l.innerHTML = m.length ? m.map(p => `<div data-id="${p.id}">${esc(p.name)}</div>`).join('') : '<em>' + (onText ? 'Tidak ditemukan. Produk baru akan ditambahkan saat disimpan.' : 'Produk tidak ditemukan') + '</em>';
+    const m = opts().filter(p => tokOk(normName(p.name) + ' ' + (p.sku || '') + ' ' + (p.variants || []).map(v => normName(v.n) + ' ' + (v.sku || '')).join(' '), q));
+    l.innerHTML = m.length ? m.map(p => `<div data-id="${esc(p.id)}">${esc(p.name)}${p.gd ? ' <small style="opacity:.6">· Barang Gudang</small>' : ''}</div>`).join('') : '<em>' + (onText ? 'Tidak ditemukan. Produk baru akan ditambahkan saat disimpan.' : 'Produk tidak ditemukan') + '</em>';
     l.classList.add('open');
   };
   let pick = null;
@@ -366,8 +366,20 @@ function psearch(box, opts, onPick, onText) { // onText: aktifkan mode ketik pro
 /* ---------- PENGAJUAN ---------- */
 let pgProd = null, pgVar = null;
 let pgNew = false, pgAdd = false;
-const pgSearch = psearch($('#pgSearch'), () => products, p => { pgProd = p; pgVar = null; pgAdd = false; pgNewUI(); pgVarUI() }, t => {
-  const p = products.find(x => normName(x.name) === normName(t));
+// sumber pencarian: Database Produk + barang yang hanya ada di Barang Gudang / stok (belum masuk Database Produk)
+function pgOpts() {
+  const have = new Set(products.map(p => normName(p.name))), m = new Map();
+  const add = (n, vn, vc) => {
+    n = normName(n); if (!n || have.has(n)) return;
+    let g = m.get(n); if (!g) { g = { id: 'gd:' + n, name: n, variants: [], gd: true }; m.set(n, g) }
+    vn = normName(vn); if (vn && !g.variants.some(v => v.n === vn)) g.variants.push({ n: vn, c: vc || toHex(vn) || '#4a7bd0' });
+  };
+  gdStock().forEach(g => add(g.name, g.vn));
+  stockRows().forEach(r => add(r.prod, r.vn, r.vc));
+  return products.concat([...m.values()].sort((a, b) => a.name.localeCompare(b.name)));
+}
+const pgSearch = psearch($('#pgSearch'), pgOpts, p => { pgProd = p; pgVar = null; pgAdd = false; pgNewUI(); pgVarUI() }, t => {
+  const p = pgOpts().find(x => normName(x.name) === normName(t));
   pgProd = p || null; pgVar = null; pgAdd = false; pgNewUI(); pgVarUI();
 });
 $('#pgSearch').dataset.next = '#pgVarName';
@@ -416,8 +428,10 @@ $('#pgSubmit').onclick = () => {
   if (!(th >= 1 && th <= TAHAP_MAX)) return msg('#pgMsg', 'Pilih tahap pengajuan (wajib).');
   if (!tahapOk(th, adm, src, dayWIB(Date.now()))) return msg('#pgMsg', tahapErr(th, adm, src));
   const ops = []; let np = null, nvAdded = null;
-  if (!prod) { // produk baru: langsung masuk ke database produk
-    np = prod = { id: uid(), name: typed, variants: [] }; products.push(np);
+  if (!prod || prod.gd) { // produk yang belum ada di Database Produk: masuk ke "List Produk Inputan" (bisa dihapus Owner)
+    const g = prod; np = prod = { id: uid(), name: g ? g.name : typed, variants: g ? g.variants.map(v => ({ n: v.n, c: v.c })) : [], inp: true, by: adm, ts: Date.now() };
+    if (vr) vr = prod.variants.find(v => v.n === vr.n) || null;
+    products.push(np);
   }
   if (pgNew) { // warna diketik: pakai varian yang sama jika sudah ada, kalau belum tambahkan ke produk yang sama
     const vt = normName($('#pgVarName').value);
@@ -441,7 +455,7 @@ $('#pgSubmit').onclick = () => {
   if (!commit(ops)) return msg('#pgMsg', 'Penyimpanan penuh.');
   pgSearch.reset(); $('#pgMin').value = ''; $('#pgSrc').value = ''; $('#pgVarName').value = ''; $('#pgVarCol').value = '#4a7bd0';
   msg('#pgMsg', ex ? 'Digabung dengan pengajuan yang sama. Total diminta: ' + ex.min + ' pcs.'
-    : np ? 'Produk baru "' + np.name + '" masuk ke database produk, pengajuan tersimpan.'
+    : np ? 'Produk "' + np.name + '" belum ada di Database Produk, masuk ke List Produk Inputan. Pengajuan tersimpan.'
     : nvAdded ? 'Varian "' + nvAdded + '" ditambahkan ke produk ' + prod.name + ', pengajuan tersimpan.' : 'Pengajuan tersimpan.', true);
   renderReqs(); renderProducts();
 };
@@ -2266,6 +2280,7 @@ function pdAdd(sku, name, vn) {
     p.sku = sku;
   }
   if (isNew) products.push(p);
+  if (p.inp) p.inp = false; // sudah punya SKU: pindah dari List Produk Inputan ke Database Produk
   return { p };
 }
 let pdShow = 50;
@@ -2275,7 +2290,7 @@ function pdDraw() {
 }
 function renderProducts() {
   pdAutoSeed();
-  const q = normName($('#pSearch').value), all = pdRows();
+  const q = normName($('#pSearch').value), all = pdRows().filter(r => !r.p.inp);
   const L = q ? all.filter(r => (r.sku + ' ' + r.name + ' ' + r.vn).toUpperCase().includes(q)) : all, V = L.slice(0, pdShow);
   const code = r => r.sku ? `<svg data-bc="${esc(r.sku)}"></svg>` : '-', qr = r => r.sku ? `<div class="pqr" data-qr="${esc(r.sku)}"></div>` : '-';
   $('#pList').innerHTML = sumBar([stag('Total SKU', NF(all.length)), q ? stag('Hasil pencarian', NF(L.length)) : '']) +
@@ -2285,8 +2300,25 @@ function renderProducts() {
       <td class="nw"><button class="btn ghost sm" data-pe="${esc(r.p.id)}" data-pi="${r.i}">Edit</button> <button class="btn ghost sm" data-pd="${esc(r.p.id)}" data-pi="${r.i}">Hapus</button></td></tr>`).join('')}</tbody></table></div>`
       + (L.length > V.length ? `<button class="btn ghost sm" type="button" data-pmore="1" style="margin-top:12px">Tampilkan ${Math.min(50, L.length - V.length)} lagi (${V.length} dari ${L.length})</button>` : '')
       : '<div class="empty">' + (all.length ? 'Produk tidak ditemukan.' : 'Belum ada produk.') + '</div>');
-  pdDraw();
+  pdDraw(); renderInp();
 }
+// List Produk Inputan: produk baru dari Form Pengajuan; hanya Owner yang boleh menghapus
+function renderInp() {
+  const box = $('#pInpList'); if (!box) return;
+  const L = products.filter(p => p.inp).sort((a, b) => (b.ts || 0) - (a.ts || 0)), own = hasRole('Owner');
+  box.innerHTML = sumBar([stag('Total produk inputan', NF(L.length))]) + (L.length
+    ? `<div class="tw"><table style="min-width:620px"><thead><tr><th>No.</th><th>Nama Produk</th><th>Varian</th><th>Diinput oleh</th><th>Tanggal</th>${own ? '<th></th>' : ''}</tr></thead><tbody>${L.map((p, k) => `<tr>
+      <td>${k + 1}</td><td><b>${esc(p.name)}</b></td><td>${(p.variants || []).length ? p.variants.map(v => sw(v.c, v.n) + ' ' + esc(v.n)).join('<br>') : '-'}</td>
+      <td>${p.by ? esc(p.by) : '-'}</td><td class="nw">${p.ts ? esc(new Date(p.ts).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', dateStyle: 'medium', timeStyle: 'short' })) : '-'}</td>
+      ${own ? `<td class="nw"><button class="btn ghost sm" data-idel="${esc(p.id)}" type="button">Hapus</button></td>` : ''}</tr>`).join('')}</tbody></table></div>`
+    : '<div class="empty">Belum ada produk inputan.</div>');
+}
+$('#pInpList').onclick = e => {
+  const b = e.target.closest('[data-idel]'); if (!b || !hasRole('Owner')) return;
+  const p = products.find(x => String(x.id) === b.dataset.idel && x.inp); if (!p) return;
+  if (!confirm('Hapus produk inputan "' + p.name + '"? Data pengajuan dan purchase lama tetap tersimpan.')) return;
+  products = products.filter(x => x !== p); commit([['products', 'del', p.id]]); renderProducts();
+};
 $('#pSearch').oninput = () => { pdShow = 50; renderProducts() };
 caps($('#pSearch')); caps($('#pName')); caps($('#pVar')); caps($('#pSku')); caps($('#pESku')); caps($('#pEName')); caps($('#pEVar'));
 
@@ -2336,7 +2368,8 @@ $('#impFile').onchange = e => {
 // Data awal dari Excel HPP (products-seed.js): otomatis terisi satu kali bila Database Produk belum punya satu pun SKU
 let pdSeeding = false;
 function pdAutoSeed() {
-  if (pdSeeding || !window.PROD_SEED || !products.length || products.some(p => p.sku || (p.variants || []).some(v => v.sku))) return;
+  const base = products.filter(p => !p.inp);
+  if (pdSeeding || !window.PROD_SEED || !base.length || base.some(p => p.sku || (p.variants || []).some(v => v.sku))) return;
   pdSeeding = true;
   const map = new Map(), out = [];
   PROD_SEED.forEach(([sku, name, vn]) => {
@@ -2344,8 +2377,8 @@ function pdAutoSeed() {
     if (vn) p.variants.push({ n: vn, c: pdColor(vn), sku }); else p.sku = sku;
   });
   const keep = new Set(out.map(p => p.id));
-  const ops = products.filter(p => !keep.has(p.id)).map(p => ['products', 'del', p.id]).concat(out.map(p => ['products', 'set', p]));
-  products = out; commit(ops); pdShow = 50;
+  const inp = products.filter(p => p.inp), ops = base.filter(p => !keep.has(p.id)).map(p => ['products', 'del', p.id]).concat(out.map(p => ['products', 'set', p]));
+  products = out.concat(inp); commit(ops); pdShow = 50;
 }
 
 // edit / hapus (kode verifikasi)

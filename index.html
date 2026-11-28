@@ -61,7 +61,7 @@
           </div>
           <div id="pgNew" hidden>
             <div class="nv"><input id="pgVarName" placeholder="KETIK WARNA, MIS. MERAH" autocomplete="off"><input type="color" id="pgVarCol" value="#4a7bd0" title="Warna"></div>
-            <div class="hint2">Produk atau warna baru otomatis masuk ke database produk. Warna terisi otomatis dari nama.</div>
+            <div class="hint2">Produk baru masuk ke List Produk Inputan (di bawah Database Produk). Warna terisi otomatis dari nama.</div>
           </div>
           <button type="button" class="lnk" id="pgToggle" hidden>+ Warna baru</button>
         </div>
@@ -449,6 +449,11 @@
       <p class="hint">Edit atau hapus produk memakai kode verifikasi.</p>
       <input id="pSearch" placeholder="CARI SKU, NAMA PRODUK, ATAU VARIAN..." autocomplete="off">
       <div id="pList"></div>
+    </div>
+    <div class="card" style="margin-top:20px">
+      <h3>List Produk Inputan</h3>
+      <p class="hint">Produk baru yang diketik dari Form Pengajuan dan belum ada di Database Produk. Hanya Owner yang dapat menghapus.</p>
+      <div id="pInpList"></div>
     </div>
   </section>
 </main>
