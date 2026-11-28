@@ -46,6 +46,7 @@ const cfNorm = t => String(t == null ? '' : t).toLowerCase().replace(/[^a-z0-9]+
 const BS_TOKO_SET = new Set(BS_TOKO.map(cfNorm));
 const cfTokoOk = t => BS_TOKO_SET.has(cfNorm(t));
 const BS_AE_COL = 30, BS_X_COL = 23; // AE = Nomor Resi Pesanan Pengembalian, X = Jasa Kirim
+const cfSpxAe = v => { const t = String(v == null ? '' : v).trim().toUpperCase(); return t === '' || t.startsWith('SPXID') };
 const cfJntReg = v => { const n = cfNorm(v); return n === 'jntreguler' || n === 'jtreguler' };
 const BS_DATE_COL = 37; // kolom AL (Waktu Sampai Gudang) = acuan tanggal data BigSeller
 const CF_BLN = { jan: 1, feb: 2, mar: 3, apr: 4, mei: 5, may: 5, jun: 6, jul: 7, agu: 8, agt: 8, aug: 8, sep: 9, okt: 10, oct: 10, nov: 11, des: 12, dec: 12 };
@@ -91,7 +92,8 @@ $('#cfMGo').onclick = () => {
   let add = 0, dup = 0;
   toks.forEach(r => { if (idx.has(r)) { dup++; const x = mf[idx.get(r)]; if (!x.e && e) x.e = e; if (!x.d) x.d = d } else { idx.set(r, mf.length); mf.push({ r, e, d }); add++ } });
   if (!cfSave(mf, cfB())) return msg('#cfMMsg', 'Gagal menyimpan (data terlalu besar atau penyimpanan penuh).');
-  $('#cfMtx').value = ''; msg('#cfMMsg', 'Manifest tanggal ' + cfDay(d) + ': ' + NF(toks.length) + ' resi terbaca, ' + NF(add) + ' baru, ' + NF(dup) + ' sudah ada (tanggal lama dipertahankan).', true); renderCf(true);
+  const moved = cfRelocate();
+  $('#cfMtx').value = ''; msg('#cfMMsg', 'Manifest tanggal ' + cfDay(d) + ': ' + NF(toks.length) + ' resi terbaca, ' + NF(add) + ' baru, ' + NF(dup) + ' sudah ada (tanggal lama dipertahankan).' + (moved ? ' ' + NF(moved) + ' data scan dipindah ke grup hari sesuai tanggal manifest.' : ''), true); renderCf(true);
 };
 async function cfReadBs(files) {
   files = Array.from(files || []); if (!files.length) return;
@@ -117,7 +119,7 @@ async function cfReadBs(files) {
           const resi = scResi(g(ix.resi)), ret = scResi(g(ix.ret)), toko = String(g(ix.toko) || '').trim(), pes = String(g(ix.pes) || '').trim();
           if (!resi && !ret) continue;
           if (!cfTokoOk(toko)) { skip++; const nm = toko || '(kosong)'; skipN[nm] = (skipN[nm] || 0) + 1; continue } // bukan toko yang diambil
-          if (eksSel === 'SPX' && String(r[BS_AE_COL] == null ? '' : r[BS_AE_COL]).trim() !== '') { skipE++; continue } // SPX: hanya yang kolom AE kosong (ID / CM tidak ikut)
+          if (eksSel === 'SPX' && !cfSpxAe(r[BS_AE_COL])) { skipE++; continue } // SPX: kolom AE kosong atau berawalan SPXID (ID / CM tidak ikut)
           if (eksSel === 'J&T' && !cfJntReg(r[BS_X_COL])) { skipE++; continue } // J&T: hanya yang kolom X = JNT Reguler
           const dt = cfParseDt(r[BS_DATE_COL]); if (!dt) nod++; perD.push({ d: dt });
           read++; const key = ret || resi || pes, s = [toko, pes, resi, ret, dt, eksSel].join('\t');
@@ -129,13 +131,13 @@ async function cfReadBs(files) {
     }
   } catch (e) { console.error(e); return msg('#cfBMsg', 'File tidak bisa dibaca. Pastikan file Excel dari BigSeller.') }
   const skipTxt = skip ? ' Dilewati ' + NF(skip) + ' baris dari toko lain: ' + Object.keys(skipN).sort((a, b) => skipN[b] - skipN[a]).slice(0, 8).map(k => k + ' (' + skipN[k] + ')').join(', ') + (Object.keys(skipN).length > 8 ? ', dst' : '') + '.' : '';
-  const eksTxt = eksSel === 'SPX' ? ' Filter SPX (kolom AE harus kosong): ' + NF(skipE) + ' baris dilewati.' : eksSel === 'J&T' ? ' Filter J&T (kolom X harus JNT Reguler): ' + NF(skipE) + ' baris dilewati.' : '';
+  const eksTxt = eksSel === 'SPX' ? ' Filter SPX (kolom AE kosong atau SPXID): ' + NF(skipE) + ' baris dilewati.' : eksSel === 'J&T' ? ' Filter J&T (kolom X harus JNT Reguler): ' + NF(skipE) + ' baris dilewati.' : '';
   if (!read && (skip || skipE)) return msg('#cfBMsg', 'Tidak ada baris yang lolos penyaringan.' + skipTxt + eksTxt);
   if (!read) return msg('#cfBMsg', 'Kolom "Nomor Resi" / "Nomor Resi Pesanan Pengembalian" tidak ditemukan' + (bad.length ? ' di: ' + bad.join(', ') : '') + '.');
   const keep = Array.from(map.values()).filter(s => cfTokoOk(s.split('\t')[0])), purged = map.size - keep.length; // data lama dari toko lain ikut dibuang
   if (!cfSave(cfM(), keep)) return msg('#cfBMsg', 'Gagal menyimpan (data terlalu besar atau penyimpanan penuh).');
   const moved = cfRelocate();
-  msg('#cfBMsg', NF(read) + ' baris dibaca: ' + NF(add) + ' baru, ' + NF(upd) + ' diperbarui. Per tanggal (kolom AL): ' + cfCount(perD, o => o.d) + (nod ? ' (' + NF(nod) + ' baris tanpa tanggal di kolom AL)' : '') + '.' + eksTxt + skipTxt + (moved ? ' ' + NF(moved) + ' data scan dipindah ke grup hari sesuai kolom AL.' : '') + (purged ? ' ' + NF(purged) + ' baris lama dari toko lain dibuang.' : '') + (bad.length ? ' File tanpa kolom resi dilewati: ' + bad.join(', ') + '.' : ''), true);
+  msg('#cfBMsg', NF(read) + ' baris dibaca: ' + NF(add) + ' baru, ' + NF(upd) + ' diperbarui. Per tanggal (kolom AL): ' + cfCount(perD, o => o.d) + (nod ? ' (' + NF(nod) + ' baris tanpa tanggal di kolom AL)' : '') + '.' + eksTxt + skipTxt + (moved ? ' ' + NF(moved) + ' data scan dipindah ke grup hari sesuai tanggal manifest / kolom AL.' : '') + (purged ? ' ' + NF(purged) + ' baris lama dari toko lain dibuang.' : '') + (bad.length ? ' File tanpa kolom resi dilewati: ' + bad.join(', ') + '.' : ''), true);
   renderCf(true);
 }
 (() => {
@@ -212,14 +214,27 @@ function cfOpenGroup(eks, krg, day) { // karung hari ini (ekspedisi & isi sama) 
   codfail.forEach(r => { if ((r.day || dayWIB(r.ts)) === day && r.eks === eks && +r.krg === krg && r.kid) { const o = g[r.kid] = g[r.kid] || { kid: r.kid, n: 0, t: 0 }; o.n++; o.t = Math.max(o.t, r.ts) } });
   return Object.values(g).filter(o => o.n < krg).sort((a, b) => b.t - a.t)[0] || null;
 }
-function cfRelocate() { // scan yang punya data BigSeller bertanggal lain -> pindah ke grup hari sesuai kolom AL (yang diedit manual tidak disentuh)
-  const ch = [];
+function cfTargetDay(resi) { // hari grup untuk resi ini: tanggal manifest, bila tidak ada tanggal BigSeller (kolom AL); '' = tidak ada
+  const en = cfEntry(resi), ks = [resi, en && en.resi, en && en.ret].filter(Boolean), m = cfM().find(x => x.d && ks.includes(x.r));
+  return (m && m.d) || (en && en.d) || '';
+}
+function cfPlace(r, day) { // masukkan r ke karung ekspedisinya pada hari 'day': pakai karung terakhir; bila penuh, isinya otomatis ditambah 1. Kembalian: baris lain yang ikut berubah
+  const gs = cfGroups(codfail.filter(z => z !== r)).filter(g => g.day === day && g.eks === r.eks), ch = [];
+  r.day = day;
+  if (!gs.length) { r.kid = 'k' + uid(); return ch }
+  const isFull = g => g.krg > 0 && g.rows.length >= g.krg, byT = (a, b) => b.t1 - a.t1, g = gs.filter(x => !isFull(x)).sort(byT)[0] || gs.sort(byT)[0];
+  let kid = g.rows[0].kid; if (!kid) { kid = 'k' + uid(); g.rows.forEach(z => { z.kid = kid; ch.push(z) }) }
+  let krg = g.krg; if (isFull(g) || !krg) { krg = g.rows.length + 1; g.rows.forEach(z => { z.krg = krg; if (!ch.includes(z)) ch.push(z) }) }
+  r.kid = kid; r.krg = krg; return ch;
+}
+function cfRelocate() { // scan yang punya tanggal manifest / BigSeller lain -> pindah ke grup hari itu (yang diedit manual tidak disentuh)
+  const ch = new Set();
   codfail.forEach(r => {
-    if (r.mv) return; const en = cfEntry(r.resi); if (!en || !en.d || (r.day || dayWIB(r.ts)) === en.d) return;
-    const og = cfOpenGroup(r.eks, +r.krg, en.d); r.day = en.d; r.kid = og ? og.kid : 'k' + uid(); ch.push(r);
+    if (r.mv) return; const d = cfTargetDay(r.resi); if (!d || (r.day || dayWIB(r.ts)) === d) return;
+    cfPlace(r, d).forEach(z => ch.add(z)); ch.add(r);
   });
-  if (ch.length) commit(ch.map(r => ['codfail', 'set', r]));
-  return ch.length;
+  if (ch.size) commit(Array.from(ch).map(r => ['codfail', 'set', r]));
+  return ch.size;
 }
 function cfInfo() {
   const eks = $('#cfEks').value, krg = parseInt($('#cfKrg').value, 10), el = $('#cfInfo');
@@ -281,15 +296,16 @@ function cfSubmit(raw) {
   if (!eks) return fail('Pilih ekspedisi dulu.');
   if (!(krg > 0)) return fail('Isi jumlah isi karung (angka lebih dari 0).');
   if (codfail.some(x => x.resi === resi)) return fail('Resi ' + resi + ' sudah pernah discan.');
-  const ts = Date.now(), en0 = cfEntry(resi), today = dayWIB(ts), day = (en0 && en0.d) || today, past = day !== today; // ada di BigSeller: masuk grup hari sesuai kolom AL
-  const og = (cfNew && !past) ? null : cfOpenGroup(eks, krg, day), kid = og ? og.kid : 'k' + uid();
+  const ts = Date.now(), today = dayWIB(ts), td = cfTargetDay(resi), past = !!td && td !== today; // resi nyangkut (manifest / BigSeller): masuk grup hari manifest / BigSeller-nya
+  const day = past ? td : today, og = (cfNew && !past) ? null : cfOpenGroup(eks, krg, day), kid = og ? og.kid : 'k' + uid();
   const rec = { id: 'cf_' + uid(), ts, day, resi, eks, krg, kid, st: 'Baik', ds: '', adm: me.name };
+  const extra = past ? cfPlace(rec, day) : []; // karung hari itu: pakai yang terakhir, bila penuh isinya bertambah
   codfail.push(rec);
-  if (!commit([['codfail', 'set', rec]])) { codfail.pop(); return fail('Penyimpanan penuh, data tidak tersimpan.') }
+  if (!commit([['codfail', 'set', rec]].concat(extra.map(z => ['codfail', 'set', z])))) { codfail.pop(); return fail('Penyimpanan penuh, data tidak tersimpan.') }
   if (!past) cfNew = false;
-  const n = codfail.filter(x => x.kid === kid).length, inMf = cfM().some(m => m.r === resi) || (() => { const en = cfEntry(resi); return !!en && cfM().some(m => m.r === en.resi || m.r === en.ret) })();
+  const kid2 = rec.kid, krg2 = rec.krg, n = codfail.filter(x => x.kid === kid2).length, inMf = cfM().some(m => m.r === resi) || (() => { const en = cfEntry(resi); return !!en && cfM().some(m => m.r === en.resi || m.r === en.ret) })();
   if (cfM().length && !inMf) { msg('#cfMsg', '⚠ ' + resi + ' tersimpan, tapi TIDAK ADA di manifest.'); mm.classList.add('bad'); snBeep(true) }
-  else { msg('#cfMsg', '✓ ' + resi + ' tersimpan · ' + eks + ' ' + n + '/' + krg + ' PCS' + (n >= krg ? ' (karung penuh)' : '') + (past ? ' · masuk grup ' + cfDay(day) + ' (sesuai BigSeller)' : ''), true); snBeep(false) }
+  else { msg('#cfMsg', '✓ ' + resi + ' tersimpan · ' + eks + ' ' + n + '/' + krg2 + ' PCS' + (n >= krg2 ? ' (karung penuh)' : '') + (past ? ' · masuk grup ' + cfDay(day) + ' (sesuai manifest / BigSeller)' : ''), true); snBeep(false) }
   openState['cfd' + day] = true; back(); renderCf(true);
 }
 $('#cfResi').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); cfSubmit($('#cfResi').value) } });

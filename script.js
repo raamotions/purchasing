@@ -266,7 +266,7 @@ function startSync() {
 }
 
 /* ---------- menu & hamburger ---------- */
-const TT = { cf: ['COD Gagal', 'Scan retur COD gagal dan cocokkan dengan manifest ekspedisi'], pg: ['Pengajuan', 'Hari ini tampil di atas; hari sebelumnya masuk riwayat per bulan (ganti hari pukul 00.00 WIB)'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], rt: ['Input Retur', 'Form retur / pengembalian barang'], bd: ['Laporan Retur', 'Hasil input retur marketplace, bisa diedit'], rw: ['Riwayat', 'Riwayat edit & hapus; data lama bisa dipulihkan'], ow: ['Dashboard Khusus', 'Kontrol admin & analisa pemasaran (khusus pemilik)'], dl: ['Download', 'Riwayat export Excel / PDF, bisa difilter dan diexport gabungan'], pr: ['Database Produk', 'Input produk satuan / massal (SKU, varian, Barcode & QR) dan stok produk'], gd: ['Barang Gudang', 'Cek barang retur / cancel yang tersedia sebelum mengajukan lagi'], br: ['Barang Retur', 'Input barang retur; otomatis masuk ke Barang Gudang'], scn: ['Scan', 'Scan Barcode / QR lewat kamera; hasil masuk ke Data Scanner dan hanya terlihat oleh akun yang men-scan'], sc: ['Data Scanner', 'Upload data scan dari Excel (ekspedisi, resi, jam scan, PIC); hari ini tampil di atas, sebelumnya masuk riwayat'] };
+const TT = { cf: ['COD Gagal', 'Scan retur COD gagal dan cocokkan dengan manifest ekspedisi'], pg: ['Pengajuan', 'Hari ini tampil di atas; hari sebelumnya masuk riwayat per bulan (ganti hari pukul 00.00 WIB)'], in: ['Input Barang Masuk', 'Catat barang yang diterima berdasarkan pengajuan'], pu: ['Purchase', 'Riwayat penerimaan barang'], rt: ['Input Retur', 'Form retur / pengembalian barang'], bd: ['Laporan Retur', 'Hasil input retur marketplace, bisa diedit'], rw: ['Riwayat', 'Riwayat edit & hapus; data lama bisa dipulihkan'], ow: ['Dashboard Khusus', 'Kontrol admin & analisa pemasaran (khusus pemilik)'], dl: ['Download', 'Riwayat export Excel / PDF, bisa difilter dan diexport gabungan'], pr: ['Database Produk', 'Input produk satuan / massal (SKU, varian, Barcode & QR) dan stok produk'], gd: ['Barang Gudang', 'Cek barang retur / cancel yang tersedia sebelum mengajukan lagi'], br: ['Barang Retur', 'Input barang retur; otomatis masuk ke Barang Gudang'], scn: ['Scan', 'Scan Barcode / QR lewat kamera; hasil masuk ke Data Scanner dan hanya terlihat oleh akun yang men-scan'], sc: ['Data Scanner', 'Upload data scan dari Excel (ekspedisi, resi, jam scan, PIC); hari ini tampil di atas, sebelumnya masuk riwayat'], dj: ['Data Penjualan', 'Upload data BigSeller (resi, produk, variasi, jumlah, jasa kirim, marketplace, toko); hanya Owner & Admin'] };
 function go(t) {
   if (!can(t)) { t = firstPage(); if (!t) return }
   $$('nav button[data-t]').forEach(b => b.classList.toggle('on', b.dataset.t === t));
@@ -288,6 +288,7 @@ function go(t) {
   if (t === 'br') { brLists(); renderBr() }
   if (t === 'pg') renderReqs();
   if (t === 'in') refreshBlocks();
+  if (t === 'dj' && window.renderDj) renderDj();
 }
 $$('nav button[data-t]').forEach(b => b.onclick = () => go(b.dataset.t));
 $$('.ng > button').forEach(b => b.onclick = e => { e.stopPropagation(); const g = b.parentElement, was = g.classList.contains('open'); $$('.ng').forEach(x => x.classList.remove('open')); g.classList.toggle('open', !was) });
@@ -2986,13 +2987,13 @@ $('#scXls').onclick = () => {
 
 /* ---------- ROLE & HAK AKSES ---------- */
 const ROLES = ['Admin', 'Gudang', 'Picker', 'Packing', 'Owner', 'Retur', 'Tamu']; // Tamu = masuk tanpa akun
-const PAGES = { pg: 'Pengajuan', in: 'Input Barang Masuk', pu: 'Purchase', dl: 'Download', rw: 'Riwayat', pr: 'Database Produk', gd: 'Barang Gudang', rt: 'Input Retur', bd: 'Laporan Retur', br: 'Barang Retur', scn: 'Scan (Packing)', sc: 'Data Scanner', cf: 'COD Gagal', ow: 'Dashboard Khusus (gembok)' };
+const PAGES = { pg: 'Pengajuan', in: 'Input Barang Masuk', pu: 'Purchase', dl: 'Download', rw: 'Riwayat', pr: 'Database Produk', gd: 'Barang Gudang', rt: 'Input Retur', bd: 'Laporan Retur', br: 'Barang Retur', scn: 'Scan (Packing)', sc: 'Data Scanner', dj: 'Data Penjualan', cf: 'COD Gagal', ow: 'Dashboard Khusus (gembok)' };
 const DEF_PERMS = {
-  Admin: ['pg', 'in', 'pu', 'dl', 'rw', 'pr', 'gd', 'rt', 'bd', 'br', 'cf', 'ow'],
+  Admin: ['pg', 'in', 'pu', 'dl', 'rw', 'pr', 'gd', 'rt', 'bd', 'br', 'cf', 'dj', 'ow'],
   Gudang: ['in', 'pu', 'pr', 'gd'],
   Picker: ['pg', 'gd'],
   Packing: ['pu', 'gd', 'scn', 'sc'],
-  Owner: ['pg', 'in', 'pu', 'dl', 'rw', 'pr', 'gd', 'rt', 'bd', 'br', 'cf', 'scn', 'sc', 'ow'],
+  Owner: ['pg', 'in', 'pu', 'dl', 'rw', 'pr', 'gd', 'rt', 'bd', 'br', 'cf', 'scn', 'sc', 'dj', 'ow'],
   Retur: ['rt', 'bd', 'br', 'cf', 'gd'],
   Tamu: ['pg', 'in', 'pu', 'dl', 'rw', 'pr', 'gd']
 };
