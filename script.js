@@ -334,8 +334,9 @@ function psearch(box, opts, onPick, onText) { // onText: aktifkan mode ketik pro
   const i = box.querySelector('input'), l = box.querySelector('.sug'), upd = addClear(i);
   const show = () => {
     const q = i.value.trim().toLowerCase();
-    const m = opts().filter(p => tokOk(normName(p.name) + ' ' + (p.sku || '') + ' ' + (p.variants || []).map(v => normName(v.n) + ' ' + (v.sku || '')).join(' '), q));
-    l.innerHTML = m.length ? m.map(p => `<div data-id="${esc(p.id)}">${esc(p.name)}${p.gd ? ' <small style="opacity:.6">· Barang Gudang</small>' : ''}</div>`).join('') : '<em>' + (onText ? 'Tidak ditemukan. Produk baru akan ditambahkan saat disimpan.' : 'Produk tidak ditemukan') + '</em>';
+    const sk = p => String(p.sku || '').toUpperCase().split(/\s+/).concat((p.variants || []).map(v => String(v.sku || '').toUpperCase())).filter(Boolean);
+    const m = opts().filter(p => tokOk(normName(p.name) + ' ' + (p.variants || []).map(v => normName(v.n)).join(' ') + ' ' + sk(p).join(' '), q));
+    l.innerHTML = m.length ? m.map(p => { const h = q ? sk(p).filter(k => tokOk(k, q)).slice(0, 3) : []; return `<div data-id="${esc(p.id)}">${esc(p.name)}${h.length ? ' <small style="opacity:.65">· ' + esc(h.join(', ')) + '</small>' : ''}${p.gd ? ' <small style="opacity:.6">· Barang Gudang</small>' : ''}</div>` }).join('') : '<em>' + (onText ? 'Tidak ditemukan. Produk baru akan ditambahkan saat disimpan.' : 'Produk tidak ditemukan') + '</em>';
     l.classList.add('open');
   };
   let pick = null;
@@ -357,7 +358,7 @@ function psearch(box, opts, onPick, onText) { // onText: aktifkan mode ketik pro
   l.onclick = e => {
     const id = e.target.dataset.id; if (!id) return;
     pick = opts().find(x => String(x.id) === id);
-    i.value = pick.name; upd(); l.classList.remove('open'); onPick(pick);
+    const typed = i.value; i.value = pick.name; upd(); l.classList.remove('open'); onPick(pick, typed);
   };
   document.addEventListener('click', e => { if (!box.contains(e.target)) l.classList.remove('open') });
   return { get: () => pick, text: () => i.value.trim(), set(v) { i.value = v; upd(); pick = null }, reset() { i.value = ''; upd(); pick = null; onPick(null) } };
@@ -378,9 +379,18 @@ function pgOpts() {
   stockRows().forEach(r => add(r.prod, r.vn, r.vc));
   return products.concat([...m.values()].sort((a, b) => a.name.localeCompare(b.name)));
 }
-const pgSearch = psearch($('#pgSearch'), pgOpts, p => { pgProd = p; pgVar = null; pgAdd = false; pgNewUI(); pgVarUI() }, t => {
-  const p = pgOpts().find(x => normName(x.name) === normName(t));
-  pgProd = p || null; pgVar = null; pgAdd = false; pgNewUI(); pgVarUI();
+function skuFind(t) { // SKU persis -> { p, v }
+  t = String(t || '').trim().toUpperCase(); if (!t) return null;
+  for (const p of products) { if (p.sku && String(p.sku).toUpperCase() === t) return { p, v: null }; const v = (p.variants || []).find(x => x.sku && String(x.sku).toUpperCase() === t); if (v) return { p, v } }
+  return null;
+}
+const pgSearch = psearch($('#pgSearch'), pgOpts, (p, typed) => {
+  pgProd = p; pgVar = null; pgAdd = false; pgNewUI();
+  const f = p && !p.gd && typed ? skuFind(typed) : null; if (f && f.p === p && f.v) pgVar = f.v; // memilih lewat SKU varian: warna terisi otomatis
+  pgVarUI();
+}, t => {
+  const p = pgOpts().find(x => normName(x.name) === normName(t)), f = p ? null : skuFind(t); // SKU diketik persis: otomatis jadi produk itu, bukan produk baru
+  pgProd = p || (f ? f.p : null); pgVar = f && f.v ? f.v : null; pgAdd = false; pgNewUI(); pgVarUI();
 });
 $('#pgSearch').dataset.next = '#pgVarName';
 function pgNewUI() { // isian warna manual: untuk produk baru, atau varian baru pada produk yang sudah ada
@@ -468,11 +478,28 @@ const histLab = (r, x) => ymd(x.ts) === ymd(r.ts) ? hm(x.ts) : tsFmt(x.ts);
 const histBtn = r => { const h = reqHist(r); return h.length > 1 ? `<button type="button" class="arw${openHist[r.id] ? ' on' : ''}" data-hist="${r.id}" title="Lihat jam input">${h.length}×</button>` : '' };
 const histRow = r => {
   const h = reqHist(r); if (h.length < 2) return '';
-  return `<tr class="hrow" data-for="${r.id}"${openHist[r.id] ? '' : ' hidden'}><td></td><td colspan="9"><table class="mt"><thead><tr><th>Produk</th><th>Varian</th><th>Ada / Diajukan</th><th>Waktu input</th><th></th></tr></thead><tbody>`
+  return `<tr class="hrow" data-for="${r.id}"${openHist[r.id] ? '' : ' hidden'}><td></td><td colspan="10"><table class="mt"><thead><tr><th>Produk</th><th>Varian</th><th>Ada / Diajukan</th><th>Waktu input</th><th></th></tr></thead><tbody>`
     + reqEntries(r).map(x => `<tr><td>${esc(r.prod)}</td><td>${r.vc ? sw(r.vc, r.vn) + ' ' : ''}${esc(r.vn || '-')}</td><td>${x.a} / ${x.n} pcs</td><td>${tsFmt(x.ts)}</td><td class="nw"><button class="btn ghost sm" data-hedit="${r.id}" data-ts="${x.ts}">Edit</button> <button class="btn ghost sm" data-hdel="${r.id}" data-ts="${x.ts}">Hapus</button></td></tr>`).join('') + '</tbody></table></td></tr>';
 };
+/* ---------- SKU: diambil dari Database Produk (nama produk + varian) ---------- */
+let skuC = null;
+function skuIdx() {
+  if (skuC) return skuC; const m = new Map();
+  products.forEach(p => { const nm = normName(p.name), vs = p.variants || [];
+    if (vs.length) vs.forEach(v => { if (v.sku && !m.has(nm + '|' + normName(v.n))) m.set(nm + '|' + normName(v.n), v.sku) });
+    else if (p.sku && !m.has(nm + '|')) m.set(nm + '|', p.sku) });
+  return skuC = m;
+}
+function skuOf(r) {
+  const k = normName(r.prod) + '|' + normName(r.vn), m = skuIdx();
+  if (m.has(k)) return m.get(k);
+  if (r.rid === undefined && r.pid) { const p = products.find(x => String(x.id) === String(r.pid)); if (p) { const vn = normName(r.vn), v = (p.variants || []).find(x => normName(x.n) === vn); return v ? v.sku || '' : (p.variants || []).length ? '' : p.sku || '' } }
+  return '';
+}
+const skuTxt = r => skuOf(r) || '-';
+const rowQ = (r, q) => tokOk(normName(r.prod) + ' ' + normName(r.vn) + ' ' + String(skuOf(r)).toUpperCase(), q); // cari produk / varian / SKU
 const pgRow = (r, n) => `<tr>
-    <td>${n + 1}</td><td>${fmt(r.ts)}${tm(r.ts)}${histBtn(r)}</td><td>${esc(r.prod)}</td><td>${sw(r.vc, r.vn)}</td>
+    <td>${n + 1}</td><td>${fmt(r.ts)}${tm(r.ts)}${histBtn(r)}</td><td class="nw">${esc(skuTxt(r))}</td><td>${esc(r.prod)}</td><td>${sw(r.vc, r.vn)}</td>
     <td>${r.ada} / ${r.min} pcs${r.part ? '<div class="tm">sesuai filter · total ' + r.tot + ' pcs</div>' : ''}</td><td><span class="tag">${esc(r.src)}</span></td><td>${thLbl(r.tahap)}</td><td>${esc(r.adm || '-')}</td>
     <td>${reqStat(r)}</td>
     <td class="nw"><button class="btn ghost sm" data-redit="${r.id}">Edit</button> <button class="btn ghost sm" data-del="${r.id}">Hapus</button></td></tr>${histRow(r)}`;
@@ -486,7 +513,7 @@ const pgTbl = list => { // satu hari -> grup per tahap + asal barang; tiap grup 
       <span class="gi"><span class="gn"><b>Pengajuan</b> <span class="gjm">${R.txt}</span></span><small class="gtm gdt">${igLong(L[0].ts)}</small>
         <span class="gt">${L[0].tahap ? '<span class="tag">' + thLbl(L[0].tahap) + '</span>' : ''}<span class="tag">${esc(L[0].src)}</span><span class="tag">${L.length} barang · ${NF(sumK2(L, r => r.min))} pcs</span><span class="tag">${esc(admList(L).join(', ') || '-')}</span><span class="tag ${st === 'Selesai' ? 'in' : 'out'}">${st}</span></span></span>
       <span class="ga"><button class="btn ghost sm" data-igxls="${esc(k)}" type="button" title="Download grup ini sebagai Excel">Download Excel</button><button class="btn ghost sm" data-igpdf="${esc(k)}" type="button" title="Download grup ini sebagai PDF">Download PDF</button><button class="btn ghost sm" data-igedit="${esc(k)}" type="button">Edit</button></span></summary>
-      <div class="gpb"><div class="tw"><table><thead><tr><th>No</th><th>Tanggal</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Asal</th><th>Pengajuan</th><th>Admin</th><th>Status</th><th></th></tr></thead><tbody>${L.map(pgRow).join('')}</tbody>${pgFoot(L)}</table></div></div></details>`;
+      <div class="gpb"><div class="tw"><table><thead><tr><th>No</th><th>Tanggal</th><th>SKU</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Asal</th><th>Pengajuan</th><th>Admin</th><th>Status</th><th></th></tr></thead><tbody>${L.map(pgRow).join('')}</tbody>${pgFoot(L)}</table></div></div></details>`;
   }).join('');
 };
 function renderReqs() { // hari ini tampil di atas; hari-hari sebelumnya otomatis masuk riwayat per tahun > bulan (tertutup)
@@ -685,10 +712,11 @@ function pgView(r, f, t) {
 const inTime = (r, f, t) => reqHist(r).some(h => (f === null || h.ts >= f) && (t === null || h.ts <= t)); // salah satu jam input masuk rentang filter
 const reqStat = r => r.ada >= r.min ? 'Selesai' : r.ada ? 'Sebagian' : 'Menunggu';
 function pgFiltered() { // dipakai oleh daftar di layar DAN export
+  skuC = null;
   const f = dtv(dtVal('#xFrom')), t = dtv(dtVal('#xTo', true), true), s = $('#xSrc').value, th = $('#xTh').value, am = admF('#xAdm'),
     q = $('#xProd').value.trim().toLowerCase(), st = $('#xSt').value, out = [];
   reqs.forEach(r => {
-    if (!mine(r) || (s && r.src !== s) || (am && (r.adm || '') !== am) || (th && String(r.tahap) !== th) || (q && !String(r.prod).toLowerCase().includes(q))) return;
+    if (!mine(r) || (s && r.src !== s) || (am && (r.adm || '') !== am) || (th && String(r.tahap) !== th) || (q && !rowQ(r, q))) return;
     const v = pgView(r, f, t); // filter tanggal & jam: hanya input yang sesuai rentang
     if (v && (!st || reqStat(v) === st)) out.push(v);
   });
@@ -710,8 +738,9 @@ function pgHead(rows) {
 }
 // Export Pengajuan: format sama dengan export Purchase. Tiap grup (hari + tahap + asal barang + admin) = satu header + satu tabel sendiri,
 // urut: asal barang -> hari -> Tahap 1, 2, 3, ...; ganti asal barang = mulai lagi dari Tahap 1. Antar tabel diberi jarak 5 baris kosong.
-const PG_COLS = ['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Pengajuan', 'Status'];
+const PG_COLS = ['No', 'Tanggal', 'SKU', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Pengajuan', 'Status'];
 function pgSections(rows) {
+  skuC = null;
   const m = new Map(); rows.forEach(r => { const k = igKey(r); (m.get(k) || m.set(k, []).get(k)).push(r) });
   const si = x => { const i = SRC.indexOf(x); return i < 0 ? SRC.length : i };
   return [...m.values()].map(L => {
@@ -719,7 +748,7 @@ function pgSections(rows) {
     const t0 = Math.min(...L.map(r => r.ts)), t1 = Math.max(...L.map(r => r.ts)), srcs = [...new Set(L.map(r => r.src))];
     return { t0, src: srcs.length === 1 ? srcs[0] : '', th: L[0].tahap ? String(L[0].tahap) : '', tahap: Number(L[0].tahap) || 99, L,
       head: ['Permintaan Pengajuan Barang', 'Tanggal & Jam: ' + dLong(t0) + ' - ' + dLong(t1), 'Asal Barang: ' + srcs.join(', ') + '     Nama Admin: ' + admHead(L), 'Pengajuan : ' + (L[0].tahap ? thLbl(L[0].tahap) : '-')],
-      rows: L.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', adaTxt(r), r.src, thLbl(r.tahap), '\u2610']),
+      rows: L.map((r, i) => [i + 1, tsFmt(r.ts), skuTxt(r), r.prod, r.vn || '-', adaTxt(r), r.src, thLbl(r.tahap), '\u2610']),
       subs: L.map(r => reqHist(r).length > 1 ? reqEntries(r).map(x => [tsFmt(x.ts), x.a, x.n]) : null) };
   }).sort((a, b) => si(a.src) - si(b.src) || String(a.src).localeCompare(String(b.src)) || dayWIB(a.t0).localeCompare(dayWIB(b.t0)) || a.tahap - b.tahap || a.t0 - b.t0);
 }
@@ -735,11 +764,11 @@ $('#pgXls').onclick = () => {
   const S = pgSections(rows), aoa = [], merges = [];
   S.forEach((s, i) => {
     if (i) for (let n = 0; n < 5; n++) aoa.push([]);
-    s.head.forEach(h => { merges.push({ s: { r: aoa.length, c: 0 }, e: { r: aoa.length, c: 7 } }); aoa.push([h]) });
+    s.head.forEach(h => { merges.push({ s: { r: aoa.length, c: 0 }, e: { r: aoa.length, c: 8 } }); aoa.push([h]) });
     aoa.push(PG_COLS); s.rows.forEach(x => aoa.push(x));
   });
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!merges'] = merges; ws['!cols'] = [5, 17, 28, 16, 18, 10, 11, 8].map(w => ({ wch: w }));
+  ws['!merges'] = merges; ws['!cols'] = [5, 17, 18, 28, 16, 18, 10, 11, 8].map(w => ({ wch: w }));
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Pengajuan');
   const fn = fileName($('#xSrc').value, admFile(rows), 'PENGAJUAN', 'xlsx'); XLSX.writeFile(wb, fn);
   pgLog(rows, S, 'Excel', fn);
@@ -755,9 +784,9 @@ $('#pgPdf').onclick = () => {
     doc.setFontSize(16); doc.setFont(undefined, 'bold'); doc.text(s.head[0], 14, y);
     doc.setFontSize(10); doc.setFont(undefined, 'normal');
     s.head.slice(1).forEach((h, j) => doc.text(h, 14, y + 7 + j * 6));
-    doc.autoTable({ startY: y + 7 + 3 * 6 + 3, headStyles: { fillColor: [74, 123, 208] }, head: [PG_COLS], body: s.rows.map(x => x.slice(0, 7).concat('')),
+    doc.autoTable({ startY: y + 7 + 3 * 6 + 3, headStyles: { fillColor: [74, 123, 208] }, head: [PG_COLS], body: s.rows.map(x => x.slice(0, 8).concat('')),
       didDrawCell: d => {
-        if (d.section === 'body' && d.column.index === 7) { // kotak centang kosong
+        if (d.section === 'body' && d.column.index === 8) { // kotak centang kosong
           const z = 4.5; doc.setDrawColor(60); doc.setLineWidth(.3);
           doc.rect(d.cell.x + (d.cell.width - z) / 2, d.cell.y + (d.cell.height - z) / 2, z, z);
         }
@@ -783,13 +812,14 @@ const igLong = t => { const d = dayWIB(t).split('-'); return +d[2] + ' ' + BLN[+
 const igRange = L => { const a = Math.min(...L.map(r => r.ts)), b = Math.max(...L.map(r => r.ts)); return { a, b, txt: hm(a) === hm(b) ? hm(a) : hm(a) + ' – ' + hm(b) } };
 const igStat = L => L.every(r => r.ada >= r.min) ? 'Selesai' : L.some(r => r.ada > 0) ? 'Sebagian' : 'Menunggu';
 // export per grup: satu header + satu tabel (format sama dengan export menu Pengajuan)
-const IG_COLS = ['No', 'Tanggal', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Pengajuan', 'Status'];
+const IG_COLS = ['No', 'Tanggal', 'SKU', 'Produk', 'Varian', 'Ada / Diminta', 'Asal', 'Pengajuan', 'Status'];
 function igData(k) {
+  skuC = null;
   const L = igItems(k).sort(azSort); if (!L.length) return null;
   const R = igRange(L), srcs = [...new Set(L.map(r => r.src))];
   return { L, src: srcs.length === 1 ? srcs[0] : '', th: L[0].tahap ? String(L[0].tahap) : '',
     head: ['Permintaan Pengajuan Barang', 'Tanggal & Jam: ' + igLong(R.a) + '   ' + R.txt.replace(' – ', ' - '), 'Asal Barang: ' + srcs.join(', ') + '     Nama Admin: ' + admHead(L), 'Pengajuan : ' + (L[0].tahap ? thLbl(L[0].tahap) : '-')],
-    rows: L.map((r, i) => [i + 1, tsFmt(r.ts), r.prod, r.vn || '-', adaTxt(r), r.src, thLbl(r.tahap), '\u2610']),
+    rows: L.map((r, i) => [i + 1, tsFmt(r.ts), skuTxt(r), r.prod, r.vn || '-', adaTxt(r), r.src, thLbl(r.tahap), '\u2610']),
     subs: L.map(r => reqHist(r).length > 1 ? reqEntries(r).map(x => [tsFmt(x.ts), x.a, x.n]) : null) };
 }
 function igLog(D, fm, fn) { logDl({ form: 'PENGAJUAN', fmt: fm, fname: fn, src: D.src, th: D.th, subs: D.subs, title: D.head[0], tgl: D.head[1] + ' | ' + D.head[3], cols: IG_COLS, rows: D.rows }) }
@@ -797,7 +827,7 @@ function igExcel(k) {
   if (!window.XLSX) return alert('Library Excel gagal dimuat. Pastikan terhubung ke internet.');
   const D = igData(k); if (!D) return;
   const aoa = D.head.map(h => [h]).concat([IG_COLS], D.rows), ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!merges'] = [0, 1, 2, 3].map(r => ({ s: { r, c: 0 }, e: { r, c: 7 } })); ws['!cols'] = [5, 17, 28, 16, 18, 10, 11, 8].map(w => ({ wch: w }));
+  ws['!merges'] = [0, 1, 2, 3].map(r => ({ s: { r, c: 0 }, e: { r, c: 8 } })); ws['!cols'] = [5, 17, 18, 28, 16, 18, 10, 11, 8].map(w => ({ wch: w }));
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Pengajuan');
   const fn = fileName(D.src, admFile(D.L), 'PENGAJUAN', 'xlsx'); XLSX.writeFile(wb, fn); igLog(D, 'Excel', fn);
 }
@@ -807,8 +837,8 @@ function igPdf(k) {
   const doc = new jspdf.jsPDF({ orientation: 'landscape' });
   doc.setFontSize(16); doc.text(D.head[0], 14, 15);
   doc.setFontSize(10); doc.text(D.head[1], 14, 22); doc.text(D.head[2], 14, 28); doc.text(D.head[3], 14, 34);
-  doc.autoTable({ startY: 39, headStyles: { fillColor: [74, 123, 208] }, head: [IG_COLS], body: D.rows.map(x => x.slice(0, 7).concat('')),
-    didDrawCell: d => { if (d.section === 'body' && d.column.index === 7) { const s = 4.5; doc.setDrawColor(60); doc.setLineWidth(.3); doc.rect(d.cell.x + (d.cell.width - s) / 2, d.cell.y + (d.cell.height - s) / 2, s, s) } } });
+  doc.autoTable({ startY: 39, headStyles: { fillColor: [74, 123, 208] }, head: [IG_COLS], body: D.rows.map(x => x.slice(0, 8).concat('')),
+    didDrawCell: d => { if (d.section === 'body' && d.column.index === 8) { const s = 4.5; doc.setDrawColor(60); doc.setLineWidth(.3); doc.rect(d.cell.x + (d.cell.width - s) / 2, d.cell.y + (d.cell.height - s) / 2, s, s) } } });
   const fn = fileName(D.src, admFile(D.L), 'PENGAJUAN', 'pdf'); doc.save(fn); igLog(D, 'PDF', fn);
 }
 // Edit grup: daftar barang pada grup itu; tiap barang diedit lewat popup edit pengajuan yang sudah ada
@@ -831,7 +861,11 @@ const inRange = () => ({ f: dtv(dtVal('#iFrom')), t: dtv(dtVal('#iTo', true), tr
 const inDateOn = () => { const { f, t } = inRange(); return f !== null || t !== null };
 const inReqs = () => { const { f, t } = inRange(); return f === null && t === null ? todayReqs() : reqs.filter(r => mine(r) && inTime(r, f, t)) };
 const inInfo = r => { const h = reqHist(r); return (r.tahap ? ' · Tahap ' + r.tahap : '') + (inDateOn() ? ' · ' + tsFmt(r.ts) : '') + (h.length > 1 ? ' · Diinput ' + h.length + '× (' + h.map(x => hm(x.ts)).join(' → ') + ')' : '') };
-const openProducts = () => [...new Map(inReqs().filter(r => r.ada < r.min).map(r => [r.pid, { id: r.pid, name: r.prod }])).values()];
+const openProducts = () => { // pencarian di menu Input: nama produk atau SKU
+  skuC = null; const m = new Map();
+  inReqs().filter(r => r.ada < r.min).forEach(r => { const o = m.get(r.pid) || m.set(r.pid, { id: r.pid, name: r.prod, sku: '' }).get(r.pid), k = skuOf(r); if (k && !o.sku.includes(k)) o.sku += (o.sku ? ' ' : '') + k });
+  return [...m.values()];
+};
 
 function addBlock() {
   const el = document.createElement('div'); el.className = 'blk';
@@ -897,6 +931,7 @@ const autoReqs = () => {
     .sort((x, y) => x.ts - y.ts || (x.id < y.id ? -1 : 1)); // urut sesuai waktu pengisian form pengajuan (terlama di atas)
 };
 function renderAuto(force) {
+  skuC = null;
   const on = autoMode();
   $('#auto').hidden = !on; $('#autoQBox').hidden = !on; $('#blocks').hidden = on; $('#addBlk').hidden = on;
   if (!on) { autoSig = ''; $('#autoQ').value = ''; $('#autoQ')._upd && $('#autoQ')._upd(); return }
@@ -906,7 +941,7 @@ function renderAuto(force) {
   $('#auto').innerHTML = rs.length
     ? '<div class="hint">' + rs.length + ' barang diajukan ' + (inDateOn() ? 'pada rentang tanggal & jam yang dipilih' : 'hari ini') + '. Isi jumlah "Ada" (boleh 0), kolom yang dikosongkan akan dilewati.</div>' + sumIn(rs) + rs.map(r => `<div class="ln" data-id="${r.id}">
       ${r.vc ? sw(r.vc, r.vn) : ''}
-      <div class="inf"><b class="pn">${esc(r.prod)}${r.vn ? ' · ' + esc(r.vn) : ''}</b>
+      <div class="inf"><b class="pn">${esc(r.prod)}${r.vn ? ' · ' + esc(r.vn) : ''}</b>${skuOf(r) ? ' <small class="tm">' + esc(skuOf(r)) + '</small>' : ''}
         <span>Diajukan <b>${r.min}</b> pcs · sudah ada ${r.ada} · <span class="tag">${esc(r.src)}</span> · Admin: <b>${esc(r.adm || '-')}</b>${inInfo(r)}</span></div>
       <input type="number" min="0" max="${r.min - r.ada}" inputmode="numeric" placeholder="Ada (0 boleh)" value="${autoVals[r.id] != null ? Math.min(autoVals[r.id], r.min - r.ada) : ''}">
       <div class="st">-</div></div>`).join('')
@@ -923,7 +958,7 @@ $('#inTh').onchange = $('#inSrc').onchange = $('#inAdm').onchange = () => { msg(
 function applyAutoQ() {
   const q = $('#autoQ').value.trim().toLowerCase(), lns = $('#auto').querySelectorAll('.ln');
   let vis = 0;
-  lns.forEach(ln => { const ok = !q || ln.querySelector('.pn').textContent.toLowerCase().includes(q); ln.hidden = !ok; if (ok) vis++ });
+  lns.forEach(ln => { const ok = !q || tokOk(normName(ln.querySelector('.pn').parentElement.textContent), q); ln.hidden = !ok; if (ok) vis++ });
   $('#autoCnt').textContent = !lns.length || !q ? '' : vis ? vis + ' dari ' + lns.length + ' barang cocok.' : 'Tidak ada barang yang cocok dengan pencarian.';
 }
 caps($('#autoQ')); addClear($('#autoQ')); $('#autoQ').addEventListener('input', applyAutoQ);
@@ -1024,11 +1059,11 @@ $('#inSubmit').onclick = () => {
 /* ---------- PURCHASE ---------- */
 const FIL = ['#dFromD', '#dFromT', '#dToD', '#dToT', '#fqSj', '#fqProd', '#fqSrc', '#fqAdm', '#fqSt', '#fqVar', '#fqTh'];
 function filtered() {
-  puInfo();
+  puInfo(); skuC = null;
   const f = dtv(dtVal('#dFrom')), t = dtv(dtVal('#dTo', true), true), j = $('#fqSj').value.toLowerCase(), q = $('#fqProd').value.toLowerCase(),
     s = $('#fqSrc').value, st = $('#fqSt').value, v = $('#fqVar').value, th = $('#fqTh').value, am = admF('#fqAdm');
   return records.filter(r => mine(r) && (f === null || r.ts >= f) && (t === null || r.ts <= t) &&
-    (!j || (r.sj || '').toLowerCase().includes(j)) && (!q || r.prod.toLowerCase().includes(q)) &&
+    (!j || (r.sj || '').toLowerCase().includes(j)) && (!q || rowQ(r, q)) &&
     (!s || r.src === s) && (!am || (r.adm || '') === am) && (!th || String(r.tahap) === th) && (!v || r.vc === v) && (!st || (st === 'ok') === isFull(r)));
 }
 const openState = {};
@@ -1057,7 +1092,7 @@ const seqMap = () => {
   return m;
 };
 function renderTable() {
-  puInfo();
+  puInfo(); skuC = null;
   const seq = seqMap();
   const cols = [...new Map(records.filter(r => r.vc && mine(r)).map(r => [r.vc, r.vn])).entries()], cur = $('#fqVar').value;
   $('#fqVar').innerHTML = '<option value="">Semua</option>' + cols.map(([c, n]) => `<option value="${c}">${esc(n)}</option>`).join('');
@@ -1065,7 +1100,7 @@ function renderTable() {
   const rows = filtered(), filt = FIL.some(s => $(s).value), now = dayWIB(Date.now());
   const photoCell = pid => !pid || photos[pid] === '' ? '-' : photos[pid] ? `<img class="thumb" src="${photos[pid]}" alt="Surat jalan">` : `<button class="btn ghost sm" data-photo="${esc(pid)}" type="button">📷 Lihat</button>`;
   const rowHtml = r => `<tr>
-    <td>${seq[r.id]}</td><td class="nw">${hm(r.ts)}</td><td>${esc(r.sj || '-')}</td><td>${esc(r.prod)}</td><td>${sw(r.vc, r.vn)}</td>
+    <td>${seq[r.id]}</td><td class="nw">${hm(r.ts)}</td><td>${esc(r.sj || '-')}</td><td class="nw">${esc(skuTxt(r))}</td><td>${esc(r.prod)}</td><td>${sw(r.vc, r.vn)}</td>
     <td>${gotOf(r)} / ${r.min} pcs</td><td>${stat(isFull(r) ? 1 : 0, 1)}</td><td><span class="tag">${esc(r.src)}</span></td>
     <td class="nw"><button class="btn ghost sm" data-edit="${r.id}" type="button">Edit</button> <button class="btn ghost sm dng" data-del="${r.id}" type="button" title="Hapus satu barang ini saja">Hapus barang</button></td></tr>`;
   const tbl = list => { // satu kali Input (satu tahap) = satu grup; klik untuk membuka daftar barangnya
@@ -1080,7 +1115,7 @@ function renderTable() {
           <span class="gt">${sjs.length ? '<span class="tag">SJ ' + esc(sjs.join(', ')) + '</span>' : ''}${L[0].tahap ? '<span class="tag">' + thLbl(L[0].tahap) + '</span>' : ''}${srcs.map(s => '<span class="tag">' + esc(s) + '</span>').join('')}<span class="tag">${esc(adms.join(', ') || '-')}</span><span class="tag ${full ? 'in' : 'out'}">${full ? 'Lengkap' : 'Kurang'}</span></span></span>
         <span class="ga"><button class="btn ghost sm" data-gdl="${esc(k)}" type="button" title="Download grup ini sebagai Excel">Download Excel</button><button class="btn ghost sm" data-gpdf="${esc(k)}" type="button" title="Download grup ini sebagai PDF">Download PDF</button><button class="btn ghost sm" data-gedit="${esc(k)}" type="button">Edit</button><button class="btn sm dng gsep" data-gdel="${esc(k)}" type="button" title="Hapus SEMUA barang dalam grup ini">Hapus grup</button></span></summary>
         <div class="gpb"><div class="gph">Foto surat jalan: ${(() => { const ps = [...new Set([].concat(...L.map(recPids)))]; return ps.length ? ps.map(p => '<span>' + esc((L.find(r => recPids(r).includes(p)) || {}).sj || '') + ' ' + photoCell(p) + '</span>').join(' ') : '-' })()}</div>
-        <div class="tw"><table><thead><tr><th>No</th><th>Jam</th><th>No. SJ</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Status</th><th>Asal</th><th></th></tr></thead><tbody>${L.map(rowHtml).join('')}</tbody></table></div></div></details>`;
+        <div class="tw"><table><thead><tr><th>No</th><th>Jam</th><th>No. SJ</th><th>SKU</th><th>Produk</th><th>Varian</th><th>Ada / Diminta</th><th>Status</th><th>Asal</th><th></th></tr></thead><tbody>${L.map(rowHtml).join('')}</tbody></table></div></div></details>`;
     }).join('');
   };
   const isOpen = (k, cur) => k in openState ? openState[k] : (filt || cur);
@@ -1229,17 +1264,17 @@ function puHead(rows) {
   return { title: 'Laporan Purchase', tgl: 'Tanggal & Jam: ' + tgl, asal: 'Asal Barang: ' + ($('#fqSrc').value || 'Semua'), adm: 'Nama Admin: ' + admHead(rows) };
 }
 // Export Purchase: SETIAP GRUP (satu kali Input) = satu header + satu tabel sendiri; antar tabel diberi jarak 5 baris kosong
-const PU_COLS = ['No.', 'Tanggal', 'No. Surat Jalan', 'Nama Produk', 'Varian', 'Ada / Diminta', 'Status', 'Asal'];
+const PU_COLS = ['No.', 'Tanggal', 'No. Surat Jalan', 'SKU', 'Nama Produk', 'Varian', 'Ada / Diminta', 'Status', 'Asal'];
 const dLong = t => { const d = new Date(t); return d.getDate() + ' ' + BLN[d.getMonth()] + ' ' + d.getFullYear() };
 function puSections(rows) {
-  puInfo();
+  puInfo(); skuC = null;
   const m = new Map(); rows.forEach(r => { const k = gKey(r); (m.get(k) || m.set(k, []).get(k)).push(r) });
   return [...m.values()].map(L => {
     L = L.slice().sort(azSort);
     const t0 = Math.min(...L.map(r => r.ts)), t1 = Math.max(...L.map(r => r.ts)), srcs = [...new Set(L.map(r => r.src))];
     return { t0, src: srcs.length === 1 ? srcs[0] : '', th: L[0].tahap ? String(L[0].tahap) : '',
       head: ['Laporan Purchase', 'Tanggal & Jam: ' + dLong(t0) + ' - ' + dLong(t1), 'Asal Barang: ' + srcs.join(', ') + '     Nama Admin: ' + admHead(L), 'Pengajuan : ' + (L[0].tahap ? thLbl(L[0].tahap) : '-')],
-      rows: L.map((r, i) => [i + 1, tsFmt(r.ts), r.sj || '-', r.prod, r.vn || '-', gotOf(r) + ' / ' + r.min + ' pcs', stDesc(r), r.src]) };
+      rows: L.map((r, i) => [i + 1, tsFmt(r.ts), r.sj || '-', skuTxt(r), r.prod, r.vn || '-', gotOf(r) + ' / ' + r.min + ' pcs', stDesc(r), r.src]) };
   }).sort((a, b) => { // urut: asal barang (Kode A, Kode B, Aling, ...) -> hari -> Tahap 1, 2, 3, ...; ganti asal barang = mulai lagi dari Tahap 1
     const si = x => { const i = SRC.indexOf(x.src); return i < 0 ? SRC.length : i };
     return si(a) - si(b) || String(a.src).localeCompare(String(b.src)) || dayWIB(a.t0).localeCompare(dayWIB(b.t0)) || (Number(a.th) || 99) - (Number(b.th) || 99) || a.t0 - b.t0;
@@ -1256,11 +1291,11 @@ function puExcel(rows) {
   const S = puSections(rows), aoa = [], merges = [];
   S.forEach((s, i) => {
     if (i) for (let n = 0; n < 5; n++) aoa.push([]);
-    s.head.forEach(h => { merges.push({ s: { r: aoa.length, c: 0 }, e: { r: aoa.length, c: 7 } }); aoa.push([h]) });
+    s.head.forEach(h => { merges.push({ s: { r: aoa.length, c: 0 }, e: { r: aoa.length, c: 8 } }); aoa.push([h]) });
     aoa.push(PU_COLS); s.rows.forEach(x => aoa.push(x));
   });
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!merges'] = merges; ws['!cols'] = [6, 18, 20, 30, 16, 16, 10, 10].map(w => ({ wch: w }));
+  ws['!merges'] = merges; ws['!cols'] = [6, 18, 20, 16, 30, 16, 16, 10, 10].map(w => ({ wch: w }));
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Purchase');
   const fn = puFn(rows, 'xlsx'); XLSX.writeFile(wb, fn); puLog(rows, S, 'Excel', fn);
 }
@@ -1312,13 +1347,13 @@ async function puPdfRows(file) { // PDF export Purchase -> baris seperti sheet E
       l.a.sort((a, b) => a.x - b.x); const txt = l.a.map(o => o.s).join(' '), low = txt.toLowerCase();
       if (low.includes('nama produk') && low.includes('varian')) {
         const f = re => { const o = l.a.find(o => re.test(o.s.toLowerCase())); return o ? o.x : null };
-        X = { x0: l.a[0].x, tgl: f(/^tanggal/), sj: f(/surat|^no\. s/), prod: f(/produk/), vn: f(/^varian/), q: f(/^ada/), st: f(/^status/), asal: f(/^asal/) };
+        X = { x0: l.a[0].x, tgl: f(/^tanggal/), sj: f(/surat|^no\. s/), sku: f(/^sku/), prod: f(/produk/), vn: f(/^varian/), q: f(/^ada/), st: f(/^status/), asal: f(/^asal/) };
         out.push(['No.', 'Tanggal', 'No. Surat Jalan', 'Nama Produk', 'Varian', 'Ada / Diminta', 'Status', 'Asal']); lastRow = null; return;
       }
       if (/^(asal barang|pengajuan)\s*:/i.test(txt)) { out.push([txt]); lastRow = null; return }
       if (!X) return;
-      const pts = [['x0', 0], ['tgl', 1], ['sj', 2], ['prod', 3], ['vn', 4], ['q', 5], ['st', 6], ['asal', 7]].filter(([k]) => X[k] != null);
-      const cells = ['', '', '', '', '', '', '', ''];
+      const pts = [['x0', 0], ['tgl', 1], ['sj', 2], ['sku', 8], ['prod', 3], ['vn', 4], ['q', 5], ['st', 6], ['asal', 7]].filter(([k]) => X[k] != null);
+      const cells = ['', '', '', '', '', '', '', '', ''];
       l.a.forEach(o => { let c = 0; pts.forEach(([k, ci]) => { if (X[k] <= o.x + 2) c = ci }); cells[c] = (cells[c] ? cells[c] + ' ' : '') + o.s });
       if (/^\d+$/.test(cells[0]) && /\d{1,2}[-\/]\d{1,2}[-\/]\d{4}/.test(cells[1])) { out.push(cells); lastRow = cells }
       else if (lastRow && !cells[0] && !cells[1]) [3, 4].forEach(ci => { if (cells[ci]) lastRow[ci] = (lastRow[ci] ? lastRow[ci] + ' ' : '') + cells[ci] }); // sel yang terbungkus ke baris bawah
