@@ -278,7 +278,7 @@ function go(t) {
   if (t === 'ow') renderOw();
   if (t === 'rw') renderRw();
   if (t === 'bd') renderBd();
-  if (t === 'sc') renderSc();
+  if (t === 'sc') { renderSc(); if (window.djEnsure) djEnsure() }
   try { if (t !== 'scn') snCamStop() } catch (e) {}
   try { if (t !== 'cf' && window.cfCamStop) cfCamStop() } catch (e) {}
   if (t === 'cf' && window.renderCf) renderCf(true);
@@ -2562,7 +2562,7 @@ const scT = t => new Date(t + WIB_MS).toISOString().slice(11, 19); // jam scan H
 const scDtv = (s, end) => s ? Date.parse(s + (end ? ':59.999' : ':00') + '+07:00') : null; // tanggal+jam filter dibaca sebagai WIB
 const scAll = () => {
   if (scCache) return scCache;
-  const o = []; scans.forEach(d => { const r = d.r || [], t = d.t || [], p = d.p || [], e = d.e || []; for (let i = 0; i < r.length; i++) o.push({ resi: String(r[i]), ts: t[i], pic: p[i] || '', e: e[i] || '' }) });
+  const o = []; scans.forEach(d => { const r = d.r || [], t = d.t || [], p = d.p || [], e = d.e || []; for (let i = 0; i < r.length; i++) o.push({ resi: String(r[i]), ts: t[i], pic: p[i] || '', e: (window.djKirimOf && djKirimOf(String(r[i]))) || e[i] || '' }) }); // ekspedisi = Jasa Kirim di Data Penjualan (bila resi ada di sana)
   return scCache = o.sort((a, b) => b.ts - a.ts);
 };
 function scTs(v, defDay) { // nilai sel Excel / teks -> timestamp (ms), jam dibaca sebagai WIB; null jika tidak terbaca

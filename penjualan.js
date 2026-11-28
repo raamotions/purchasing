@@ -1,15 +1,23 @@
 /* Data Penjualan (Owner & Admin): upload Excel BigSeller "Order Package".
    Kolom yang diambil: BH = No. Resi, AB = Nama Produk, AC = Nama Variasi, AG = Jumlah (tiga kolom ini dipecah per baris jadi poin),
    BE = Jasa Kirim, J = Marketplace, K = Toko Marketplace. Satu resi = satu data (upload ulang memperbarui). */
-let sales = [], salesLoaded = false, djShow = 100;
+let sales = [], salesLoaded = false, djShow = 100, djKMap = null, djKSrc = null, djKLen = -1;
+// Ekspedisi di Data Scanner = Jasa Kirim pada Data Penjualan (dicari lewat nomor resi)
+window.djKirimOf = resi => {
+  if (!salesLoaded || !sales.length) return '';
+  if (!djKMap || djKSrc !== sales || djKLen !== sales.length) { djKMap = new Map(sales.map(x => [String(x.resi).toUpperCase(), x.kirim || ''])); djKSrc = sales; djKLen = sales.length }
+  return djKMap.get(String(resi).toUpperCase()) || '';
+};
+const djRefreshSc = () => { scCache = null; try { if ($('#sc').classList.contains('on')) renderSc() } catch (e) {} };
+window.djEnsure = async () => { if (salesLoaded) return; if (await djLoad()) djRefreshSc() }; // dipanggil saat Data Scanner dibuka
 const DJ_C = { mp: 9, toko: 10, prod: 27, vari: 28, qty: 32, kirim: 56, resi: 59 }; // indeks kolom (mulai 0): J, K, AB, AC, AG, BE, BH
 const djTxt = v => String(v == null ? '' : v).trim();
 const djLines = v => djTxt(v).split(/\r?\n/).map(t => t.trim()).filter(Boolean);
 const djSave = () => { if (!db) store.set('pp_sales', sales) };
 async function djLoad(force) {
   if (salesLoaded && !force) return true;
-  if (!db) { sales = store.get('pp_sales', []); salesLoaded = true; return true }
-  try { const s = await db.collection('sales').get(); sales = s.docs.map(d => d.data()); salesLoaded = true; return true }
+  if (!db) { sales = store.get('pp_sales', []); salesLoaded = true; scCache = null; return true }
+  try { const s = await db.collection('sales').get(); sales = s.docs.map(d => d.data()); salesLoaded = true; scCache = null; return true }
   catch (e) { msg('#djMsg', 'Gagal memuat data penjualan: ' + ((e && (e.code || e.message)) || e) + '. Jika Rules Firestore membatasi koleksi, izinkan koleksi "sales" (allow read, write: if true;) lalu Publish.'); return false }
 }
 async function djRead(files) {
@@ -44,7 +52,7 @@ async function djRead(files) {
     if (db) { if (!commit(pt.map(r => ['sales', 'set', r]))) return msg('#djMsg', 'Gagal menyimpan.') } else djSave();
   }
   msg('#djMsg', NF(read) + ' resi dibaca: ' + NF(add) + ' baru, ' + NF(upd) + ' diperbarui, ' + NF(same) + ' sudah sama' + (skip ? ', ' + NF(skip) + ' baris tanpa resi dilewati' : '') + '.', true);
-  djShow = 100; djRender();
+  djShow = 100; djRender(); djRefreshSc();
 }
 function djOpts(sel, vals, label) {
   const el = $(sel), cur = el.value; el.innerHTML = `<option value="">${label}</option>` + vals.map(v => `<option>${esc(v)}</option>`).join('');
@@ -91,7 +99,7 @@ window.renderDj = async function () {
     if (!confirm('Hapus SEMUA data penjualan (' + NF(sales.length) + ' resi)? Tindakan ini tidak bisa dibatalkan.')) return;
     const ids = sales.map(s => s.id); sales = [];
     if (db) commit(ids.map(id => ['sales', 'del', id])); else djSave();
-    msg('#djMsg', 'Semua data penjualan dihapus.', true); djRender();
+    msg('#djMsg', 'Semua data penjualan dihapus.', true); djRender(); djRefreshSc();
   };
 })();
 
